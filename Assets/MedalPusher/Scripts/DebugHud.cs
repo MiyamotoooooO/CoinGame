@@ -64,6 +64,14 @@ namespace MedalPusher
         {
             if (game == null) return;
             EnsureStyles();
+
+            // 演出中は画面をすっきりさせ、スキップの案内だけ出す
+            if (game.State == GameState.Intro)
+            {
+                GUI.Label(new Rect(10, Screen.height - 30, Screen.width - 20, 26), "Enter: 演出をスキップ", smallStyle);
+                return;
+            }
+
             DrawStats();
             DrawCenterMessage();
             DrawHelp();
@@ -75,10 +83,13 @@ namespace MedalPusher
             var r = game.rules;
             string state = game.State switch
             {
+                GameState.Intro => "<color=#aaaaaa>演出中</color>",
                 GameState.Warmup => "<color=#aaaaaa>準備中</color>",
                 GameState.Playing => "<color=#88ff88>プレイ中</color>",
                 GameState.Grace => "<color=#ffdd66>判定待ち</color>",
                 GameState.Cleared => "<color=#66ffff>クリア</color>",
+                GameState.Shop => "<color=#ffcc66>ショップ（仮）</color>",
+                GameState.Finished => "<color=#66ffff>おしまい（仮）</color>",
                 _ => "<color=#ff6666>失敗</color>"
             };
             if (r.freePlay) state += " <color=#ff99ff>[フリープレイ]</color>";
@@ -88,10 +99,15 @@ namespace MedalPusher
 
             GUI.Box(statsRect, GUIContent.none);
             GUILayout.BeginArea(new Rect(statsRect.x + 10, statsRect.y + 6, statsRect.width - 20, statsRect.height - 12));
-            GUILayout.Label($"ラウンド {game.RoundNumber}   {state}", labelStyle);
+            int roundCount = game.CurrentArea.rounds.Length;
+            string boss = game.IsBossRound ? " <color=#ff7777>BOSS</color>" : "";
+            GUILayout.Label($"エリア {game.AreaIndex + 1}  ラウンド {game.RoundIndex + 1}/{roundCount}{boss}   {state}", labelStyle);
             GUILayout.Label($"所持メダル: <b>{game.OwnedMedals}</b>", labelStyle);
             GUILayout.Label($"投入: <b>{game.InsertedThisRound}</b> / {r.insertLimit}", labelStyle);
-            GUILayout.Label($"ポイント: <b>{game.Points}</b> / {r.quota}", labelStyle);
+            if (game.IsBossRound)
+                GUILayout.Label($"ボスHP: <b>{game.BossHp}</b> / {game.CurrentQuota}   （ポイント {game.Points}）", labelStyle);
+            else
+                GUILayout.Label($"ポイント: <b>{game.Points}</b> / {game.CurrentQuota}", labelStyle);
             GUILayout.Label($"落下  <color=#66ee88>中央 {game.CenterDrops}</color>   <color=#ff7777>端 {game.SideDrops}</color>   ロスト {game.LostDrops}", labelStyle);
             GUILayout.Label($"盤面メダル: <b>{game.Pool.ActiveCount}</b>  （動いている: {awakeCount}）", labelStyle);
             GUILayout.Label($"<color={fpsColor}>FPS {fps:0}  ({ms} ms)</color>   物理 {game.tuning.physicsHz}Hz", labelStyle);
@@ -104,7 +120,13 @@ namespace MedalPusher
             switch (game.State)
             {
                 case GameState.Warmup: msg = "<size=28>メダルを並べています…</size>"; break;
-                case GameState.Cleared: msg = "<color=#66ffff>CLEAR!</color>\n<size=20>Enter で次のラウンド / R でリセット</size>"; break;
+                case GameState.Cleared:
+                    msg = game.IsLastRoundOfArea
+                        ? "<color=#66ffff>AREA CLEAR!</color>\n<size=20>Enter でショップへ / R でリセット</size>"
+                        : "<color=#66ffff>CLEAR!</color>\n<size=20>Enter で次のラウンド / R でリセット</size>";
+                    break;
+                case GameState.Shop: msg = "<color=#ffcc66>SHOP（準備中）</color>\n<size=20>Enter で次のエリアへ</size>"; break;
+                case GameState.Finished: msg = "<size=30>用意したエリアはここまで（仮）</size>\n<size=20>R で最初から</size>"; break;
                 case GameState.Failed: msg = "<color=#ff6666>FAILED</color>\n<size=20>R でリセット</size>"; break;
                 case GameState.Grace:
                     float left = Mathf.Max(0f, game.rules.graceSeconds - game.StateTime);
@@ -126,7 +148,7 @@ namespace MedalPusher
         void DrawHelp()
         {
             const string help =
-                "左クリック/A/←: 左から発射   右クリック/D/→: 右から発射   Space: 左右交互（長押しで連続）   R: リセット   Enter: 次のラウンド\n" +
+                "左クリック/A/←: 左から発射   右クリック/D/→: 右から発射   Space: 左右交互（長押しで連続）   R: リセット   Enter: 次へ\n" +
                 "F1: メダル+50（負荷テスト）   P: プッシャー停止   C: カメラ切替   Tab: 調整パネル";
             GUI.Label(new Rect(10, Screen.height - 46, Screen.width - 20, 44), help, smallStyle);
         }

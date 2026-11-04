@@ -164,7 +164,7 @@ MonoBehaviour:
     wallThickness: 0.12
     pusherHeight: 0.32
     pusherDepth: 1.6
-    pusherRetractZ: 1.6
+    pusherRetractZ: 1
     pusherSideGap: 0.02
     backWallOffset: 0.1
     backWallGap: 0.02
@@ -203,13 +203,14 @@ MonoBehaviour:
   rules:
     startMedals: 50
     insertLimit: 30
-    quota: 300
     graceSeconds: 5
     centerPoints: 10
     centerMedalReturn: 1
     sidePoints: 0
     sideMedalReturn: 0
     prefillMedals: 120
+    prefillUpperMedals: 20
+    startPusherPosition: 1
     warmupSeconds: 4
     insertInterval: 0.2
     launchSpeed: 3.5
@@ -217,6 +218,37 @@ MonoBehaviour:
     launchForwardSpeed: 0.1
     launchSpread: 0.15
     freePlay: 0
+  areas:
+  - title: "\u30A8\u30EA\u30A21 \uFF5E\u4EEE\u30BF\u30A4\u30C8\u30EB\uFF5E"
+    rounds:
+    - title: "\u30E9\u30A6\u30F3\u30C91\uFF08\u4EEE\uFF09"
+      quota: 150
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.2, g: 0.45, b: 0.5, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C92\uFF08\u4EEE\uFF09"
+      quota: 200
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.25, g: 0.5, b: 0.3, a: 1}
+    - title: "\u30DC\u30B9\uFF08\u4EEE\uFF09"
+      quota: 300
+      isBoss: 1
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.6, g: 0.15, b: 0.15, a: 1}
+  monitor:
+    playIntro: 1
+    screenObjectName: MonitorScreen
+    mascot: {fileID: 0}
+    resolutionWidth: 1500
+    flipX: 0
+    flipY: 0
+    introSpeed: 1
+    recordSpinSpeed: 120
+  visuals:
+    medalModel: {fileID: 919132149155446097, guid: a6c2db07f76a2ff48b708a95ecb140f9, type: 3}
+    medalCastShadows: 1
+    medalReceiveShadows: 1
 --- !u!4 &222109768
 Transform:
   m_ObjectHideFlags: 0
@@ -356,7 +388,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize: 10
   m_Shadows:
-    m_Type: 2
+    m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1
@@ -520,7 +552,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7112bc1a0beb90b4a85e83a54c2f5de2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pixelHeight: 430
+  pixelHeight: 673
   screenMaterial: {fileID: 2100000, guid: e76ff0255bfd4292b4eece38ffc4ba92, type: 2}
   sortingOrder: -100
   effectEnabled: 1

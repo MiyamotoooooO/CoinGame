@@ -41,9 +41,12 @@ namespace MedalPusher
             ResetPhase();
         }
 
-        public void ResetPhase()
+        /// <param name="startPosition01">始める位置。0 = 一番奥、1 = 一番手前</param>
+        public void ResetPhase(float startPosition01 = 0f)
         {
-            phase = 0f;
+            // 位置 t = (1 - cos(2π·phase)) / 2 を phase について解く
+            float t = Mathf.Clamp01(startPosition01);
+            phase = Mathf.Acos(1f - 2f * t) / (2f * Mathf.PI);
             currentStroke = stroke;
             Vector3 p = ComputePosition();
             transform.position = p;
