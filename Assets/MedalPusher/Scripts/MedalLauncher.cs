@@ -29,7 +29,8 @@ namespace MedalPusher
         /// <summary>メダルが出てくる位置。side: -1=左, 1=右</summary>
         public Vector3 MuzzlePosition(int side)
         {
-            float x = side * (game.BoardHalfWidth - game.tuning.medalDiameter * 0.5f - 0.08f);
+            float d = game.tuning.medalDiameter;
+            float x = side * (game.BoardHalfWidth - d * 0.5f - d * 0.08f);
             return new Vector3(x, game.layout.launcherHeight, game.BackWallFrontZ - game.layout.launcherZFromWall);
         }
 
@@ -89,12 +90,14 @@ namespace MedalPusher
             root.position = new Vector3(wallX, muzzle.y, muzzle.z);
 
             // 子は「壁から内側へ」を -side 方向に並べる。root の X スケールで引っ込み演出をする
-            float len = Mathf.Abs(muzzle.x - wallX) + 0.45f;
+            // 大きさはメダル直径を1とした値（メダルの大きさに合わせて拡大縮小する）
+            float d = game.tuning.medalDiameter;
+            float len = Mathf.Abs(muzzle.x - wallX) + 0.45f * d;
             float cx = -side * len * 0.5f;
-            Part(root, mat, new Vector3(cx, -0.13f, 0f), new Vector3(len, 0.06f, 1.15f));  // 底
-            Part(root, mat, new Vector3(cx, 0.02f, 0.6f), new Vector3(len, 0.36f, 0.06f));  // 奥の側板
-            Part(root, mat, new Vector3(cx, 0.02f, -0.6f), new Vector3(len, 0.36f, 0.06f)); // 手前の側板
-            Part(root, mat, new Vector3(-side * 0.2f, 0.55f, 0f), new Vector3(0.4f, 0.9f, 0.7f)); // 壁側の筒
+            Part(root, mat, new Vector3(cx, -0.13f * d, 0f), new Vector3(len, 0.06f * d, 1.15f * d));      // 底
+            Part(root, mat, new Vector3(cx, 0.02f * d, 0.6f * d), new Vector3(len, 0.36f * d, 0.06f * d));  // 奥の側板
+            Part(root, mat, new Vector3(cx, 0.02f * d, -0.6f * d), new Vector3(len, 0.36f * d, 0.06f * d)); // 手前の側板
+            Part(root, mat, new Vector3(-side * 0.2f * d, 0.55f * d, 0f), new Vector3(0.4f * d, 0.9f * d, 0.7f * d)); // 壁側の筒
             return root;
         }
 

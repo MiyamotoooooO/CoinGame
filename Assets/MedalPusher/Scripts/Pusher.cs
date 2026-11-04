@@ -20,25 +20,22 @@ namespace MedalPusher
         public bool paused;
 
         Rigidbody rb;
-        float retractFrontZ;
-        float depth;
-        float y;
+        Vector3 retractedPosition;
         float currentStroke;
         float phase;
 
         /// <summary>0=一番奥、0.5=一番手前</summary>
         public float Phase01 => phase - Mathf.Floor(phase);
 
-        public void Init(float retractFrontZ, float depth, float centerY, float stroke, float cycleSeconds)
+        /// <param name="retractedPosition">一番奥に下がった時の位置。ここから手前（-Z）へ stroke だけ動く</param>
+        public void Init(Vector3 retractedPosition, float stroke, float cycleSeconds)
         {
             rb = GetComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
 
-            this.retractFrontZ = retractFrontZ;
-            this.depth = depth;
-            y = centerY;
+            this.retractedPosition = retractedPosition;
             this.stroke = stroke;
             this.cycleSeconds = cycleSeconds;
             ResetPhase();
@@ -66,8 +63,7 @@ namespace MedalPusher
         Vector3 ComputePosition()
         {
             float t = (1f - Mathf.Cos(phase * Mathf.PI * 2f)) * 0.5f;
-            float frontZ = retractFrontZ - currentStroke * t;
-            return new Vector3(0f, y, frontZ + depth * 0.5f);
+            return retractedPosition + new Vector3(0f, 0f, -currentStroke * t);
         }
     }
 }

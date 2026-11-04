@@ -21,7 +21,7 @@ namespace MedalPusher
         [Header("プッシャー")]
         public float pusherHeight = 0.8f;
         public float pusherDepth = 5f;
-        [Tooltip("プッシャーが一番引いた時の前面のZ座標")]
+        [Tooltip("プッシャーが一番引いた時の前面のZ座標。シーンのモデルを使う時も、前面がここに来るように位置を合わせて動かす")]
         public float pusherRetractZ = 2f;
         [Tooltip("プッシャーと左右の壁のすき間")]
         public float pusherSideGap = 0.04f;
@@ -35,11 +35,47 @@ namespace MedalPusher
         [Header("落下口")]
         [Tooltip("中央の穴の幅。残りが左右の端の穴になる")]
         public float centerHoleWidth = 4f;
+        [Tooltip("穴の判定の上端の高さ（床より下にすること）")]
+        public float holeTopY = -0.6f;
+        [Tooltip("穴の判定の下端の高さ")]
+        public float holeBottomY = -4f;
+        [Tooltip("穴の判定の奥行き（盤面の前端から手前へ）")]
+        public float holeDepth = 2.98f;
+
+        [Header("カメラ（シーンの盤面を使う時の視点）")]
+        public Vector3 cameraPosition = new Vector3(0f, 2.28f, -2.62f);
+        public Vector3 cameraRotation = new Vector3(17.8f, 0f, 0f);
+        public float cameraFieldOfView = 56f;
 
         [Header("発射口（左右の壁）")]
         public float launcherHeight = 2.0f;
         [Tooltip("奥の壁から手前に何unitの位置から発射するか")]
         public float launcherZFromWall = 0.6f;
+    }
+
+    public enum BoardSource
+    {
+        Scene,    // シーンに置いたモデル（Playfield、Pusher など）を盤面として使う
+        Generate  // コードで仮の盤面を組み立てる（最初の試作の盤面）
+    }
+
+    /// <summary>
+    /// シーンに置いた盤面モデルの参照。空の欄は、同じ名前のオブジェクトをシーンから自動で探す。
+    /// 当たり判定やRigidbodyが付いていなければ、再生時に自動で付ける。
+    /// </summary>
+    [Serializable]
+    public class SceneBoard
+    {
+        [Tooltip("空なら「Pusher」という名前のオブジェクトを探す")]
+        public Transform pusher;
+        [Tooltip("当たり判定が必要な動かない部品。空なら「Playfield」「Dividers」「Cabinet」を探す")]
+        public Transform[] staticParts = new Transform[0];
+        [Tooltip("空なら「Hole_Center」を探す。見つからなければ Layout の寸法で判定を作る")]
+        public Transform holeCenter;
+        [Tooltip("空なら「Hole_Side_Left」を探す")]
+        public Transform holeLeft;
+        [Tooltip("空なら「Hole_Side_Right」を探す")]
+        public Transform holeRight;
     }
 
     /// <summary>
@@ -52,7 +88,7 @@ namespace MedalPusher
         [Tooltip("1往復にかかる秒数（小さいほど速い）")]
         [Range(1f, 10f)] public float pusherCycleSeconds = 4f;
         [Tooltip("プッシャーが前に出る距離")]
-        [Range(0.5f, 3f)] public float pusherStroke = 2f;
+        [Range(0.1f, 3f)] public float pusherStroke = 2f;
 
         [Header("メダル形状（リセット時ではなく再生開始時に反映）")]
         public float medalDiameter = 1f;
@@ -81,6 +117,8 @@ namespace MedalPusher
         [Range(1, 10)] public int velocityIterations = 2;
         [Tooltip("これ以下の動きのメダルは眠る（計算が止まる）。上げると軽くなる")]
         [Range(0.001f, 0.1f)] public float sleepThreshold = 0.005f;
+        [Tooltip("接触を始める距離。メダルが薄い時は小さくしないと、メダル同士が浮いて重なる")]
+        [Range(0.001f, 0.02f)] public float contactOffset = 0.01f;
         [Tooltip("重なったメダルが押し出される最大速度。大きいと弾け飛ぶ")]
         [Range(0.5f, 10f)] public float maxDepenetrationVelocity = 3f;
         [Tooltip("見た目を滑らかにする補間。メダルが多いと少し重くなる")]
