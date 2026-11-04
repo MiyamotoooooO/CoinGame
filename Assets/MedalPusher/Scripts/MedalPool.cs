@@ -53,15 +53,17 @@ namespace MedalPusher
 
             var rb = go.AddComponent<Rigidbody>();
             var medal = go.AddComponent<Medal>();
-            medal.Setup(rb); // 非アクティブなので Awake が走らない。明示的に渡す
-            ApplyBody(rb);
+            medal.Setup(rb, col); // 非アクティブなので Awake が走らない。明示的に渡す
+            ApplyBody(medal);
 
             all.Add(medal);
             return medal;
         }
 
-        void ApplyBody(Rigidbody rb)
+        void ApplyBody(Medal medal)
         {
+            medal.Collider.contactOffset = tuning.contactOffset;
+            var rb = medal.Body;
             rb.mass = tuning.medalMass;
             rb.drag = tuning.medalDrag;
             rb.angularDrag = tuning.medalAngularDrag;
@@ -77,7 +79,7 @@ namespace MedalPusher
 
         public void ApplyBodySettings()
         {
-            for (int i = 0; i < all.Count; i++) ApplyBody(all[i].Body);
+            for (int i = 0; i < all.Count; i++) ApplyBody(all[i]);
         }
 
         public Medal Spawn(Vector3 position, Quaternion rotation)

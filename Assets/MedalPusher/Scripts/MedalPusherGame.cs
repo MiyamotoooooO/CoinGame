@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MedalPusher
@@ -12,14 +13,20 @@ namespace MedalPusher
     }
 
     /// <summary>
-    /// 試作のエントリーポイント。空のGameObjectにこれを1つ付けて再生すると、
-    /// 盤面・プッシャー・落下口・カメラ・投入口・デバッグHUDをすべてコードで組み立てる。
+    /// 試作のエントリーポイント。空のGameObjectにこれを1つ付けて再生する。
+    /// 盤面は「シーンに置いたモデルを使う」か「コードで仮の盤面を作る」かを Board Source で選ぶ。
+    /// プッシャーの動き・落下口・カメラ・投入口・デバッグHUDはどちらでもコードで用意する。
     /// </summary>
     [DefaultExecutionOrder(-100)]
     [DisallowMultipleComponent]
     public class MedalPusherGame : MonoBehaviour
     {
-        [Header("盤面レイアウト（再生前に設定）")]
+        [Header("盤面の出どころ")]
+        [Tooltip("Scene: シーンのモデルを使う / Generate: コードで仮の盤面を作る")]
+        public BoardSource boardSource = BoardSource.Scene;
+        public SceneBoard sceneBoard = new SceneBoard();
+
+        [Header("盤面レイアウト（再生前に設定。コンポーネントの右クリックメニューで一括入力できる）")]
         public BoardLayout layout = new BoardLayout();
         [Header("物理チューニング（再生中も Tab の調整パネルから変更可）")]
         public PhysicsTuning tuning = new PhysicsTuning();
@@ -58,6 +65,7 @@ namespace MedalPusher
         PhysicMaterial medalPhysicMaterial;
         PhysicMaterial boardPhysicMaterial;
         Transform boardRoot;
+        readonly List<Collider> boardColliders = new List<Collider>();
         bool topView;
 
         static readonly Color FloorColor = new Color(0.16f, 0.18f, 0.26f);
@@ -76,7 +84,13 @@ namespace MedalPusher
             Time.maximumDeltaTime = 0.1f; // 重い時に物理が雪だるま式に遅れるのを防ぐ
             CreatePhysicMaterials();
             ApplyGlobalPhysics();
-            BuildBoard();
+            boardRoot = new GameObject("BoardRuntime").transform;
+            if (boardSource == BoardSource.Scene && !SetupSceneBoard())
+            {
+                Debug.LogWarning("[MedalPusher] シーンに「Pusher」が見つからないため、コードで仮の盤面を作ります。");
+                boardSource = BoardSource.Generate;
+            }
+            if (boardSource == BoardSource.Generate) BuildBoard();
             SetupLight();
             ApplyCameraPreset();
 
@@ -128,6 +142,8 @@ namespace MedalPusher
             boardPhysicMaterial.dynamicFriction = tuning.boardDynamicFriction;
             boardPhysicMaterial.staticFriction = tuning.boardStaticFriction;
             boardPhysicMaterial.bounciness = 0f;
+            foreach (var c in boardColliders)
+                if (c != null) c.contactOffset = tuning.contactOffset;
 
             if (Pool != null) Pool.ApplyBodySettings();
             if (Pusher != null)
@@ -138,13 +154,136 @@ namespace MedalPusher
         }
 
         // ================================================================
-        // 盤面の組み立て
+        // シーンの盤面を使う
+        // ================================================================
+
+        /// <summary>シーンに置いた盤面モデルに当たり判定・プッシャーの動き・穴の判定を付ける。Pusher が無ければ false。</summary>
+        bool SetupSceneBoard()
+        {
+            var pusherT = Pick(sceneBoard.pusher, "Pusher");
+            if (pusherT == null) return false;
+
+            // 動かない部品（盤面・仕切り・筐体）
+            var parts = new List<Transform>();
+            if (sceneBoard.staticParts != null)
+                foreach (var t in sceneBoard.staticParts) if (t != null) parts.Add(t);
+            if (parts.Count == 0)
+                foreach (var n in new[] { "Playfield", "Dividers", "Cabinet" })
+                {
+                    var t = FindByName(n);
+                    if (t != null) parts.Add(t);
+                }
+            foreach (var t in parts) PrepareColliders(t, false);
+            CheckModelScale(FindByName("Playfield"));
+
+            // プッシャー：凸の当たり判定＋キネマティックRigidbody。
+            // 前面が Layout の pusherRetractZ に来る位置を「一番奥」とし、そこから手前へ stroke だけ動かす
+            PrepareColliders(pusherT, true);
+            if (pusherT.GetComponent<Rigidbody>() == null) pusherT.gameObject.AddComponent<Rigidbody>();
+            Pusher = pusherT.GetComponent<Pusher>();
+            if (Pusher == null) Pusher = pusherT.gameObject.AddComponent<Pusher>();
+            float shiftZ = 0f;
+            if (TryGetFrontZ(pusherT, out float modelFrontZ)) shiftZ = layout.pusherRetractZ - modelFrontZ;
+            Pusher.Init(pusherT.position + new Vector3(0f, 0f, shiftZ), tuning.pusherStroke, tuning.pusherCycleSeconds);
+
+            // 穴：シーンにあればそれを使い、無ければ Layout の寸法で作る
+            bool c = SetupSceneHole(Pick(sceneBoard.holeCenter, "Hole_Center"), DropZoneType.Center);
+            bool l = SetupSceneHole(Pick(sceneBoard.holeLeft, "Hole_Side_Left"), DropZoneType.Side);
+            bool r = SetupSceneHole(Pick(sceneBoard.holeRight, "Hole_Side_Right"), DropZoneType.Side);
+            CreateHoleZones(!c, !l, !r);
+            return true;
+        }
+
+        /// <summary>メッシュに当たり判定が無ければ MeshCollider を付け、全部の当たり判定に盤面の物理マテリアルを設定する。</summary>
+        void PrepareColliders(Transform root, bool convex)
+        {
+            foreach (var mf in root.GetComponentsInChildren<MeshFilter>())
+            {
+                if (mf.sharedMesh == null || mf.GetComponent<Collider>() != null) continue;
+                var mc = mf.gameObject.AddComponent<MeshCollider>();
+                mc.sharedMesh = mf.sharedMesh;
+                mc.convex = convex;
+            }
+            foreach (var col in root.GetComponentsInChildren<Collider>())
+            {
+                if (col.isTrigger) continue;
+                if (convex && col is MeshCollider mc) mc.convex = true;
+                col.sharedMaterial = boardPhysicMaterial;
+                boardColliders.Add(col);
+            }
+        }
+
+        /// <summary>シーンの穴オブジェクトをトリガーにして DropZone を付ける。無ければ false。</summary>
+        bool SetupSceneHole(Transform hole, DropZoneType type)
+        {
+            if (hole == null) return false;
+            var col = hole.GetComponentInChildren<Collider>();
+            if (col == null)
+            {
+                var mf = hole.GetComponentInChildren<MeshFilter>();
+                if (mf == null || mf.sharedMesh == null) return false;
+                var box = mf.gameObject.AddComponent<BoxCollider>();
+                box.center = mf.sharedMesh.bounds.center;
+                box.size = mf.sharedMesh.bounds.size;
+                col = box;
+            }
+            col.isTrigger = true;
+            foreach (var rend in hole.GetComponentsInChildren<Renderer>()) rend.enabled = false;
+            var zone = col.gameObject.AddComponent<DropZone>();
+            zone.type = type;
+            zone.game = this;
+            return true;
+        }
+
+        /// <summary>モデルの前面（いちばん手前 = Z が最小）の位置を見た目の範囲から求める。</summary>
+        static bool TryGetFrontZ(Transform root, out float frontZ)
+        {
+            frontZ = 0f;
+            var renderers = root.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return false;
+            frontZ = float.MaxValue;
+            foreach (var rend in renderers) frontZ = Mathf.Min(frontZ, rend.bounds.min.z);
+            return true;
+        }
+
+        /// <summary>
+        /// 盤面モデルの実際の幅と Layout の幅が合っているか確かめる。
+        /// 取り込みの Scale Factor が違う（例: 10 にし忘れ）と、メダルやプッシャーの位置がずれるため。
+        /// </summary>
+        void CheckModelScale(Transform playfield)
+        {
+            if (playfield == null) return;
+            var renderers = playfield.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return;
+            var b = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
+            float expected = layout.boardWidth + layout.wallThickness * 2f;
+            if (Mathf.Abs(b.size.x - expected) > expected * 0.1f)
+            {
+                Debug.LogWarning($"[MedalPusher] Playfield の幅が {b.size.x:0.###} ですが、Layout では {expected:0.###} の想定です。" +
+                                 "モデルの Scale Factor（盤面モデル v3 なら 10）か、Layout の寸法を確認してください。" +
+                                 "（MedalPusherGame を右クリック →「盤面モデル v3 の寸法を入れる」でも合わせられます）");
+            }
+        }
+
+        static Transform Pick(Transform assigned, string name) => assigned != null ? assigned : FindByName(name);
+
+        /// <summary>名前でシーンから探す。同じ名前が親子で続く場合（.objの取り込みでよくある）は上の方を返す。</summary>
+        static Transform FindByName(string name)
+        {
+            var go = GameObject.Find(name);
+            if (go == null) return null;
+            var t = go.transform;
+            while (t.parent != null && t.parent.name == name) t = t.parent;
+            return t;
+        }
+
+        // ================================================================
+        // コードで仮の盤面を作る
         // ================================================================
 
         void BuildBoard()
         {
-            boardRoot = new GameObject("Board").transform;
-
             float w = layout.boardWidth;
             float hw = w * 0.5f;
             float t = layout.wallThickness;
@@ -176,35 +315,47 @@ namespace MedalPusher
                 PusherColor, boardPhysicMaterial);
             pusherGo.AddComponent<Rigidbody>();
             Pusher = pusherGo.AddComponent<Pusher>();
-            Pusher.Init(layout.pusherRetractZ, layout.pusherDepth, layout.pusherHeight * 0.5f,
+            Pusher.Init(new Vector3(0f, layout.pusherHeight * 0.5f, layout.pusherRetractZ + layout.pusherDepth * 0.5f),
                 tuning.pusherStroke, tuning.pusherCycleSeconds);
 
-            // 落下口（手前の縁の下にトリガーを並べる）
-            float cw = Mathf.Clamp(layout.centerHoleWidth, 0.5f, w);
-            float sideInner = cw * 0.5f;
-            float sideOuter = hw + t + 1f;
-            float sideW = sideOuter - sideInner;
-            // トリガーの範囲: y = -4.0 〜 -0.6（床の上のメダルには触れない）、z = 縁の3unit手前 〜 縁の直前
-            const float zoneTop = -0.6f, zoneBottom = -4f, zoneDepth = 2.98f;
-            float zoneY = (zoneTop + zoneBottom) * 0.5f;
-            float zoneH = zoneTop - zoneBottom;
-            float zoneZ = frontZ - 0.02f - zoneDepth * 0.5f;
-
-            CreateZone("Hole_Center", DropZoneType.Center, new Vector3(0f, zoneY, zoneZ), new Vector3(cw, zoneH, zoneDepth));
-            CreateZone("Hole_Left", DropZoneType.Side, new Vector3(-(sideInner + sideW * 0.5f), zoneY, zoneZ), new Vector3(sideW, zoneH, zoneDepth));
-            CreateZone("Hole_Right", DropZoneType.Side, new Vector3(sideInner + sideW * 0.5f, zoneY, zoneZ), new Vector3(sideW, zoneH, zoneDepth));
-            CreateZone("LostZone", DropZoneType.Lost, new Vector3(0f, -15f, 0f), new Vector3(200f, 2f, 200f));
+            // 落下口
+            CreateHoleZones(true, true, true);
 
             // 見た目：手前の縁の色帯と、穴の下の受け皿（当たり判定なし）
+            float cw = Mathf.Clamp(layout.centerHoleWidth, 0.5f, w);
+            float sideInner = cw * 0.5f;
             float sideVisW = hw - sideInner;
+            float zoneZ = frontZ - 0.02f - layout.holeDepth * 0.5f;
+            float bottom = layout.holeBottomY;
+            float divH = -bottom - 0.4f;
             CreateBox("Strip_Center", new Vector3(0f, 0.004f, frontZ + 0.15f), new Vector3(cw, 0.01f, 0.3f), CenterColor, null, false);
             CreateBox("Strip_L", new Vector3(-(sideInner + sideVisW * 0.5f), 0.004f, frontZ + 0.15f), new Vector3(sideVisW, 0.01f, 0.3f), SideColor, null, false);
             CreateBox("Strip_R", new Vector3(sideInner + sideVisW * 0.5f, 0.004f, frontZ + 0.15f), new Vector3(sideVisW, 0.01f, 0.3f), SideColor, null, false);
-            CreateBox("Tray_Center", new Vector3(0f, -4f, zoneZ), new Vector3(cw, 0.2f, 3f), CenterColor, null, false);
-            CreateBox("Tray_L", new Vector3(-(sideInner + sideVisW * 0.5f), -4f, zoneZ), new Vector3(sideVisW, 0.2f, 3f), SideColor, null, false);
-            CreateBox("Tray_R", new Vector3(sideInner + sideVisW * 0.5f, -4f, zoneZ), new Vector3(sideVisW, 0.2f, 3f), SideColor, null, false);
-            CreateBox("Divider_L", new Vector3(-sideInner, -2.2f, zoneZ), new Vector3(0.06f, 3.6f, 3f), WallColor, null, false);
-            CreateBox("Divider_R", new Vector3(sideInner, -2.2f, zoneZ), new Vector3(0.06f, 3.6f, 3f), WallColor, null, false);
+            CreateBox("Tray_Center", new Vector3(0f, bottom, zoneZ), new Vector3(cw, 0.2f, layout.holeDepth), CenterColor, null, false);
+            CreateBox("Tray_L", new Vector3(-(sideInner + sideVisW * 0.5f), bottom, zoneZ), new Vector3(sideVisW, 0.2f, layout.holeDepth), SideColor, null, false);
+            CreateBox("Tray_R", new Vector3(sideInner + sideVisW * 0.5f, bottom, zoneZ), new Vector3(sideVisW, 0.2f, layout.holeDepth), SideColor, null, false);
+            CreateBox("Divider_L", new Vector3(-sideInner, bottom + divH * 0.5f, zoneZ), new Vector3(0.06f, divH, layout.holeDepth), WallColor, null, false);
+            CreateBox("Divider_R", new Vector3(sideInner, bottom + divH * 0.5f, zoneZ), new Vector3(0.06f, divH, layout.holeDepth), WallColor, null, false);
+        }
+
+        /// <summary>
+        /// Layout の寸法で穴の判定を作る（手前の縁の下に並べる）。ロスト判定はいつも作る。
+        /// </summary>
+        void CreateHoleZones(bool center, bool left, bool right)
+        {
+            float hw = BoardHalfWidth;
+            float cw = Mathf.Clamp(layout.centerHoleWidth, 0.1f, layout.boardWidth);
+            float sideInner = cw * 0.5f;
+            float sideOuter = hw + layout.wallThickness + layout.boardWidth * 0.125f;
+            float sideW = sideOuter - sideInner;
+            float zoneY = (layout.holeTopY + layout.holeBottomY) * 0.5f;
+            float zoneH = layout.holeTopY - layout.holeBottomY;
+            float zoneZ = layout.floorFrontZ - 0.02f - layout.holeDepth * 0.5f;
+
+            if (center) CreateZone("Hole_Center", DropZoneType.Center, new Vector3(0f, zoneY, zoneZ), new Vector3(cw, zoneH, layout.holeDepth));
+            if (left) CreateZone("Hole_Left", DropZoneType.Side, new Vector3(-(sideInner + sideW * 0.5f), zoneY, zoneZ), new Vector3(sideW, zoneH, layout.holeDepth));
+            if (right) CreateZone("Hole_Right", DropZoneType.Side, new Vector3(sideInner + sideW * 0.5f, zoneY, zoneZ), new Vector3(sideW, zoneH, layout.holeDepth));
+            CreateZone("LostZone", DropZoneType.Lost, new Vector3(0f, layout.holeBottomY - 10f, 0f), new Vector3(200f, 2f, 200f));
         }
 
         GameObject CreateBox(string name, Vector3 position, Vector3 size, Color color, PhysicMaterial pm, bool collider = true)
@@ -216,7 +367,11 @@ namespace MedalPusher
             go.transform.localScale = size;
             go.GetComponent<Renderer>().sharedMaterial = ProtoAssets.MakeMaterial(color);
             var col = go.GetComponent<BoxCollider>();
-            if (collider) col.sharedMaterial = pm;
+            if (collider)
+            {
+                col.sharedMaterial = pm;
+                boardColliders.Add(col);
+            }
             else DestroyImmediate(col);
             return go;
         }
@@ -255,17 +410,26 @@ namespace MedalPusher
                 cam = go.AddComponent<Camera>();
                 go.AddComponent<AudioListener>();
             }
-            cam.fieldOfView = 55f;
-            cam.nearClipPlane = 0.1f;
 
+            float w = layout.boardWidth;
             float frontZ = layout.floorFrontZ;
+            cam.nearClipPlane = tuning.medalDiameter * 0.1f;
             if (topView)
             {
-                cam.transform.position = new Vector3(0f, 14f, frontZ + 2.5f);
+                cam.fieldOfView = 55f;
+                cam.transform.position = new Vector3(0f, w * 1.75f, frontZ + w * 0.3125f);
                 cam.transform.rotation = Quaternion.Euler(78f, 0f, 0f);
+            }
+            else if (boardSource == BoardSource.Scene)
+            {
+                // モデル付属の README にあるプレイヤー視点
+                cam.fieldOfView = layout.cameraFieldOfView;
+                cam.transform.position = layout.cameraPosition;
+                cam.transform.rotation = Quaternion.Euler(layout.cameraRotation);
             }
             else
             {
+                cam.fieldOfView = 55f;
                 cam.transform.position = new Vector3(0f, 8.5f, frontZ - 6.5f);
                 cam.transform.LookAt(new Vector3(0f, -0.5f, frontZ + 3.5f));
             }
@@ -400,11 +564,16 @@ namespace MedalPusher
             int cols = Mathf.Max(1, Mathf.FloorToInt(half * 2f / step) + 1);
             int rows = Mathf.Max(1, Mathf.FloorToInt((zMax - zMin) / step) + 1);
 
+            // 層の間のすき間。メダルの大きさに合わせる（直径1・厚さ0.16のとき 0.08）
+            float th = tuning.medalThickness;
+            float gap = Mathf.Max(th * 0.5f, d * 0.05f);
+            float jitter = d * 0.06f;
+
             int spawned = 0;
             for (int layer = 0; spawned < count && layer < 60; layer++)
             {
                 float offset = (layer % 2 == 1) ? step * 0.5f : 0f;
-                float y = tuning.medalThickness * 0.5f + 0.02f + layer * (tuning.medalThickness + 0.06f);
+                float y = th * 0.5f + d * 0.02f + layer * (th + gap);
                 for (int r = 0; r < rows && spawned < count; r++)
                 {
                     for (int c = 0; c < cols && spawned < count; c++)
@@ -412,9 +581,9 @@ namespace MedalPusher
                         float x = -half + c * step + offset;
                         float z = zMin + r * step + offset;
                         if (x > half || z > zMax) continue;
-                        x += Random.Range(-0.06f, 0.06f);
-                        z += Random.Range(-0.06f, 0.06f);
-                        var rot = Quaternion.Euler(Random.Range(-3f, 3f), Random.Range(0f, 360f), Random.Range(-3f, 3f));
+                        x += Random.Range(-jitter, jitter);
+                        z += Random.Range(-jitter, jitter);
+                        var rot = Quaternion.Euler(Random.Range(-2f, 2f), Random.Range(0f, 360f), Random.Range(-2f, 2f));
                         Pool.Spawn(new Vector3(x, y, z), rot);
                         spawned++;
                     }
@@ -422,15 +591,88 @@ namespace MedalPusher
             }
         }
 
+        // ================================================================
+        // 寸法の一括入力（Inspector でコンポーネントを右クリック）
+        // ================================================================
+
+        /// <summary>
+        /// 盤面モデル v3（MedalGame_Models_v3）を Scale Factor 10 で取り込んだ時の寸法を入れる。
+        /// メダル直径25mm → 0.25、厚さ2.4mm → 0.024。
+        /// </summary>
+        [ContextMenu("盤面モデル v3 の寸法を入れる")]
+        void ApplyModelV3Preset()
+        {
+            RecordUndo("盤面モデル v3 の寸法を入れる");
+            boardSource = BoardSource.Scene;
+
+            layout.boardWidth = 4.8f;          // 盤面の幅 480mm
+            layout.floorFrontZ = -1.1f;        // 盤面の前端
+            layout.wallHeight = 0.45f;
+            layout.wallThickness = 0.12f;
+            layout.pusherHeight = 0.32f;
+            layout.pusherDepth = 1.6f;
+            layout.pusherRetractZ = 1.6f;      // プッシャー前面（一番奥）。奥の壁の0.1手前まで戻り、上のメダルを壁で掻き落とす
+            layout.pusherSideGap = 0.02f;
+            layout.backWallOffset = 0.1f;      // 奥の壁の前面 Z = 1.6 + 0.1 = 1.7（モデルの壁の位置）
+            layout.backWallGap = 0.02f;
+            layout.centerHoleWidth = 3.0f;     // 仕切りの中心が X=±1.5
+            layout.holeTopY = -0.4f;
+            layout.holeBottomY = -0.78f;
+            layout.holeDepth = 0.43f;
+            layout.launcherHeight = 0.7f;
+            layout.launcherZFromWall = 0.2f;   // 奥の壁から0.2手前（Z=1.5）に落とす
+            layout.cameraPosition = new Vector3(0f, 2.28f, -2.62f);
+            layout.cameraRotation = new Vector3(17.8f, 0f, 0f);
+            layout.cameraFieldOfView = 56f;
+
+            tuning.pusherStroke = 0.6f;        // 前面が Z=1.6〜1.0 の間を往復する
+            tuning.medalDiameter = 0.25f;
+            tuning.medalThickness = 0.024f;
+            tuning.colliderSegments = 12;
+            tuning.physicsHz = 100;            // 薄いメダルは更新回数を多めにしないと震えやすい
+            tuning.solverIterations = 10;
+            tuning.contactOffset = 0.002f;     // 初期値 0.01 だと厚さ 0.024 のメダルが浮いて重なる
+            tuning.maxDepenetrationVelocity = 1f;
+            tuning.sleepThreshold = 0.001f;
+
+            rules.launchSpeed = 3.5f;
+            rules.launchUpSpeed = 0.3f;
+            rules.launchForwardSpeed = 0.1f;
+        }
+
+        /// <summary>コードで作る仮の盤面（最初の試作）の寸法に戻す。</summary>
+        [ContextMenu("試作の仮盤面に戻す")]
+        void ApplyGeneratedPreset()
+        {
+            RecordUndo("試作の仮盤面に戻す");
+            boardSource = BoardSource.Generate;
+            layout = new BoardLayout();
+            tuning = new PhysicsTuning();
+            var defaults = new RuleSettings();
+            rules.launchSpeed = defaults.launchSpeed;
+            rules.launchUpSpeed = defaults.launchUpSpeed;
+            rules.launchForwardSpeed = defaults.launchForwardSpeed;
+        }
+
+        void RecordUndo(string label)
+        {
+#if UNITY_EDITOR
+            UnityEditor.Undo.RecordObject(this, label);
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+        }
+
         /// <summary>負荷テスト用。盤面の上空からばらまく。</summary>
         public void AddTestMedals(int count)
         {
-            float half = BoardHalfWidth - tuning.medalDiameter * 0.6f;
-            float zMin = layout.floorFrontZ + 0.8f;
-            float zMax = layout.pusherRetractZ - 0.6f;
+            float d = tuning.medalDiameter;
+            float half = BoardHalfWidth - d * 0.6f;
+            float zMin = layout.floorFrontZ + d * 0.8f;
+            float zMax = layout.pusherRetractZ - d * 0.6f;
+            float y0 = layout.launcherHeight + d * 0.5f;
             for (int i = 0; i < count; i++)
             {
-                var pos = new Vector3(Random.Range(-half, half), 2.5f + i * 0.04f, Random.Range(zMin, zMax));
+                var pos = new Vector3(Random.Range(-half, half), y0 + i * tuning.medalThickness * 0.25f, Random.Range(zMin, zMax));
                 var rot = Quaternion.Euler(Random.Range(-20f, 20f), Random.Range(0f, 360f), Random.Range(-20f, 20f));
                 Pool.Spawn(pos, rot);
             }

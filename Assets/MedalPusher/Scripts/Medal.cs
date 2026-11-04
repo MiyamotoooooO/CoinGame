@@ -8,6 +8,7 @@ namespace MedalPusher
     public class Medal : MonoBehaviour
     {
         public Rigidbody Body { get; private set; }
+        public Collider Collider { get; private set; }
 
         /// <summary>プール内の active リストでの位置。-1 なら未使用。</summary>
         public int PoolIndex { get; internal set; } = -1;
@@ -20,7 +21,11 @@ namespace MedalPusher
         public bool WasInserted { get; private set; }
         public float InsertTime { get; private set; }
 
-        internal void Setup(Rigidbody body) => Body = body;
+        internal void Setup(Rigidbody body, Collider collider)
+        {
+            Body = body;
+            Collider = collider;
+        }
 
         internal void OnSpawn(int poolIndex)
         {

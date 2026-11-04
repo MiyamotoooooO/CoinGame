@@ -145,7 +145,7 @@ namespace MedalPusher
 
             Header("プッシャー");
             t.pusherCycleSeconds = Slider("1往復の秒数", t.pusherCycleSeconds, 1f, 10f, "0.0");
-            t.pusherStroke = Slider("ストローク", t.pusherStroke, 0.5f, 3f, "0.00");
+            t.pusherStroke = Slider("ストローク", t.pusherStroke, 0.1f, 3f, "0.00");
 
             Header("メダル");
             t.medalMass = Slider("重さ", t.medalMass, 0.1f, 5f, "0.00");
@@ -169,6 +169,7 @@ namespace MedalPusher
             if (newHz != hzIndex && newHz >= 0) { t.physicsHz = HzOptions[newHz]; changed = true; }
             t.solverIterations = Mathf.RoundToInt(Slider("ソルバー反復", t.solverIterations, 1, 30, "0"));
             t.sleepThreshold = Slider("スリープ閾値", t.sleepThreshold, 0.001f, 0.1f, "0.000");
+            t.contactOffset = Slider("接触オフセット", t.contactOffset, 0.001f, 0.02f, "0.000");
             t.maxDepenetrationVelocity = Slider("めり込み解消速度", t.maxDepenetrationVelocity, 0.5f, 10f, "0.0");
             bool interp = GUILayout.Toggle(t.interpolateMedals, " メダルの補間（なめらか表示・少し重い）");
             if (interp != t.interpolateMedals) { t.interpolateMedals = interp; changed = true; }
