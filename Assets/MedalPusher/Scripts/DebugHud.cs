@@ -174,6 +174,26 @@ namespace MedalPusher
             bool interp = GUILayout.Toggle(t.interpolateMedals, " メダルの補間（なめらか表示・少し重い）");
             if (interp != t.interpolateMedals) { t.interpolateMedals = interp; changed = true; }
 
+            Header("カメラ（正面視点）");
+            var l = game.layout;
+            bool camChanged = false;
+            float fov = Slider("視野角", l.cameraFieldOfView, 30f, 100f, "0");
+            float pitch = Slider("見下ろす角度", l.cameraRotation.x, 0f, 80f, "0");
+            float camY = Slider("高さ", l.cameraPosition.y, 0.5f, 6f, "0.00");
+            float camZ = Slider("前後", l.cameraPosition.z, -6f, 1f, "0.00");
+            float lens = Slider("レンズのゆがみ", l.cameraLensDistortion, 0f, 1f, "0.00");
+            if (!Mathf.Approximately(fov, l.cameraFieldOfView) || !Mathf.Approximately(pitch, l.cameraRotation.x) ||
+                !Mathf.Approximately(camY, l.cameraPosition.y) || !Mathf.Approximately(camZ, l.cameraPosition.z) ||
+                !Mathf.Approximately(lens, l.cameraLensDistortion))
+            {
+                l.cameraFieldOfView = fov;
+                l.cameraRotation = new Vector3(pitch, l.cameraRotation.y, l.cameraRotation.z);
+                l.cameraPosition = new Vector3(l.cameraPosition.x, camY, camZ);
+                l.cameraLensDistortion = lens;
+                camChanged = true;
+            }
+            if (camChanged) game.ApplyCameraPreset();
+
             Header("投入・テスト");
             r.insertInterval = Slider("発射間隔(秒)", r.insertInterval, 0.05f, 1f, "0.00");
             r.launchSpeed = Slider("発射の強さ", r.launchSpeed, 0.5f, 10f, "0.0");

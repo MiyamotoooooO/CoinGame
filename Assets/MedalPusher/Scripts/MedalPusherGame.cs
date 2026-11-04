@@ -401,7 +401,8 @@ namespace MedalPusher
             go.transform.rotation = Quaternion.Euler(55f, -25f, 0f);
         }
 
-        void ApplyCameraPreset()
+        /// <summary>カメラの位置・角度・視野角・ゆがみを反映する。調整パネルからも呼ばれる。</summary>
+        public void ApplyCameraPreset()
         {
             var cam = Camera.main;
             if (cam == null)
@@ -414,6 +415,10 @@ namespace MedalPusher
             float w = layout.boardWidth;
             float frontZ = layout.floorFrontZ;
             cam.nearClipPlane = tuning.medalDiameter * 0.1f;
+
+            var lens = cam.GetComponent<LensDistortion>();
+            if (lens == null) lens = cam.gameObject.AddComponent<LensDistortion>();
+            lens.strength = topView ? 0f : layout.cameraLensDistortion;
             if (topView)
             {
                 cam.fieldOfView = 55f;
@@ -597,7 +602,7 @@ namespace MedalPusher
 
         /// <summary>
         /// 盤面モデル v3（MedalGame_Models_v3）を Scale Factor 10 で取り込んだ時の寸法を入れる。
-        /// メダル直径25mm → 0.25、厚さ2.4mm → 0.024。
+        /// メダルは参考作品に合わせて大きめ（直径0.45 = 盤面の幅に約10枚並ぶ）にしている。
         /// </summary>
         [ContextMenu("盤面モデル v3 の寸法を入れる")]
         void ApplyModelV3Preset()
@@ -620,18 +625,20 @@ namespace MedalPusher
             layout.holeBottomY = -0.78f;
             layout.holeDepth = 0.43f;
             layout.launcherHeight = 0.7f;
-            layout.launcherZFromWall = 0.2f;   // 奥の壁から0.2手前（Z=1.5）に落とす
-            layout.cameraPosition = new Vector3(0f, 2.28f, -2.62f);
-            layout.cameraRotation = new Vector3(17.8f, 0f, 0f);
-            layout.cameraFieldOfView = 56f;
+            layout.launcherZFromWall = 0.3f;   // 奥の壁から0.3手前（Z=1.4）に落とす。メダルの半径0.225より大きくして壁に当てない
+            // 盤面を正面の少し上からのぞき込む視点
+            layout.cameraPosition = new Vector3(0f, 2.071f, -3.197f);
+            layout.cameraRotation = new Vector3(17.25f, 0f, 0f);
+            layout.cameraFieldOfView = 64f;
+            layout.cameraLensDistortion = 0.3f;
 
             tuning.pusherStroke = 0.6f;        // 前面が Z=1.6〜1.0 の間を往復する
-            tuning.medalDiameter = 0.25f;
-            tuning.medalThickness = 0.024f;
+            tuning.medalDiameter = 0.45f;      // 盤面の幅4.8に約10枚並ぶ大きさ
+            tuning.medalThickness = 0.045f;    // 直径の約1/10（実物のメダルと同じ比率）
             tuning.colliderSegments = 12;
             tuning.physicsHz = 100;            // 薄いメダルは更新回数を多めにしないと震えやすい
             tuning.solverIterations = 10;
-            tuning.contactOffset = 0.002f;     // 初期値 0.01 だと厚さ 0.024 のメダルが浮いて重なる
+            tuning.contactOffset = 0.004f;     // 初期値 0.01 だと薄いメダルが浮いて重なる。厚さの1割弱にする
             tuning.maxDepenetrationVelocity = 1f;
             tuning.sleepThreshold = 0.001f;
 

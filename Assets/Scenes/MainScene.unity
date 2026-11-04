@@ -164,7 +164,7 @@ MonoBehaviour:
     wallThickness: 0.12
     pusherHeight: 0.32
     pusherDepth: 1.6
-    pusherRetractZ: 1.4
+    pusherRetractZ: 1.6
     pusherSideGap: 0.02
     backWallOffset: 0.1
     backWallGap: 0.02
@@ -172,16 +172,17 @@ MonoBehaviour:
     holeTopY: -0.4
     holeBottomY: -0.78
     holeDepth: 0.43
-    cameraPosition: {x: 0, y: 2.28, z: -2.62}
-    cameraRotation: {x: 17.8, y: 0, z: 0}
-    cameraFieldOfView: 56
+    cameraPosition: {x: 0, y: 2.071, z: -3.197}
+    cameraRotation: {x: 17.25, y: 0, z: 0}
+    cameraFieldOfView: 64
+    cameraLensDistortion: 0.3
     launcherHeight: 0.7
-    launcherZFromWall: 0.2
+    launcherZFromWall: 0.3
   tuning:
     pusherCycleSeconds: 4
     pusherStroke: 0.6
-    medalDiameter: 0.25
-    medalThickness: 0.024
+    medalDiameter: 0.4
+    medalThickness: 0.045
     colliderSegments: 12
     medalMass: 1
     medalDrag: 0.05
@@ -196,7 +197,7 @@ MonoBehaviour:
     solverIterations: 10
     velocityIterations: 2
     sleepThreshold: 0.001
-    contactOffset: 0.002
+    contactOffset: 0.004
     maxDepenetrationVelocity: 1
     interpolateMedals: 0
   rules:
@@ -243,12 +244,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bda3855b8eb80044bff21f57d36708c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  monitorObjectName: MonitorFrame
+  gapAboveMonitor: 0.02
+  positionOffset: {x: 0, y: 0, z: 0}
+  fallbackCenter: {x: 0, y: 2.95, z: 1.94}
+  fallbackWidth: 4.28
   showLightBar: 1
   barColor: {r: 1, g: 0.85, b: 0.6, a: 1}
-  barGlow: 2.5
-  spotCount: 3
+  barGlow: 1.01
+  barHeight: 0.14
+  barWidthRatio: 1
+  spotCount: 2
   spotColor: {r: 1, g: 0.92, b: 0.8, a: 1}
-  spotIntensity: 2.5
+  spotIntensity: 1.09
   spotAngle: 75
   spotShadows: 0
   overrideAmbient: 1
@@ -512,7 +520,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7112bc1a0beb90b4a85e83a54c2f5de2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pixelHeight: 270
+  pixelHeight: 430
   screenMaterial: {fileID: 2100000, guid: e76ff0255bfd4292b4eece38ffc4ba92, type: 2}
   sortingOrder: -100
   effectEnabled: 1
