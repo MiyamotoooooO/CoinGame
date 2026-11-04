@@ -171,7 +171,7 @@ public class MedalController : MonoBehaviour
     private void Update()
     {
         // Pキー：Z軸マイナス方向へ控えめに吹き飛ぶ
-        if (Input.GetKeyDown(KeyCode.P))
+        /*if (Input.GetKeyDown(KeyCode.P))
         {
             BlowBackwardZ();
         }
@@ -181,7 +181,7 @@ public class MedalController : MonoBehaviour
         {
             lastRandomBlowFrame = Time.frameCount;
             BlowRandomCountMedals();
-        }
+        }*/
     }
 
     private void FixedUpdate()
