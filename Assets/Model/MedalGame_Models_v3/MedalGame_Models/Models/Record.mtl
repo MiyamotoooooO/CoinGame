@@ -1,0 +1,24 @@
+newmtl Vinyl
+Kd 0.050 0.050 0.060
+Ks 0.950 0.950 0.950
+Ns 476
+d 1.0
+
+newmtl LabelA
+Kd 0.950 0.700 0.200
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl VinylGroove
+Kd 0.090 0.090 0.100
+Ks 0.550 0.550 0.550
+Ns 280
+d 1.0
+
+newmtl LabelB
+Kd 0.360 0.290 0.660
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+

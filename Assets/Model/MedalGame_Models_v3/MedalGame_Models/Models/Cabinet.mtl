@@ -1,0 +1,18 @@
+newmtl CabinetBody
+Kd 0.110 0.080 0.190
+Ks 0.300 0.300 0.300
+Ns 157
+d 1.0
+
+newmtl CabinetTrim
+Kd 0.950 0.710 0.200
+Ks 0.800 0.800 0.800
+Ns 402
+d 1.0
+
+newmtl CabinetInner
+Kd 0.200 0.420 0.450
+Ks 0.400 0.400 0.400
+Ns 206
+d 1.0
+
