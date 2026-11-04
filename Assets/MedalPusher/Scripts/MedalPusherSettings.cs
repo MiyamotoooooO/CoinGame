@@ -43,9 +43,14 @@ namespace MedalPusher
         public float holeDepth = 2.98f;
 
         [Header("カメラ（シーンの盤面を使う時の視点）")]
-        public Vector3 cameraPosition = new Vector3(0f, 2.28f, -2.62f);
-        public Vector3 cameraRotation = new Vector3(17.8f, 0f, 0f);
-        public float cameraFieldOfView = 56f;
+        [Tooltip("盤面の手前の縁の少し後ろ・上から、盤面をのぞき込む位置")]
+        public Vector3 cameraPosition = new Vector3(0f, 2.071f, -3.197f);
+        [Tooltip("X が見下ろす角度")]
+        public Vector3 cameraRotation = new Vector3(17.25f, 0f, 0f);
+        [Tooltip("縦の視野角。広いほど近くが大きく、遠近感が強くなる")]
+        public float cameraFieldOfView = 64f;
+        [Tooltip("画面のたる型のゆがみ（弱い魚眼）。0でなし")]
+        [Range(0f, 1f)] public float cameraLensDistortion = 0.3f;
 
         [Header("発射口（左右の壁）")]
         public float launcherHeight = 2.0f;

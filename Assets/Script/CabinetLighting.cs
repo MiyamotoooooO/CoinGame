@@ -5,14 +5,14 @@ using UnityEngine.Rendering;
 namespace MedalPusher
 {
     /// <summary>
-    /// 筐体の上にライトバーを置き、盤面を明るく照らす。
+    /// モニターの上にライトバーを置き、盤面を明るく照らす。
     ///
     /// 使い方：シーン内の GameObject（MedalPusherGame が付いているものでよい）に付けて再生する。
-    /// 盤面の寸法は MedalPusherGame の layout から読むので、盤面の大きさを変えても位置が合う。
+    /// シーンにある MonitorFrame を探し、その真上にライトバーを置く。モニターを動かしても追従する。
     ///
     /// やること：
-    /// 1. 奥の壁のてっぺんに、光るライトバー（見た目）を置く
-    /// 2. ライトバーの下から盤面を照らすスポットライトを並べる
+    /// 1. モニターの真上に、光るライトバー（見た目）を置く
+    /// 2. ライトバーのすぐ下から盤面を照らすスポットライトを並べる
     /// 3. 環境光（影の部分の明るさ）を明るくする
     /// 4. Directional Light の強さをそろえる
     ///
@@ -21,19 +21,35 @@ namespace MedalPusher
     [DisallowMultipleComponent]
     public class CabinetLighting : MonoBehaviour
     {
+        [Header("置く場所")]
+        [Tooltip("この名前のオブジェクトの真上にライトバーを置く")]
+        public string monitorObjectName = "MonitorFrame";
+        [Tooltip("モニターの上端とライトバーのすき間")]
+        [Range(0f, 0.5f)] public float gapAboveMonitor = 0.02f;
+        [Tooltip("位置の微調整（上下や前後に少しずらしたいとき）")]
+        public Vector3 positionOffset = Vector3.zero;
+        [Tooltip("モニターが見つからないときに置く位置（ライトバーの中心）")]
+        public Vector3 fallbackCenter = new Vector3(0f, 2.95f, 1.94f);
+        [Tooltip("モニターが見つからないときのライトバーの幅")]
+        public float fallbackWidth = 4.28f;
+
         [Header("ライトバー（見た目）")]
         [Tooltip("オフにすると光る板を表示せず、明かりだけにする")]
         public bool showLightBar = true;
         public Color barColor = new Color(1f, 0.85f, 0.6f);
         [Tooltip("光る板の明るさ")]
-        [Range(0f, 8f)] public float barGlow = 2.5f;
+        [Range(0f, 8f)] public float barGlow = 1.5f;
+        [Tooltip("光る板の高さ")]
+        [Range(0.05f, 0.5f)] public float barHeight = 0.14f;
+        [Tooltip("モニターの幅に対する、ライトバーの幅の割合")]
+        [Range(0.3f, 1.5f)] public float barWidthRatio = 1f;
 
         [Header("スポットライト（盤面を上から照らす）")]
         [Range(1, 5)] public int spotCount = 3;
         public Color spotColor = new Color(1f, 0.92f, 0.8f);
-        [Range(0f, 8f)] public float spotIntensity = 2.5f;
+        [Range(0f, 8f)] public float spotIntensity = 3f;
         [Tooltip("光の広がりの角度")]
-        [Range(20f, 120f)] public float spotAngle = 75f;
+        [Range(20f, 120f)] public float spotAngle = 80f;
         [Tooltip("影を落とすか（オンにすると重くなる）")]
         public bool spotShadows = false;
 
@@ -48,13 +64,13 @@ namespace MedalPusher
         [Tooltip("シーンの Directional Light の強さ")]
         [Range(0f, 3f)] public float directionalIntensity = 1.1f;
 
-        // 盤面の寸法（MedalPusherGame が見つからないときはこの値を使う）
-        float boardWidth = 8f;
-        float wallHeight = 3f;
-        float frontZ = -4f;
-        float backWallFrontZ = 2.25f;
+        // 盤面の寸法（スポットライトの向き先に使う。MedalPusherGame が見つからないときはこの値）
+        float boardWidth = 4.8f;
+        float frontZ = -1.1f;
+        float backWallFrontZ = 1.5f;
 
         Transform root;
+        GameObject housingObject;
         Renderer barRenderer;
         Material barMaterial;
         Material housingMaterial;
@@ -78,7 +94,7 @@ namespace MedalPusher
         {
             if (!dirty) return;
             dirty = false;
-            if (root == null || spots.Count != spotCount) Build();
+            Build();   // 位置や大きさの変更も反映するため、作り直す
             Apply();
         }
 
@@ -92,35 +108,62 @@ namespace MedalPusher
         void ReadLayout()
         {
             var game = FindFirstObjectByType<MedalPusherGame>();
-            if (game == null)
-            {
-                Debug.LogWarning("CabinetLighting: MedalPusherGame が見つからないため、初期値の寸法で置きます。", this);
-                return;
-            }
+            if (game == null) return;
             boardWidth = game.layout.boardWidth;
-            wallHeight = game.layout.wallHeight;
             frontZ = game.layout.floorFrontZ;
             backWallFrontZ = game.BackWallFrontZ;
+        }
+
+        /// <summary>モニターの見た目の範囲を調べる。見つからなければ false。</summary>
+        bool TryGetMonitorBounds(out Bounds bounds)
+        {
+            bounds = default;
+            var monitor = GameObject.Find(monitorObjectName);
+            if (monitor == null) return false;
+
+            var renderers = monitor.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return false;
+
+            bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            return true;
         }
 
         void Build()
         {
             if (root != null) Destroy(root.gameObject);
+            if (barMaterial != null) Destroy(barMaterial);
+            if (housingMaterial != null) Destroy(housingMaterial);
             spots.Clear();
 
             root = new GameObject("CabinetLighting").transform;
 
-            // ---- ライトバー：奥の壁のてっぺんに、暗い枠と、手前を向いた光る板を置く
-            float barWidth = boardWidth + 0.2f;
-            var housing = CreateCube("LightBar_Housing",
-                new Vector3(0f, wallHeight + 0.2f, backWallFrontZ + 0.25f),
-                new Vector3(barWidth, 0.4f, 0.5f));
+            // ---- 置く位置：モニターの上端のすぐ上、モニターの前面にそろえる
+            Vector3 center;
+            float width;
+            if (TryGetMonitorBounds(out var monitor))
+            {
+                center = new Vector3(monitor.center.x, monitor.max.y + gapAboveMonitor + barHeight * 0.5f, monitor.min.z);
+                width = monitor.size.x * barWidthRatio;
+            }
+            else
+            {
+                Debug.LogWarning($"CabinetLighting: 「{monitorObjectName}」が見つからないため、Fallback Center の位置に置きます。", this);
+                center = fallbackCenter;
+                width = fallbackWidth * barWidthRatio;
+            }
+            center += positionOffset;
+
+            // ---- ライトバー：暗い枠と、手前を向いた光る板
+            housingObject = CreateCube("LightBar_Housing",
+                center + new Vector3(0f, 0f, 0.1f),
+                new Vector3(width + 0.06f, barHeight + 0.06f, 0.2f));
             housingMaterial = ProtoAssets.MakeMaterial(new Color(0.08f, 0.07f, 0.09f), 0.3f, 0.5f);
-            housing.GetComponent<Renderer>().sharedMaterial = housingMaterial;
+            housingObject.GetComponent<Renderer>().sharedMaterial = housingMaterial;
 
             var bar = CreateCube("LightBar_Glow",
-                new Vector3(0f, wallHeight + 0.2f, backWallFrontZ - 0.02f),
-                new Vector3(barWidth - 0.3f, 0.22f, 0.06f));
+                center + new Vector3(0f, 0f, -0.01f),
+                new Vector3(width, barHeight, 0.03f));
             barRenderer = bar.GetComponent<Renderer>();
             barMaterial = ProtoAssets.MakeMaterial(barColor, 0f, 0.8f);
             barMaterial.EnableKeyword("_EMISSION");
@@ -128,15 +171,17 @@ namespace MedalPusher
             barRenderer.shadowCastingMode = ShadowCastingMode.Off;
 
             // ---- スポットライト：ライトバーのすぐ下から、盤面の手前寄りへ向ける
-            float hw = boardWidth * 0.5f;
-            Vector3 aimCenter = new Vector3(0f, 0f, frontZ + 1.5f);
+            float spread = Mathf.Min(width, boardWidth) * 0.5f * 0.6f;
+            float lightY = center.y - barHeight * 0.5f - 0.05f;
+            float lightZ = center.z - 0.1f;
+            float aimZ = Mathf.Lerp(frontZ, backWallFrontZ, 0.35f);
             for (int i = 0; i < spotCount; i++)
             {
-                float x = spotCount == 1 ? 0f : Mathf.Lerp(-hw * 0.65f, hw * 0.65f, i / (float)(spotCount - 1));
+                float x = center.x + (spotCount == 1 ? 0f : Mathf.Lerp(-spread, spread, i / (float)(spotCount - 1)));
                 var go = new GameObject($"Spot_{i + 1}");
                 go.transform.SetParent(root, false);
-                go.transform.position = new Vector3(x, wallHeight - 0.05f, backWallFrontZ - 0.2f);
-                Vector3 target = new Vector3(x * 0.8f, aimCenter.y, aimCenter.z);
+                go.transform.position = new Vector3(x, lightY, lightZ);
+                Vector3 target = new Vector3(x * 0.8f, 0f, aimZ);
                 go.transform.rotation = Quaternion.LookRotation(target - go.transform.position);
 
                 var light = go.AddComponent<Light>();
@@ -162,7 +207,7 @@ namespace MedalPusher
         {
             if (barRenderer != null)
             {
-                barRenderer.transform.parent.Find("LightBar_Housing")?.gameObject.SetActive(showLightBar);
+                housingObject.SetActive(showLightBar);
                 barRenderer.gameObject.SetActive(showLightBar);
                 barMaterial.color = barColor;
                 barMaterial.SetColor("_EmissionColor", barColor * barGlow);
