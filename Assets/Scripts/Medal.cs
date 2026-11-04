@@ -21,6 +21,12 @@ namespace MedalPusher
         public bool WasInserted { get; private set; }
         public float InsertTime { get; private set; }
 
+        private void Awake()
+        {
+            // アタッチされているオブジェクトのタグを自動的に "Coin" に設定する
+            gameObject.tag = "Coin";
+        }
+
         internal void Setup(Rigidbody body, Collider collider)
         {
             Body = body;
