@@ -692,15 +692,63 @@ namespace MedalPusher
             float startT = Mathf.Clamp01(rules.startPusherPosition);
             float pusherFront = layout.pusherRetractZ - tuning.pusherStroke * startT;
 
-            // 下段：盤面の前端 〜 プッシャーの前面
             float half = BoardHalfWidth - r - margin;
+            float upperHalf = BoardHalfWidth - layout.pusherSideGap - r - margin;
+
+            if (rules.prefillStyle == PrefillStyle.Grid)
+            {
+                // 下段：盤面の前端から奥へ。上段：プッシャーの前の縁から奥へ（左右いっぱい）
+                GridMedals(half, layout.floorFrontZ + r + margin, pusherFront - r - margin,
+                    0f, rules.prefillLowerRows);
+                GridMedals(upperHalf, pusherFront + r + margin, BackWallFrontZ - r - margin,
+                    layout.pusherHeight, rules.prefillUpperRows);
+                return;
+            }
+
+            // 下段：盤面の前端 〜 プッシャーの前面
             ScatterMedals(rules.prefillMedals, half,
                 layout.floorFrontZ + r + margin, pusherFront - r - margin, 0f);
 
             // 上段：プッシャーの上面のうち、奥の壁より手前の部分（前の縁から少しはみ出してもよい）
-            float upperHalf = BoardHalfWidth - layout.pusherSideGap - r - margin;
             ScatterMedals(rules.prefillUpperMedals, upperHalf,
                 pusherFront + r * 0.8f, BackWallFrontZ - r - margin, layout.pusherHeight);
+        }
+
+        /// <summary>
+        /// 範囲の中に、メダルをすき間なく（六角形の詰め方で）平らに並べ、rules.prefillLayers 段重ねる。
+        /// 2段目より上は、下の段の3枚のくぼみに乗るようにずらす。
+        /// zMin から奥へ maxRows 列まで並べる（0 なら範囲いっぱい）。
+        /// </summary>
+        void GridMedals(float halfWidth, float zMin, float zMax, float baseY, int maxRows)
+        {
+            if (zMax < zMin) zMin = zMax = (zMin + zMax) * 0.5f; // 範囲が狭すぎる時は1列だけ
+
+            float d = tuning.medalDiameter;
+            float th = tuning.medalThickness;
+            float step = d * 1.02f;                       // 横の間隔（少しだけすき間を空ける）
+            float rowPitch = step * 0.8660254f;           // 列の間隔（六角形の詰め方）
+            int rows = Mathf.FloorToInt((zMax - zMin) / rowPitch) + 1;
+            if (maxRows > 0) rows = Mathf.Min(rows, maxRows);
+
+            for (int layer = 0; layer < Mathf.Max(1, rules.prefillLayers); layer++)
+            {
+                // 段ごとにずらして、上の段が下の段のくぼみに乗るようにする
+                float shiftX = (layer % 2) * step * 0.5f;
+                float shiftZ = (layer % 3) * rowPitch / 3f;
+                float y = baseY + th * 0.5f + d * 0.01f + layer * (th + d * 0.02f);
+
+                for (int row = 0; row < rows; row++)
+                {
+                    float z = zMin + row * rowPitch + shiftZ;
+                    if (z > zMax + 1e-4f) break;
+                    float offset = (row % 2) * step * 0.5f + shiftX;
+                    for (float x = -halfWidth + offset; x <= halfWidth + 1e-4f; x += step)
+                    {
+                        var rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                        Pool.Spawn(new Vector3(x, y, z), rot);
+                    }
+                }
+            }
         }
 
         /// <summary>

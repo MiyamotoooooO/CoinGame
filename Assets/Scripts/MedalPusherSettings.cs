@@ -211,6 +211,13 @@ namespace MedalPusher
         public bool interpolateMedals = false;
     }
 
+    /// <summary>開始時のメダルの並べ方。</summary>
+    public enum PrefillStyle
+    {
+        Grid,   // すき間なく並べ、段を重ねる（きれいな配置）
+        Random  // ランダムに散らして山にする
+    }
+
     /// <summary>
     /// 仮ルール。ラウンド構造の最小版（投入上限とノルマ）。
     /// </summary>
@@ -229,10 +236,18 @@ namespace MedalPusher
         [Tooltip("企画書: 端の穴は通常0pt（フォークで+2pt）")]
         public int sidePoints = 0;
         public int sideMedalReturn = 0;
-        [Header("初期盤面（ランダムに散らばった状態で始まる）")]
-        [Tooltip("下段（プッシャーの前の盤面）に置く枚数")]
+        [Header("初期盤面")]
+        [Tooltip("Grid: すき間なく並べて段を重ねる / Random: ランダムに散らして山にする")]
+        public PrefillStyle prefillStyle = PrefillStyle.Grid;
+        [Tooltip("Grid の時に重ねる段の数")]
+        [Range(1, 5)] public int prefillLayers = 2;
+        [Tooltip("Grid の時に上段に並べる列の数（プッシャーの前の縁から奥へ）。0 なら上面いっぱい")]
+        public int prefillUpperRows = 2;
+        [Tooltip("Grid の時に下段に並べる列の数（盤面の前端から奥へ）。0 ならプッシャーの前までいっぱい")]
+        public int prefillLowerRows = 0;
+        [Tooltip("Random の時に下段（プッシャーの前の盤面）に置く枚数")]
         public int prefillMedals = 120;
-        [Tooltip("上段（プッシャーの上面）に置く枚数")]
+        [Tooltip("Random の時に上段（プッシャーの上面）に置く枚数")]
         public int prefillUpperMedals = 20;
         [Tooltip("開始時のプッシャーの位置。0 = 一番奥、1 = 一番手前。上段にメダルを置く場所を作るため、手前から始める")]
         [Range(0f, 1f)] public float startPusherPosition = 1f;
