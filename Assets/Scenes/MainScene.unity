@@ -280,7 +280,7 @@ MonoBehaviour:
     pusherDepth: 1.1424001
     pusherRetractZ: 0.71400005
     pusherSideGap: 0.014280001
-    backWallOffset: 0.07140001
+    backWallOffset: 0.55
     backWallGap: 0.014280001
     centerHoleWidth: 2.1420002
     holeTopY: -0.28560004
@@ -301,10 +301,10 @@ MonoBehaviour:
     medalMass: 1
     medalDrag: 0.05
     medalAngularDrag: 0.5
-    medalDynamicFriction: 0.3
+    medalDynamicFriction: 0.15
     medalStaticFriction: 0.35
     medalBounciness: 0
-    boardDynamicFriction: 0.25
+    boardDynamicFriction: 0.15
     boardStaticFriction: 0.3
     gravityScale: 1.5
     physicsHz: 100
@@ -322,6 +322,10 @@ MonoBehaviour:
     centerMedalReturn: 1
     sidePoints: 0
     sideMedalReturn: 0
+    prefillStyle: 0
+    prefillLayers: 2
+    prefillUpperRows: 2
+    prefillLowerRows: 0
     prefillMedals: 120
     prefillUpperMedals: 20
     startPusherPosition: 1
@@ -360,7 +364,7 @@ MonoBehaviour:
     introSpeed: 1
     recordSpinSpeed: 120
   visuals:
-    medalModel: {fileID: 919132149155446097, guid: a6c2db07f76a2ff48b708a95ecb140f9, type: 3}
+    medalModel: {fileID: 919132149155446097, guid: 182d4a6e3d3cbd8419cd08f55740bd03, type: 3}
     overrideMedalColors: 1
     medalFaceColor: {r: 0.9411765, g: 0.627451, b: 0.1882353, a: 1}
     medalRimColor: {r: 0.9098039, g: 0.59607846, b: 0.17254902, a: 1}
