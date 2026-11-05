@@ -235,15 +235,11 @@ public class CoinDropTriggerManager : MonoBehaviour
             spawnIntervalTimer = 0f; // 切り替わった瞬間にすぐ発動させる
         }
 
-        // 落下地点のTriggerに触れたメダルを削除する（プール運用や通常のDestroyに対応）
+        // 落下地点のTriggerに触れたメダルを削除する
+        // MedalPusher のメダル（プールで使い回す）は消さない。この下にある穴の判定（DropZone）が
+        // ポイントとメダルの払い戻しを数えてからプールに戻すため。ここで Destroy するとエラーになり、得点も入らない
         MedalPusher.Medal medalComponent = other.GetComponent<MedalPusher.Medal>();
-        if (medalComponent != null && medalComponent.IsActiveInPool)
-        {
-            // プール管理システムを使っている場合の処理（必要に応じて呼び出し）
-            // 例: メダルプーラー側で回収処理があればここに記述
-            Destroy(other.gameObject);
-        }
-        else
+        if (medalComponent == null)
         {
             Destroy(other.gameObject);
         }

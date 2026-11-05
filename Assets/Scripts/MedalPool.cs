@@ -151,7 +151,8 @@ namespace MedalPusher
 
         public void ApplyBodySettings()
         {
-            for (int i = 0; i < all.Count; i++) ApplyBody(all[i]);
+            RemoveDestroyed();
+            for (int i = 0; i < all.Count; i++) if (all[i] != null) ApplyBody(all[i]);
         }
 
         public Medal Spawn(Vector3 position, Quaternion rotation)
@@ -191,11 +192,41 @@ namespace MedalPusher
 
         public void DespawnAll()
         {
+            RemoveDestroyed();
             for (int i = active.Count - 1; i >= 0; i--) Despawn(active[i]);
         }
 
+        /// <summary>
+        /// ほかのスクリプトに Destroy されたメダルをリストから外す。
+        /// 外さないと、消えたメダルに触れるたびに MissingReferenceException が出る。
+        /// </summary>
+        void RemoveDestroyed()
+        {
+            int removed = 0;
+            for (int i = active.Count - 1; i >= 0; i--)
+            {
+                if (active[i] != null) continue;
+                int last = active.Count - 1;
+                active[i] = active[last];
+                if (active[i] != null) active[i].PoolIndex = i;
+                active.RemoveAt(last);
+                removed++;
+            }
+            if (removed == 0) return;
+            all.RemoveAll(m => m == null);
+            if (!warnedDestroyed)
+            {
+                warnedDestroyed = true;
+                Debug.LogWarning("[MedalPusher] ほかのスクリプトがメダルを Destroy しました。メダルは使い回しているので、" +
+                                 "消さずに MedalPusherGame に任せてください（穴の判定でポイントを数えてからプールに戻します）。");
+            }
+        }
+
+        bool warnedDestroyed;
+
         public int CountAwake()
         {
+            RemoveDestroyed();
             int n = 0;
             for (int i = 0; i < active.Count; i++)
                 if (!active[i].Body.IsSleeping()) n++;
