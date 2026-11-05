@@ -58,6 +58,87 @@ namespace MedalPusher
         public float launcherZFromWall = 0.6f;
     }
 
+    /// <summary>ラウンド1つ分の設定。サムネイル・タイトルは仮。</summary>
+    [Serializable]
+    public class RoundDefinition
+    {
+        [Tooltip("モニターのフィルムとマスコットの上に出る名前")]
+        public string title = "ラウンド（仮）";
+        [Tooltip("このラウンドのノルマ（pt）")]
+        public int quota = 150;
+        [Tooltip("ボス戦。モニターにHPバーを出し、ノルマ分のHPを削り切ったらクリア")]
+        public bool isBoss;
+        [Tooltip("フィルムに出すサムネイル。空なら仮の色の板を出す")]
+        public Texture2D thumbnail;
+        [Tooltip("サムネイルが空の時の仮の色")]
+        public Color placeholderColor = new Color(0.2f, 0.45f, 0.5f);
+
+        public RoundDefinition() { }
+
+        public RoundDefinition(string title, int quota, bool isBoss, Color placeholderColor)
+        {
+            this.title = title;
+            this.quota = quota;
+            this.isBoss = isBoss;
+            this.placeholderColor = placeholderColor;
+        }
+    }
+
+    /// <summary>エリア1つ分の設定（3ラウンド：小・中・ボス）。最後のラウンドのあとにショップが開く。</summary>
+    [Serializable]
+    public class AreaDefinition
+    {
+        [Tooltip("モニター上部に出るエリアのタイトル（仮）")]
+        public string title = "エリア（仮）";
+        public RoundDefinition[] rounds = new RoundDefinition[0];
+    }
+
+    /// <summary>メダルの見た目。</summary>
+    [Serializable]
+    public class VisualSettings
+    {
+        [Tooltip("メダルの見た目に使うモデル（例: Models/Medal.obj）。空ならコードで作った仮のメダル。" +
+                 "当たり判定はモデルに関係なく、Tuning の直径・厚さで作る")]
+        public GameObject medalModel;
+        [Header("メダルの色（モデルの形はそのままで、色だけ変える）")]
+        [Tooltip("オフにすると、モデルに付いている元の色（金色）のまま")]
+        public bool overrideMedalColors = true;
+        [Tooltip("表面の色（参考作品の銅色）")]
+        public Color medalFaceColor = new Color(0.85f, 0.52f, 0.25f);   // #D9853F
+        [Tooltip("ふちの色。表面より少し濃くすると立体感が出る")]
+        public Color medalRimColor = new Color(0.72f, 0.35f, 0.16f);    // #B85A29
+        [Tooltip("つや。低いほど白い光の反射が減り、参考作品のような落ち着いた見た目になる")]
+        [Range(0f, 1f)] public float medalSmoothness = 0.25f;
+
+        [Header("影")]
+        [Tooltip("メダルが影を落とす（オンにすると重なった所が暗くなり、少し重くなる）")]
+        public bool medalCastShadows = false;
+        [Tooltip("メダルが影を受ける（オフにすると筐体やほかのメダルの影で暗くならない）")]
+        public bool medalReceiveShadows = false;
+    }
+
+    /// <summary>筐体のモニターに映す内容の設定。</summary>
+    [Serializable]
+    public class MonitorSettings
+    {
+        [Tooltip("エリアの始めに演出を流す。オフにするとすぐプレイが始まる")]
+        public bool playIntro = true;
+        [Tooltip("モニターの画面のオブジェクト名")]
+        public string screenObjectName = "MonitorScreen";
+        [Tooltip("マスコットの画像。空なら仮の図形を出す")]
+        public Texture2D mascot;
+        [Tooltip("モニターの映像の解像度（横）。縦は画面の比率 2.5:1 から決まる")]
+        public int resolutionWidth = 1500;
+        [Tooltip("映像が左右反転して見える時にオン")]
+        public bool flipX;
+        [Tooltip("映像が上下反転して見える時にオン")]
+        public bool flipY;
+        [Tooltip("演出全体の速さ。2 で2倍速")]
+        [Range(0.25f, 4f)] public float introSpeed = 1f;
+        [Tooltip("レコードの回る速さ（度/秒）")]
+        public float recordSpinSpeed = 120f;
+    }
+
     public enum BoardSource
     {
         Scene,    // シーンに置いたモデル（Playfield、Pusher など）を盤面として使う
@@ -138,9 +219,8 @@ namespace MedalPusher
     {
         [Header("資源")]
         public int startMedals = 50;
-        [Header("ラウンド")]
+        [Header("ラウンド（ノルマは Areas の各ラウンドで決める）")]
         public int insertLimit = 30;
-        public int quota = 300;
         [Tooltip("投入を使い切ってから判定するまでの待ち時間（秒）")]
         public float graceSeconds = 5f;
         [Header("落下時の扱い")]
@@ -149,8 +229,13 @@ namespace MedalPusher
         [Tooltip("企画書: 端の穴は通常0pt（フォークで+2pt）")]
         public int sidePoints = 0;
         public int sideMedalReturn = 0;
-        [Header("初期盤面")]
+        [Header("初期盤面（ランダムに散らばった状態で始まる）")]
+        [Tooltip("下段（プッシャーの前の盤面）に置く枚数")]
         public int prefillMedals = 120;
+        [Tooltip("上段（プッシャーの上面）に置く枚数")]
+        public int prefillUpperMedals = 20;
+        [Tooltip("開始時のプッシャーの位置。0 = 一番奥、1 = 一番手前。上段にメダルを置く場所を作るため、手前から始める")]
+        [Range(0f, 1f)] public float startPusherPosition = 1f;
         [Tooltip("開始直後はメダルが落ち着くまでカウントしない（秒）")]
         public float warmupSeconds = 4f;
         [Header("投入（左右の発射口）")]

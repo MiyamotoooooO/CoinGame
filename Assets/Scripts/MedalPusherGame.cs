@@ -5,11 +5,14 @@ namespace MedalPusher
 {
     public enum GameState
     {
-        Warmup,  // 開始直後。初期メダルが落ち着くまでカウントしない
-        Playing, // 投入できる
-        Grace,   // 投入を使い切った。落ちてくるメダルを待つ
-        Cleared, // ノルマ達成
-        Failed   // ノルマ未達
+        Intro,    // エリアの始まりの演出中。カウントしない
+        Warmup,   // 開始直後。初期メダルが落ち着くまでカウントしない
+        Playing,  // 投入できる
+        Grace,    // 投入を使い切った。落ちてくるメダルを待つ
+        Cleared,  // ノルマ達成
+        Failed,   // ノルマ未達
+        Shop,     // エリアの最後（ボス）のあと。ショップ（仮）
+        Finished  // 用意したエリアをすべて終えた
     }
 
     /// <summary>
@@ -32,9 +35,15 @@ namespace MedalPusher
         public PhysicsTuning tuning = new PhysicsTuning();
         [Header("ルール（仮）")]
         public RuleSettings rules = new RuleSettings();
+        [Header("エリアとラウンド（6エリアまで増やせる。タイトル・サムネイルは仮）")]
+        public AreaDefinition[] areas = DefaultAreas();
+        [Header("モニター")]
+        public MonitorSettings monitor = new MonitorSettings();
+        [Header("見た目（右クリック →「メダルの見た目をモデルにする」で Medal.obj を入れられる）")]
+        public VisualSettings visuals = new VisualSettings();
 
         // ---- 今後レコード効果をつなぐためのフック ----
-        /// <summary>メダルが穴に落ちた（Warmup中は呼ばれない）</summary>
+        /// <summary>メダルが穴に落ちた（Intro・Warmup中は呼ばれない）</summary>
         public event System.Action<Medal, DropZoneType> MedalDropped;
         /// <summary>プレイヤーがメダルを投入した</summary>
         public event System.Action<Medal> MedalInserted;
@@ -43,6 +52,10 @@ namespace MedalPusher
         public GameState State { get; private set; }
         public float StateTime { get; private set; }
         public int RoundNumber { get; private set; }
+        /// <summary>今のエリアの番号（0から）</summary>
+        public int AreaIndex { get; private set; }
+        /// <summary>エリアの中のラウンドの番号（0から）</summary>
+        public int RoundIndex { get; private set; }
         public int OwnedMedals { get; private set; }
         public int InsertedThisRound { get; private set; }
         public int Points { get; private set; }
@@ -54,6 +67,15 @@ namespace MedalPusher
         public Pusher Pusher { get; private set; }
         public MedalLauncher Launcher { get; private set; }
         public DebugHud Hud { get; private set; }
+        public MonitorDisplay Monitor { get; private set; }
+
+        public AreaDefinition CurrentArea => areas[Mathf.Clamp(AreaIndex, 0, areas.Length - 1)];
+        public RoundDefinition CurrentRound => CurrentArea.rounds[Mathf.Clamp(RoundIndex, 0, CurrentArea.rounds.Length - 1)];
+        public int CurrentQuota => CurrentRound.quota;
+        public bool IsBossRound => CurrentRound.isBoss;
+        public bool IsLastRoundOfArea => RoundIndex >= CurrentArea.rounds.Length - 1;
+        /// <summary>ボスの残りHP（ノルマからポイントを引いた値）</summary>
+        public int BossHp => Mathf.Max(0, CurrentQuota - Points);
 
         public float BoardHalfWidth => layout.boardWidth * 0.5f;
         public float BackWallFrontZ => layout.pusherRetractZ + layout.backWallOffset;
@@ -67,6 +89,7 @@ namespace MedalPusher
         Transform boardRoot;
         readonly List<Collider> boardColliders = new List<Collider>();
         bool topView;
+        float resetTime;
 
         static readonly Color FloorColor = new Color(0.16f, 0.18f, 0.26f);
         static readonly Color WallColor = new Color(0.30f, 0.32f, 0.40f);
@@ -95,7 +118,9 @@ namespace MedalPusher
             ApplyCameraPreset();
 
             Pool = gameObject.AddComponent<MedalPool>();
-            Pool.Init(tuning, ProtoAssets.MakeMaterial(MedalColor, 0.8f, 0.6f), medalPhysicMaterial,
+            // 仮のメダル（モデルが無い時）は金属っぽさを控えめにする。強いと、映り込む景色が無いため暗く沈む
+            var medalColor = visuals.overrideMedalColors ? visuals.medalFaceColor : MedalColor;
+            Pool.Init(tuning, visuals, ProtoAssets.MakeMaterial(medalColor, 0.2f, 0.5f), medalPhysicMaterial,
                 rules.prefillMedals + 150);
 
             Launcher = gameObject.AddComponent<MedalLauncher>();
@@ -103,6 +128,10 @@ namespace MedalPusher
 
             Hud = gameObject.AddComponent<DebugHud>();
             Hud.Init(this);
+
+            EnsureAreas();
+            Monitor = gameObject.AddComponent<MonitorDisplay>();
+            Monitor.Init(this);
 
             ApplyTuning();
             ResetGame();
@@ -252,18 +281,25 @@ namespace MedalPusher
         /// </summary>
         void CheckModelScale(Transform playfield)
         {
-            if (playfield == null) return;
-            var renderers = playfield.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) return;
+            float actual = MeasureWidth(playfield);
+            if (actual <= 0f) return;
+            float expected = layout.boardWidth + layout.wallThickness * 2f;
+            if (Mathf.Abs(actual - expected) > expected * 0.1f)
+            {
+                Debug.LogWarning($"[MedalPusher] Playfield の幅が {actual:0.###} ですが、Layout では {expected:0.###} の想定です。" +
+                                 "MedalPusherGame を右クリック →「今の設定をシーンの盤面の大きさに合わせる」で合わせられます。");
+            }
+        }
+
+        /// <summary>モデルの見た目の横幅。見つからなければ -1。</summary>
+        static float MeasureWidth(Transform root)
+        {
+            if (root == null) return -1f;
+            var renderers = root.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return -1f;
             var b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
-            float expected = layout.boardWidth + layout.wallThickness * 2f;
-            if (Mathf.Abs(b.size.x - expected) > expected * 0.1f)
-            {
-                Debug.LogWarning($"[MedalPusher] Playfield の幅が {b.size.x:0.###} ですが、Layout では {expected:0.###} の想定です。" +
-                                 "モデルの Scale Factor（盤面モデル v3 なら 10）か、Layout の寸法を確認してください。" +
-                                 "（MedalPusherGame を右クリック →「盤面モデル v3 の寸法を入れる」でも合わせられます）");
-            }
+            return b.size.x;
         }
 
         static Transform Pick(Transform assigned, string name) => assigned != null ? assigned : FindByName(name);
@@ -447,12 +483,35 @@ namespace MedalPusher
         public void ResetGame()
         {
             Pool.DespawnAll();
-            Pusher.ResetPhase();
+            Pusher.ResetPhase(rules.startPusherPosition);
             OwnedMedals = rules.startMedals;
             RoundNumber = 1;
+            AreaIndex = 0;
+            RoundIndex = 0;
+            resetTime = Time.time;
             StartRound();
-            Prefill(rules.prefillMedals);
-            SetState(GameState.Warmup);
+            Prefill();
+            BeginArea();
+        }
+
+        /// <summary>エリアの始まり。モニターの演出を流し、終わったらプレイを始める。</summary>
+        void BeginArea()
+        {
+            Monitor.ShowArea(AreaIndex, RoundIndex);
+            if (monitor.playIntro && Monitor.CanPlayIntro)
+            {
+                SetState(GameState.Intro);
+                Monitor.PlayIntro(OnIntroFinished);
+            }
+            else
+            {
+                SetState(GameState.Warmup);
+            }
+        }
+
+        void OnIntroFinished()
+        {
+            if (State == GameState.Intro) SetState(GameState.Warmup);
         }
 
         void StartRound()
@@ -462,12 +521,45 @@ namespace MedalPusher
             CenterDrops = SideDrops = LostDrops = 0;
         }
 
-        public void NextRound()
+        /// <summary>Enter キー：演出のスキップ → 次のラウンド → ショップ → 次のエリア と進める。</summary>
+        public void Advance()
         {
-            if (State != GameState.Cleared) return;
+            switch (State)
+            {
+                case GameState.Intro:
+                    Monitor.SkipIntro();
+                    break;
+                case GameState.Cleared:
+                    if (IsLastRoundOfArea) SetState(GameState.Shop);
+                    else NextRound();
+                    break;
+                case GameState.Shop:
+                    NextArea();
+                    break;
+            }
+        }
+
+        void NextRound()
+        {
+            RoundIndex++;
             RoundNumber++;
             StartRound();
+            Monitor.ShowRound(RoundIndex);
             SetState(GameState.Playing);
+        }
+
+        void NextArea()
+        {
+            if (AreaIndex + 1 >= areas.Length)
+            {
+                SetState(GameState.Finished);
+                return;
+            }
+            AreaIndex++;
+            RoundIndex = 0;
+            RoundNumber++;
+            StartRound();
+            BeginArea();
         }
 
         void SetState(GameState s)
@@ -484,27 +576,55 @@ namespace MedalPusher
             switch (State)
             {
                 case GameState.Warmup:
-                    if (StateTime >= rules.warmupSeconds) SetState(GameState.Playing);
+                    // リセット直後だけ、初期メダルが落ち着くまで待つ（演出中の時間も含めて数える）
+                    if (Time.time - resetTime >= rules.warmupSeconds) SetState(GameState.Playing);
                     break;
 
                 case GameState.Playing:
                     if (rules.freePlay) break;
-                    if (Points >= rules.quota) SetState(GameState.Cleared);
+                    if (Points >= CurrentQuota) SetState(GameState.Cleared);
                     else if (!HasInsertsLeft) SetState(GameState.Grace);
                     break;
 
                 case GameState.Grace:
                     if (rules.freePlay || HasInsertsLeft) SetState(GameState.Playing); // 払い戻しで復活した等
-                    else if (Points >= rules.quota) SetState(GameState.Cleared);
+                    else if (Points >= CurrentQuota) SetState(GameState.Cleared);
                     else if (StateTime >= rules.graceSeconds) SetState(GameState.Failed);
                     break;
             }
 
             if (InputCompat.Down(GameKey.Reset)) ResetGame();
-            if (InputCompat.Down(GameKey.NextRound)) NextRound();
+            if (InputCompat.Down(GameKey.NextRound)) Advance();
             if (InputCompat.Down(GameKey.AddMedals)) AddTestMedals(50);
             if (InputCompat.Down(GameKey.PausePusher)) Pusher.paused = !Pusher.paused;
-            if (InputCompat.Down(GameKey.ToggleCamera)) { topView = !topView; ApplyCameraPreset(); }
+            if (InputCompat.Down(GameKey.ToggleCamera) && State != GameState.Intro) { topView = !topView; ApplyCameraPreset(); }
+        }
+
+        // ================================================================
+        // エリアとラウンドの初期値
+        // ================================================================
+
+        /// <summary>エリア1（仮）：150pt → 200pt → ボス300pt。タイトルとサムネイルは仮。</summary>
+        static AreaDefinition[] DefaultAreas() => new[]
+        {
+            new AreaDefinition
+            {
+                title = "エリア1 ～仮タイトル～",
+                rounds = new[]
+                {
+                    new RoundDefinition("ラウンド1（仮）", 150, false, new Color(0.20f, 0.45f, 0.50f)),
+                    new RoundDefinition("ラウンド2（仮）", 200, false, new Color(0.25f, 0.50f, 0.30f)),
+                    new RoundDefinition("ボス（仮）", 300, true, new Color(0.60f, 0.15f, 0.15f)),
+                }
+            }
+        };
+
+        /// <summary>Inspector でエリアやラウンドが空にされていても動くようにする。</summary>
+        void EnsureAreas()
+        {
+            if (areas == null || areas.Length == 0) areas = DefaultAreas();
+            foreach (var a in areas)
+                if (a.rounds == null || a.rounds.Length == 0) a.rounds = DefaultAreas()[0].rounds;
         }
 
         public bool TryInsert(Vector3 position, Vector3 velocity)
@@ -529,7 +649,7 @@ namespace MedalPusher
             if (medal.Consumed) return;
             medal.Consumed = true;
 
-            if (State != GameState.Warmup)
+            if (State != GameState.Warmup && State != GameState.Intro)
             {
                 bool scoring = State == GameState.Playing || State == GameState.Grace;
                 switch (type)
@@ -558,40 +678,72 @@ namespace MedalPusher
         // メダル配置
         // ================================================================
 
-        /// <summary>プッシャー前の床にメダルを敷き詰める（互い違いに積む）。</summary>
-        void Prefill(int count)
+        /// <summary>
+        /// 開始時のメダルを、下段（プッシャーの前の盤面）と上段（プッシャーの上面）にランダムに置く。
+        /// 少し浮かせて置き、準備中（Warmup）の間に自然に崩れて落ち着かせる。
+        /// </summary>
+        void Prefill()
         {
             float d = tuning.medalDiameter;
-            float half = BoardHalfWidth - d * 0.6f;
-            float zMin = layout.floorFrontZ + d * 0.7f;
-            float zMax = layout.pusherRetractZ - d * 0.6f;
-            float step = d * 1.08f;
-            int cols = Mathf.Max(1, Mathf.FloorToInt(half * 2f / step) + 1);
-            int rows = Mathf.Max(1, Mathf.FloorToInt((zMax - zMin) / step) + 1);
+            float r = d * 0.5f;
+            float margin = d * 0.05f;
 
-            // 層の間のすき間。メダルの大きさに合わせる（直径1・厚さ0.16のとき 0.08）
+            // 開始時のプッシャー前面の位置（ResetPhase で決めた位置と同じ）
+            float startT = Mathf.Clamp01(rules.startPusherPosition);
+            float pusherFront = layout.pusherRetractZ - tuning.pusherStroke * startT;
+
+            // 下段：盤面の前端 〜 プッシャーの前面
+            float half = BoardHalfWidth - r - margin;
+            ScatterMedals(rules.prefillMedals, half,
+                layout.floorFrontZ + r + margin, pusherFront - r - margin, 0f);
+
+            // 上段：プッシャーの上面のうち、奥の壁より手前の部分（前の縁から少しはみ出してもよい）
+            float upperHalf = BoardHalfWidth - layout.pusherSideGap - r - margin;
+            ScatterMedals(rules.prefillUpperMedals, upperHalf,
+                pusherFront + r * 0.8f, BackWallFrontZ - r - margin, layout.pusherHeight);
+        }
+
+        /// <summary>
+        /// 範囲の中にメダルをランダムに置く。同じ高さの段の中では重ならない場所を探し、
+        /// 何回か探して空きが見つからなければ1つ上の段に置く（だから自然な山になる）。
+        /// </summary>
+        void ScatterMedals(int count, float halfWidth, float zMin, float zMax, float baseY)
+        {
+            if (count <= 0) return;
+            if (zMax < zMin) zMin = zMax = (zMin + zMax) * 0.5f; // 範囲が狭すぎる時は1列に並べる
+
+            float d = tuning.medalDiameter;
             float th = tuning.medalThickness;
-            float gap = Mathf.Max(th * 0.5f, d * 0.05f);
-            float jitter = d * 0.06f;
+            float minDist = d * 1.02f;
+            float layerHeight = th + d * 0.25f; // 傾けたメダル同士が上下で重ならない高さ
+            const int triesPerLayer = 10;
+            const int maxLayers = 40;
 
-            int spawned = 0;
-            for (int layer = 0; spawned < count && layer < 60; layer++)
+            var layers = new List<List<Vector2>>();
+            for (int i = 0; i < count; i++)
             {
-                float offset = (layer % 2 == 1) ? step * 0.5f : 0f;
-                float y = th * 0.5f + d * 0.02f + layer * (th + gap);
-                for (int r = 0; r < rows && spawned < count; r++)
+                for (int layer = 0; layer < maxLayers; layer++)
                 {
-                    for (int c = 0; c < cols && spawned < count; c++)
+                    if (layer == layers.Count) layers.Add(new List<Vector2>());
+                    var placed = layers[layer];
+                    bool found = false;
+                    Vector2 p = default;
+                    for (int t = 0; t < triesPerLayer && !found; t++)
                     {
-                        float x = -half + c * step + offset;
-                        float z = zMin + r * step + offset;
-                        if (x > half || z > zMax) continue;
-                        x += Random.Range(-jitter, jitter);
-                        z += Random.Range(-jitter, jitter);
-                        var rot = Quaternion.Euler(Random.Range(-2f, 2f), Random.Range(0f, 360f), Random.Range(-2f, 2f));
-                        Pool.Spawn(new Vector3(x, y, z), rot);
-                        spawned++;
+                        p = new Vector2(Random.Range(-halfWidth, halfWidth), Random.Range(zMin, zMax));
+                        found = true;
+                        foreach (var q in placed)
+                        {
+                            if ((p - q).sqrMagnitude < minDist * minDist) { found = false; break; }
+                        }
                     }
+                    if (!found) continue;
+
+                    placed.Add(p);
+                    float y = baseY + th * 0.5f + d * 0.02f + layer * layerHeight + Random.Range(0f, d * 0.05f);
+                    var rot = Quaternion.Euler(Random.Range(-8f, 8f), Random.Range(0f, 360f), Random.Range(-8f, 8f));
+                    Pool.Spawn(new Vector3(p.x, y, p.y), rot);
+                    break;
                 }
             }
         }
@@ -645,6 +797,83 @@ namespace MedalPusher
             rules.launchSpeed = 3.5f;
             rules.launchUpSpeed = 0.3f;
             rules.launchForwardSpeed = 0.1f;
+        }
+
+        /// <summary>
+        /// シーンの Playfield の実際の幅を測り、今の設定の長さをすべて同じ倍率で拡大・縮小する。
+        /// 盤面モデルを別の大きさで置き直した時用（例: StageVer2 は今までの 0.714 倍）。
+        /// メダルの大きさやカメラの位置など、今までの調整は比率を保ったまま引き継ぐ。
+        /// </summary>
+        [ContextMenu("今の設定をシーンの盤面の大きさに合わせる")]
+        void FitSettingsToSceneBoard()
+        {
+            float actual = MeasureWidth(FindByName("Playfield"));
+            float expected = layout.boardWidth + layout.wallThickness * 2f;
+            if (actual <= 0f || expected <= 0f)
+            {
+                Debug.LogWarning("[MedalPusher] シーンに有効な「Playfield」が見つかりません。");
+                return;
+            }
+            float k = actual / expected;
+            if (Mathf.Abs(k - 1f) < 0.001f)
+            {
+                Debug.Log("[MedalPusher] 設定はすでにシーンの盤面の大きさに合っています。");
+                return;
+            }
+            RecordUndo("今の設定をシーンの盤面の大きさに合わせる");
+            ScaleLengths(k);
+            Debug.Log($"[MedalPusher] 設定の長さを {k:0.###} 倍にしました（盤面の幅 {layout.boardWidth:0.###}、メダルの直径 {tuning.medalDiameter:0.###}）。");
+        }
+
+        /// <summary>長さの設定をすべて k 倍にする。発射の速さは、飛ぶ距離が k 倍になるよう √k 倍にする。</summary>
+        void ScaleLengths(float k)
+        {
+            var l = layout;
+            l.boardWidth *= k;
+            l.floorFrontZ *= k;
+            l.wallHeight *= k;
+            l.wallThickness *= k;
+            l.pusherHeight *= k;
+            l.pusherDepth *= k;
+            l.pusherRetractZ *= k;
+            l.pusherSideGap *= k;
+            l.backWallOffset *= k;
+            l.backWallGap *= k;
+            l.centerHoleWidth *= k;
+            l.holeTopY *= k;
+            l.holeBottomY *= k;
+            l.holeDepth *= k;
+            l.launcherHeight *= k;
+            l.launcherZFromWall *= k;
+            l.cameraPosition *= k;   // 原点を中心に縮めるので、同じ角度・視野角で同じ構図になる
+
+            tuning.pusherStroke *= k;
+            tuning.medalDiameter *= k;
+            tuning.medalThickness *= k;
+            tuning.contactOffset *= k;
+
+            float v = Mathf.Sqrt(k);
+            rules.launchSpeed *= v;
+            rules.launchUpSpeed *= v;
+            rules.launchForwardSpeed *= v;
+        }
+
+        /// <summary>メダルの見た目に、盤面モデル一式の Medal.obj を入れる（エディタでのみ動く）。</summary>
+        [ContextMenu("メダルの見た目をモデルにする")]
+        void AssignMedalModel()
+        {
+#if UNITY_EDITOR
+            foreach (var guid in UnityEditor.AssetDatabase.FindAssets("Medal t:Model"))
+            {
+                string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                if (System.IO.Path.GetFileName(path) != "Medal.obj") continue;
+                RecordUndo("メダルの見た目をモデルにする");
+                visuals.medalModel = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                Debug.Log($"[MedalPusher] メダルの見た目に {path} を入れました。");
+                return;
+            }
+            Debug.LogWarning("[MedalPusher] Medal.obj が見つかりません。Visuals の Medal Model に直接ドラッグしてください。");
+#endif
         }
 
         /// <summary>コードで作る仮の盤面（最初の試作）の寸法に戻す。</summary>
