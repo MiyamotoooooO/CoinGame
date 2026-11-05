@@ -1,0 +1,529 @@
+﻿using System.Collections.Generic;
+using UnityEngine;
+
+namespace MedalPusher
+{
+    /// <summary>
+    /// 流しているレコードの効果をゲームにつなぐ。MedalPusherGame と同じシーンに置く（どの GameObject でもよい）。
+    ///
+    /// しくみ：
+    /// ・レコードは1枚ずつ流す。Play(レコード) で流す（所持一覧の画面から呼ばれる）
+    /// ・流すときに、そのレコードのゲージ消費ぶんのグルーヴゲージを使う。足りなければ流せない
+    /// ・効果は曲が終わるまで続く（曲が無いレコードは CSV の「効果時間」の秒数）
+    /// ・流している途中で別のレコードを流すと、前の効果は終わって切り替わる
+    /// ・メダルが穴に落ちるたび、ポイントを「(基本 + 加算) × 倍率」で計算し直し、
+    ///   基本のポイントとの差分だけを足す（MedalPusherGame は変更せずに、MedalDropped の通知を受けて足す）
+    /// ・メダルが落ちるとグルーヴゲージがたまる
+    /// ・ラウンドが変わると、流しているレコードは止まり、ゲージは0に戻る
+    ///
+    /// いま動く効果の型：
+    ///   AddPerDrop / AddPerSideDrop / AddPerDropTimed / AddPerDropIf（ブルース・アイドル・演歌）/ AddPerDropGrowing /
+    ///   AddEveryN / MultAdd / MultAddStacking / MultTimes / MultTimed / MultAddTimed / MultEveryN /
+    ///   PusherSpeed / FieldGimmick(BlockSides) / GaugeModifier
+    /// それ以外の型は、曲とターンテーブルは動くが、効果はまだ無い（一覧と左の表示に「未実装」と出る）。
+    /// 新しい型を足すときは、下の「効果の型ごとの処理」に case を足し、IsImplemented にも足す。
+    /// </summary>
+    [DisallowMultipleComponent]
+    public class RecordEffectSystem : MonoBehaviour
+    {
+        [Header("つなぐ相手（空なら自動で探す）")]
+        public MedalPusherGame game;
+        [Tooltip("曲の長さを調べるのに使う")]
+        public RecordAudioPlayer audioPlayer;
+
+        [Header("グルーヴゲージ")]
+        [Tooltip("ゲージの上限")]
+        public float gaugeMax = 100f;
+        [Tooltip("メダルが1枚落ちるとたまる量（中央の穴・端の穴のどちらでも）")]
+        public float gaugePerDrop = 1f;
+
+        [Header("効果の長さ")]
+        [Tooltip("曲が無いレコードの効果時間にかける倍率（1 = CSV のまま）")]
+        [Range(0.1f, 5f)] public float durationScale = 1f;
+        [Tooltip("曲が無く、CSV の効果時間も空のときの秒数")]
+        [Min(1f)] public float fallbackDuration = 30f;
+        [Tooltip("レコードごとに効果時間を決める（曲があっても、こちらが優先）。キー（英名）と秒数を書く")]
+        public DurationOverride[] durationOverrides = new DurationOverride[0];
+
+        [Header("テスト用")]
+        [Tooltip("オンにすると、ゲージを使わずに流せる")]
+        public bool freePlay = false;
+        [Tooltip("画面の左に、ゲージと流しているレコードを表示する")]
+        public bool showDebugPanel = true;
+
+        /// <summary>いまのグルーヴゲージ</summary>
+        public float Gauge { get; private set; }
+
+        /// <summary>いま流しているレコード（流していなければ null）</summary>
+        public RecordData Current { get; private set; }
+
+        /// <summary>流しているレコードの効果の残り秒数</summary>
+        public float Remaining { get; private set; }
+
+        /// <summary>流しているレコードの効果の長さ（秒）</summary>
+        public float CurrentDuration { get; private set; }
+
+        /// <summary>レコードを流した回数。同じレコードを流し直したことを RecordAudioPlayer が知るために使う</summary>
+        public int PlayCount { get; private set; }
+
+        /// <summary>直近に落ちたメダル1枚のポイント（確認用）</summary>
+        public int LastDropPoints { get; private set; }
+
+        /// <summary>レコードを流したときに呼ばれる（演出用）</summary>
+        public event System.Action<RecordData> RecordPlayed;
+
+        /// <summary>レコードの効果が終わったとき（曲が終わった・切り替えた・止めた）に呼ばれる</summary>
+        public event System.Action<RecordData> RecordFinished;
+
+        /// <summary>レコード1枚の効果時間の上書き（Inspector で設定する）</summary>
+        [System.Serializable]
+        public class DurationOverride
+        {
+            [Tooltip("レコードのキー（英名）。例：Rock")]
+            public string key;
+            [Tooltip("効果時間（秒）")]
+            [Min(0.1f)] public float seconds = 10f;
+        }
+
+        System.Reflection.MethodInfo pointsSetter;
+        int lastRoundNumber = -1;
+        float basePusherSpeed = 1f;
+        GameObject sideGates;
+        GUIStyle panelStyle;
+
+        // 流しているレコード1枚ぶんの記録（流すたびにリセット）
+        int dropsThisPlay;          // 流し始めてから落ちたメダルの枚数
+        float stackedMult;          // ジャズ・レクイエム・トランスで積み上がった倍率
+        float pusherStopRemaining;  // メタルの曲が終わったあと、プッシャーを止めておく残り秒数
+        readonly HashSet<string> playedThisRound = new HashSet<string>();   // このラウンドで流したレコード（オーケストラ用）
+
+        // ================================================================
+        // 初期化
+        // ================================================================
+
+        void Start()
+        {
+            if (game == null) game = FindFirstObjectByType<MedalPusherGame>();
+            if (game == null)
+            {
+                Debug.LogError("RecordEffectSystem: MedalPusherGame が見つかりません。", this);
+                enabled = false;
+                return;
+            }
+
+            // MedalPusherGame.Points は外から書き換えられない（private set）ので、リフレクションで書き換える。
+            // MedalPusherGame にポイントを足す入口（AddPoints など）ができたら、そちらに置き換える。
+            pointsSetter = typeof(MedalPusherGame).GetProperty("Points")?.GetSetMethod(true);
+            if (pointsSetter == null)
+            {
+                Debug.LogWarning("RecordEffectSystem: MedalPusherGame.Points を書き換えられないため、ポイントの効果は働きません（ゲージと曲は動きます）。", this);
+            }
+
+            game.MedalDropped += OnMedalDropped;
+            game.StateChanged += OnStateChanged;
+            if (game.Pusher != null) basePusherSpeed = game.Pusher.speedMultiplier;
+        }
+
+        void OnDestroy()
+        {
+            if (game != null)
+            {
+                game.MedalDropped -= OnMedalDropped;
+                game.StateChanged -= OnStateChanged;
+            }
+        }
+
+        // ================================================================
+        // 流す・止める
+        // ================================================================
+
+        /// <summary>
+        /// いまそのレコードを流せるか。流せないときは reason に理由が入る（画面に出す用）。
+        /// </summary>
+        public bool CanPlay(RecordData record, out string reason)
+        {
+            reason = "";
+            if (RecordData.IsNullOrEmpty(record) || game == null)
+            {
+                reason = "レコードがありません";
+                return false;
+            }
+            if (!IsScoring)
+            {
+                reason = "ラウンドのプレイ中だけ流せます";
+                return false;
+            }
+            if (Current != null && Current.key == record.key)
+            {
+                reason = "いま流しています";
+                return false;
+            }
+            if (Current != null && Current.effectType == "MultTimes" && Current.value2Text == "Lock")
+            {
+                reason = $"{Current.name} の曲が終わるまで切り替えられません";
+                return false;
+            }
+            float cost = GetGaugeCost(record);
+            if (!freePlay && Gauge < cost)
+            {
+                reason = $"ゲージが足りません（あと {Mathf.CeilToInt(cost - Gauge)}）";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// レコードを流す。ゲージを使い、前に流していたレコードの効果は終わる。流せたら true。
+        /// </summary>
+        public bool Play(RecordData record)
+        {
+            if (!CanPlay(record, out string reason))
+            {
+                Debug.Log($"RecordEffectSystem: {record?.name} を流せません（{reason}）");
+                return false;
+            }
+
+            if (!freePlay) Gauge = Mathf.Max(0f, Gauge - GetGaugeCost(record));
+            if (Current != null) Finish(false);
+
+            Current = record;
+            CurrentDuration = GetDuration(record);
+            Remaining = CurrentDuration;
+            PlayCount++;
+            dropsThisPlay = 0;
+            stackedMult = 0f;
+            playedThisRound.Add(record.key);
+
+            if (!IsImplemented(record))
+            {
+                Debug.LogWarning($"RecordEffectSystem: 効果の型「{record.effectType}」（{record.name}）はまだ実装していません。曲は流れますが、効果はありません。");
+            }
+            Debug.Log($"{record.name} を流す（ゲージ -{GetGaugeCost(record):0}、{CurrentDuration:0.#}秒）");
+            RecordPlayed?.Invoke(record);
+            return true;
+        }
+
+        /// <summary>流しているレコードを止める（効果も終わる）</summary>
+        public void Stop()
+        {
+            if (Current != null) Finish(false);
+        }
+
+        /// <summary>流しているレコードの効果を終える。naturally は曲が最後まで流れたとき true。</summary>
+        void Finish(bool naturally)
+        {
+            RecordData finished = Current;
+            Current = null;
+            Remaining = 0f;
+            CurrentDuration = 0f;
+            stackedMult = 0f;
+
+            // メタル：曲が終わると、値2の秒数だけプッシャーが止まる
+            if (naturally && finished.effectType == "MultTimed" && finished.key == "Metal" && finished.value2 > 0f)
+            {
+                pusherStopRemaining = finished.value2;
+            }
+            RecordFinished?.Invoke(finished);
+        }
+
+        /// <summary>流すときに使うゲージの量</summary>
+        public float GetGaugeCost(RecordData record) => RecordData.IsNullOrEmpty(record) ? 0f : record.gaugeCost;
+
+        /// <summary>
+        /// レコードの効果の長さ（秒）。
+        /// レコードごとの上書き → 曲の長さ → CSV の効果時間 × 倍率 → Fallback Duration の順に決める。
+        /// </summary>
+        public float GetDuration(RecordData record)
+        {
+            if (RecordData.IsNullOrEmpty(record)) return 0f;
+            if (durationOverrides != null)
+            {
+                foreach (DurationOverride o in durationOverrides)
+                {
+                    if (o != null && !string.IsNullOrWhiteSpace(o.key) && o.key.Trim() == record.key) return o.seconds;
+                }
+            }
+            AudioClip clip = FindClip(record);
+            if (clip != null) return clip.length;
+            if (record.duration > 0f) return record.duration * durationScale;
+            return fallbackDuration;
+        }
+
+        /// <summary>そのレコードに曲があるか</summary>
+        public bool HasSong(RecordData record) => FindClip(record) != null;
+
+        AudioClip FindClip(RecordData record)
+        {
+            if (audioPlayer == null) audioPlayer = FindFirstObjectByType<RecordAudioPlayer>();
+            return audioPlayer != null ? audioPlayer.FindClip(record) : null;
+        }
+
+        // ================================================================
+        // ゲームからの通知
+        // ================================================================
+
+        /// <summary>
+        /// メダルが穴に落ちた。MedalPusherGame が基本のポイントを入れた直後に呼ばれるので、
+        /// レコードの効果で変わる差分だけを足す。
+        /// </summary>
+        void OnMedalDropped(Medal medal, DropZoneType type)
+        {
+            if (type == DropZoneType.Lost || !IsScoring) return;
+
+            int basePoints = type == DropZoneType.Center ? game.rules.centerPoints : game.rules.sidePoints;
+            int total = ModifyDropPoints(type, basePoints);
+            int delta = total - basePoints;
+            if (delta != 0) AddPoints(delta);
+
+            Gauge = Mathf.Min(gaugeMax, Gauge + GaugeGain(type));
+        }
+
+        /// <summary>ゲームのポイントを直接足す（マイナスで減らす。0未満にはしない）。</summary>
+        public void AddPoints(int amount)
+        {
+            if (pointsSetter == null || amount == 0 || !IsScoring) return;
+            pointsSetter.Invoke(game, new object[] { Mathf.Max(0, game.Points + amount) });
+        }
+
+        void OnStateChanged(GameState state)
+        {
+            // ラウンドが変わったら、流しているレコードを止め、ゲージを0に戻す
+            if (game.RoundNumber != lastRoundNumber || state == GameState.Intro || state == GameState.Warmup)
+            {
+                lastRoundNumber = game.RoundNumber;
+                Gauge = 0f;
+                Stop();
+                playedThisRound.Clear();
+                pusherStopRemaining = 0f;
+            }
+        }
+
+        bool IsScoring => game != null && (game.State == GameState.Playing || game.State == GameState.Grace);
+
+        void Update()
+        {
+            if (game == null) return;
+
+            if (Current != null)
+            {
+                Remaining -= Time.deltaTime;
+                if (Remaining <= 0f) Finish(true);
+            }
+            if (pusherStopRemaining > 0f) pusherStopRemaining -= Time.deltaTime;
+
+            ApplyContinuousEffects();
+        }
+
+        // ================================================================
+        // 効果の型ごとの処理
+        // ================================================================
+
+        /// <summary>このレコードの効果が実装済みか</summary>
+        public static bool IsImplemented(RecordData record)
+        {
+            if (RecordData.IsNullOrEmpty(record)) return false;
+            switch (record.effectType)
+            {
+                case "AddPerDrop":
+                case "AddPerSideDrop":
+                case "AddPerDropTimed":
+                case "AddPerDropGrowing":
+                case "AddEveryN":
+                case "MultAdd":
+                case "MultAddStacking":
+                case "MultTimes":
+                case "MultTimed":
+                case "MultAddTimed":
+                case "MultEveryN":
+                case "PusherSpeed":
+                case "GaugeModifier":
+                    return true;
+                case "AddPerDropIf":
+                    return record.key == "Blues" || record.key == "Idol" || record.key == "Enka";
+                case "FieldGimmick":
+                    return record.value2Text == "BlockSides";
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 落ちたメダル1枚のポイントを計算する。(基本 + 加算) × 足していく倍率 × 掛ける倍率。
+        /// </summary>
+        int ModifyDropPoints(DropZoneType type, int basePoints)
+        {
+            float add = 0f;       // 足すポイント
+            float multAdd = 1f;   // 足していく倍率（+0.3 など）
+            float multTimes = 1f; // 掛ける倍率（×2 など）
+
+            RecordData r = Current;
+            if (r != null)
+            {
+                dropsThisPlay++;
+                bool center = type == DropZoneType.Center;
+                bool side = type == DropZoneType.Side;
+
+                switch (r.effectType)
+                {
+                    case "AddPerDrop":          // ポップス、ローファイ：中央の穴の落下1枚ごとに足す
+                        if (center) add += r.value1;
+                        break;
+                    case "AddPerSideDrop":      // フォーク：端の穴の落下1枚ごとに足す
+                        if (side) add += r.value1;
+                        break;
+                    case "AddPerDropTimed":     // ハウス、アニソン：中央・端どちらも足す
+                        add += r.value1;
+                        break;
+                    case "AddPerDropIf":
+                        if (r.key == "Blues")
+                        {
+                            int insertsLeft = game.rules.insertLimit - game.InsertedThisRound;
+                            if (insertsLeft <= r.value2) add += r.value1;   // 残り投入数が値2以下
+                        }
+                        else if (r.key == "Idol")
+                        {
+                            if (dropsThisPlay <= r.value2) add += r.value1;   // 流し始めてから値2枚目まで
+                        }
+                        else if (r.key == "Enka")
+                        {
+                            if (game.IsBossRound) add += r.value1;
+                        }
+                        break;
+                    case "AddPerDropGrowing":   // シティポップ：10秒ごとに値2ずつ増える（最大 +12）
+                        float elapsed = CurrentDuration - Remaining;
+                        add += Mathf.Min(12f, r.value1 + r.value2 * Mathf.Floor(elapsed / 10f));
+                        break;
+                    case "AddEveryN":           // チップチューン：値2枚落ちるごとに値1を足す
+                        if (r.value2 > 0f && dropsThisPlay % Mathf.RoundToInt(r.value2) == 0) add += r.value1;
+                        break;
+
+                    case "MultAdd":
+                        if (r.key == "Orchestra") multAdd += r.value1 * playedThisRound.Count;   // このラウンドで流した種類の数
+                        else multAdd += r.value1;                                                // クラシック、アカペラ
+                        break;
+                    case "MultAddStacking":     // ジャズ（落下ごと）、レクイエム（端の穴の落下ごと）
+                        if (r.key != "Requiem" || side)
+                        {
+                            stackedMult += r.value1;
+                            if (r.value2 > 0f) stackedMult = Mathf.Min(stackedMult, r.value2);   // 値2が上限
+                        }
+                        multAdd += stackedMult;
+                        break;
+                    case "MultAddTimed":        // トランス：倍率 +値1、落下ごとに +値2（最大で値1の2倍）
+                        stackedMult = Mathf.Min(stackedMult + r.value2, r.value1);
+                        multAdd += r.value1 + stackedMult;
+                        break;
+                    case "MultTimes":           // ソロ
+                        multTimes *= r.value1;
+                        break;
+                    case "MultTimed":           // ロック、メタル、オペラ、ダブステップ
+                        float times = r.value1;
+                        if (r.key == "Opera" && game.IsBossRound) times = r.value2;   // ボス戦では値2の倍率
+                        multTimes *= times;
+                        break;
+                    case "MultEveryN":          // ワルツ：値2枚目ごとに値1倍
+                        if (r.value2 > 0f && dropsThisPlay % Mathf.RoundToInt(r.value2) == 0) multTimes *= r.value1;
+                        break;
+                }
+            }
+
+            float points = (basePoints + add) * multAdd * multTimes;
+            LastDropPoints = Mathf.RoundToInt(points);
+            return LastDropPoints;
+        }
+
+        /// <summary>メダル1枚が落ちたときにたまるゲージの量</summary>
+        float GaugeGain(DropZoneType type)
+        {
+            float gain = gaugePerDrop;
+            RecordData r = Current;
+            if (r == null) return gain;
+
+            if (r.effectType == "MultAdd" && r.value2Text == "NoGauge") return 0f;   // アカペラ：ゲージがたまらない
+            if (r.effectType == "GaugeModifier")
+            {
+                if (r.value2Text == "SideDrop") { if (type == DropZoneType.Side) gain += r.value1; }   // ノイズ
+                else gain *= r.value1;                                                                  // ボカロ
+            }
+            return gain;
+        }
+
+        /// <summary>毎フレーム反映する効果（プッシャーの速さ、端の穴のふた）</summary>
+        void ApplyContinuousEffects()
+        {
+            if (game.Pusher == null) return;
+
+            float speed = basePusherSpeed;
+            bool blockSides = false;
+
+            RecordData r = Current;
+            if (r != null)
+            {
+                if (r.effectType == "PusherSpeed") speed *= r.value1;                                    // テクノ、ハードコア、ミニマル
+                if (r.effectType == "AddPerDrop" && r.value2 > 0f) speed *= r.value2;                      // ローファイ（速さ0.8倍）
+                if (r.effectType == "FieldGimmick" && r.value2Text == "BlockSides") blockSides = true;    // レゲエ
+            }
+            if (pusherStopRemaining > 0f) speed = 0f;   // メタルの曲のあと
+
+            game.Pusher.speedMultiplier = speed;
+            SetSideGates(blockSides);
+        }
+
+        /// <summary>
+        /// 端の穴の前に、メダルを止める低い柵を出し入れする（レゲエ用）。
+        /// 盤面の寸法から位置を決めるので、シーンにふたのモデルが無くても動く。
+        /// </summary>
+        void SetSideGates(bool on)
+        {
+            if (sideGates == null)
+            {
+                if (!on) return;
+                sideGates = new GameObject("RecordEffect_SideGates");
+                BoardLayout l = game.layout;
+                float d = game.tuning.medalDiameter;
+                float inner = Mathf.Clamp(l.centerHoleWidth, 0.1f, l.boardWidth) * 0.5f;
+                float outer = l.boardWidth * 0.5f;
+                float height = d * 0.6f;
+                float thickness = d * 0.15f;
+                var material = ProtoAssets.MakeMaterial(new Color(0.36f, 0.29f, 0.66f), 0.2f, 0.5f);
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    var gate = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    gate.name = side < 0 ? "Gate_Left" : "Gate_Right";
+                    gate.transform.SetParent(sideGates.transform, false);
+                    gate.transform.position = new Vector3(side * (inner + outer) * 0.5f, height * 0.5f, l.floorFrontZ - thickness * 0.5f);
+                    gate.transform.localScale = new Vector3(outer - inner, height, thickness);
+                    gate.GetComponent<Renderer>().sharedMaterial = material;
+                }
+            }
+            if (sideGates.activeSelf != on) sideGates.SetActive(on);
+        }
+
+        // ================================================================
+        // 確認用の表示
+        // ================================================================
+
+        void OnGUI()
+        {
+            if (!showDebugPanel || game == null) return;
+            if (panelStyle == null)
+            {
+                panelStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.UpperLeft, fontSize = 14, richText = true };
+                panelStyle.normal.textColor = Color.white;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"<b>グルーヴ</b> {Gauge:0}/{gaugeMax:0}    直近の1枚 {LastDropPoints}pt\n");
+            if (Current != null)
+            {
+                sb.Append($"<color=#7CFC9A>流している：{Current.name}  残り {Remaining:0}秒</color>");
+                if (!IsImplemented(Current)) sb.Append(" <color=#FF8080>（効果は未実装）</color>");
+            }
+            else
+            {
+                sb.Append("流しているレコードなし（E キーで選ぶ）");
+            }
+            GUI.Box(new Rect(10f, Screen.height * 0.45f, 440f, 48f), sb.ToString(), panelStyle);
+        }
+    }
+}
