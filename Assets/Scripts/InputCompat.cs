@@ -55,6 +55,16 @@ namespace MedalPusher
 #endif
         }
 
+        /// <summary>左クリックを押した瞬間</summary>
+        public static bool MouseDown()
+        {
+#if MP_NEW_INPUT
+            return Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+#else
+            return Input.GetMouseButtonDown(0);
+#endif
+        }
+
         public static bool MouseHeld()
         {
 #if MP_NEW_INPUT

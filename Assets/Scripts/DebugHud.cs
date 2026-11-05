@@ -73,6 +73,12 @@ namespace MedalPusher
                 GUI.Label(new Rect(10, Screen.height - 30, Screen.width - 20, 26), "Enter: 演出をスキップ", smallStyle);
                 return;
             }
+            // ショップ中はモニターが画面いっぱいになるので、案内だけ出す
+            if (game.State == GameState.Shop)
+            {
+                GUI.Label(new Rect(10, Screen.height - 30, Screen.width - 20, 26), "クリック: 購入・リロール ／ 閉じる（または Enter）: 盤面に戻って次のラウンドへ", smallStyle);
+                return;
+            }
 
             DrawStats();
             DrawCenterMessage();
@@ -105,7 +111,7 @@ namespace MedalPusher
             string boss = game.IsBossRound ? " <color=#ff7777>BOSS</color>" : "";
             GUILayout.Label($"エリア {game.AreaIndex + 1}  ラウンド {game.RoundIndex + 1}/{roundCount}{boss}   {state}", labelStyle);
             GUILayout.Label($"所持メダル: <b>{game.OwnedMedals}</b>", labelStyle);
-            GUILayout.Label($"投入: <b>{game.InsertedThisRound}</b> / {r.insertLimit}", labelStyle);
+            GUILayout.Label($"投入: <b>{game.InsertedThisRound}</b> / {game.InsertLimit}", labelStyle);
             if (game.IsBossRound)
                 GUILayout.Label($"ボスHP: <b>{game.BossHp}</b> / {game.CurrentQuota}   （ポイント {game.Points}）", labelStyle);
             else
@@ -123,11 +129,8 @@ namespace MedalPusher
             {
                 case GameState.Warmup: msg = "<size=28>メダルを並べています…</size>"; break;
                 case GameState.Cleared:
-                    msg = game.IsLastRoundOfArea
-                        ? "<color=#66ffff>AREA CLEAR!</color>\n<size=20>Enter でショップへ / R でリセット</size>"
-                        : "<color=#66ffff>CLEAR!</color>\n<size=20>Enter で次のラウンド / R でリセット</size>";
+                    msg = game.IsLastRoundOfArea ? "<color=#66ffff>AREA CLEAR!</color>" : "<color=#66ffff>CLEAR!</color>";
                     break;
-                case GameState.Shop: msg = "<color=#ffcc66>SHOP（準備中）</color>\n<size=20>Enter で次のエリアへ</size>"; break;
                 case GameState.Finished: msg = "<size=30>用意したエリアはここまで（仮）</size>\n<size=20>R で最初から</size>"; break;
                 case GameState.Failed: msg = "<color=#ff6666>FAILED</color>\n<size=20>R でリセット</size>"; break;
                 case GameState.Grace:
