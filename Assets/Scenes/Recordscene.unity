@@ -188,6 +188,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Record
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 57ec659eb7a708246832abd3dea5686b, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -334,19 +338,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.93975234
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalRotation.x
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0.34185612
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -354,7 +358,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 39.98
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1c0de7e4b19b873498c81e4944ff1d31, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -382,6 +386,8 @@ GameObject:
   - component: {fileID: 222109769}
   - component: {fileID: 222109770}
   - component: {fileID: 222109771}
+  - component: {fileID: 222109772}
+  - component: {fileID: 222109773}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -564,15 +570,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   game: {fileID: 0}
-  equipManager: {fileID: 0}
+  audioPlayer: {fileID: 0}
   gaugeMax: 100
   gaugePerDrop: 1
   durationScale: 1
+  fallbackDuration: 30
   durationOverrides: []
-  startEquipKeys:
-  - Pops
-  - Rock
-  - Techno
+  freePlay: 0
   showDebugPanel: 1
 --- !u!114 &222109771
 MonoBehaviour:
@@ -587,7 +591,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   effectSystem: {fileID: 0}
-  equipManager: {fileID: 0}
   clips:
   - {fileID: 8300000, guid: f8ecf0e2748a857439a90d6c8c12813f, type: 3}
   - {fileID: 8300000, guid: 2f3046d63de7229409ea2d6db814e9b0, type: 3}
@@ -595,8 +598,43 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 30a2ac5c051b72445912239d4d0777e0, type: 3}
   volume: 0.6
   fadeSeconds: 0.8
-  playEquippedAsBgm: 1
   showNowPlaying: 1
+--- !u!114 &222109772
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 222109766}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b83cc25f7f84eb419a8892101634317, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  inventory: {fileID: 0}
+  effectSystem: {fileID: 0}
+  artwork: {fileID: 0}
+  game: {fileID: 0}
+  closeOnPlay: 1
+  pauseWhileOpen: 0
+  recordsPerShelf: 6
+  frameColor: {r: 0.11764706, g: 0.23529412, b: 0.47058824, a: 1}
+  wallColor: {r: 0.9529412, g: 0.9490196, b: 0.93333334, a: 1}
+  detailColor: {r: 0.078431375, g: 0.16470589, b: 0.33333334, a: 1}
+--- !u!114 &222109773
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 222109766}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d7c79cb303319747bf9d227acf480cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  jackets:
+  - {fileID: 2800000, guid: 2ddc67a74074be2499e7ce76659ab231, type: 3}
 --- !u!4 &231552492 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 2885e0f55740e8543802cb114b560236, type: 3}
@@ -1451,6 +1489,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1220498867}
+  - component: {fileID: 1220498868}
   m_Layer: 0
   m_Name: recorder
   m_TagString: Untagged
@@ -1477,6 +1516,35 @@ Transform:
   - {fileID: 1965443846}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: -82.31, y: -75.41, z: 0}
+--- !u!114 &1220498868
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1220498866}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bed9aa9eed4f08a4db02b4c295f2c57e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  record: {fileID: 0}
+  tonearm: {fileID: 0}
+  platter: {fileID: 0}
+  audioPlayer: {fileID: 0}
+  artwork: {fileID: 0}
+  rpm: 33.3
+  spinUpSeconds: 0.6
+  spinDirection: 1
+  armRestAngle: 0
+  armPlayAngle: 40
+  armMoveSeconds: 0.8
+  labelTextures: []
+  useJacketForLabel: 1
+  colorByCategory: 1
+  labelMaterialNames:
+  - LabelA
+  - LabelB
 --- !u!4 &1322356292 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: e461ba7cd07eba949b793d78aed449d2, type: 3}

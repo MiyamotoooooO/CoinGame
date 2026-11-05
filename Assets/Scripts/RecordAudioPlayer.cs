@@ -4,13 +4,12 @@ using UnityEngine;
 namespace MedalPusher
 {
     /// <summary>
-    /// 装着しているレコードの曲を流す。RecordEffectSystem と同じ GameObject に付けて使う。
+    /// 流しているレコードの曲を鳴らす。RecordEffectSystem と同じシーンに置く（同じ GameObject がわかりやすい）。
     ///
-    /// ・装着しているレコードのうち曲があるものを、枠の順に BGM として流し続ける（1曲終わったら次の枠へ）
-    /// ・レコードを新しく装着したら、そのレコードの曲に切り替える（曲の頭から流す）
-    /// ・再生型のレコードを再生したとき、その曲があれば効果時間のあいだその曲に切り替え、
-    ///   終わったら元の曲の続きに戻る
-    /// ・曲の切り替えはフェードでつなぐ
+    /// ・RecordEffectSystem でレコードを流すと、そのレコードの曲を頭から1回流す（くり返さない）
+    /// ・曲が終わると効果も終わる（効果の長さ = 曲の長さ。RecordEffectSystem.GetDuration を参照）
+    /// ・別のレコードに切り替えたときや止めたときは、フェードアウトしてから切り替える
+    /// ・曲が無いレコードは無音（ターンテーブルは回る。効果は CSV の効果時間の秒数）
     ///
     /// 曲とレコードは「ファイル名 = レコードのキー（英名）」で紐づける（Pops.mp3 → ポップス）。
     /// 曲は Inspector の Clips にまとめてドラッグする。Resources/RecordAudio/ に置いた曲も、同じ名前で自動で探す。
@@ -20,7 +19,6 @@ namespace MedalPusher
     {
         [Header("つなぐ相手（空なら自動で探す）")]
         public RecordEffectSystem effectSystem;
-        public EquipManager equipManager;
 
         [Header("曲")]
         [Tooltip("レコードの曲。ファイル名をレコードのキー（英名）にする。Project ウィンドウから複数まとめてドラッグできる")]
@@ -28,30 +26,28 @@ namespace MedalPusher
 
         [Header("鳴らし方")]
         [Range(0f, 1f)] public float volume = 0.6f;
-        [Tooltip("曲を切り替えるときのフェードの秒数")]
-        [Range(0f, 3f)] public float fadeSeconds = 0.8f;
-        [Tooltip("装着しているレコードの曲を BGM として流す")]
-        public bool playEquippedAsBgm = true;
+        [Tooltip("曲を切り替える・止めるときのフェードアウトの秒数")]
+        [Range(0f, 3f)] public float fadeSeconds = 0.3f;
         [Tooltip("画面の左に、いま流している曲を表示する（確認用）")]
         public bool showNowPlaying = true;
 
-        /// <summary>いま流している曲のレコード（流していなければ null）</summary>
+        /// <summary>いま鳴らしている曲のレコード（鳴らしていなければ null）</summary>
         public RecordData NowPlaying { get; private set; }
+
+        /// <summary>
+        /// いまターンテーブルに載せるレコード（= 流しているレコード）。曲が無いレコードも含む。
+        /// TurntableController が見る。
+        /// </summary>
+        public RecordData CurrentRecord => effectSystem != null ? effectSystem.Current : null;
 
         AudioSource source;
         readonly Dictionary<string, AudioClip> clipByKey = new Dictionary<string, AudioClip>();
         readonly Dictionary<string, AudioClip> resourceCache = new Dictionary<string, AudioClip>();
-        readonly Dictionary<AudioClip, float> resumeTime = new Dictionary<AudioClip, float>();
-        string bgmKey;          // BGM として流しているレコードのキー
-        bool advanceBgm;        // BGM の曲が終わったので、次の枠へ進む
-        RecordData overrideRecord;
-        float overrideRemaining;
-        AudioClip nextClip;
-        RecordData nextRecord;
-        bool fadingOut;
+        int lastPlayCount;
+        bool switching;            // フェードアウト中（終わったら pendingClip に切り替える）
+        AudioClip pendingClip;
+        RecordData pendingRecord;
         float currentVolume;
-        bool subscribed;
-        readonly HashSet<string> lastEquippedKeys = new HashSet<string>();
         GUIStyle labelStyle;
 
         void Awake()
@@ -67,11 +63,6 @@ namespace MedalPusher
         void OnValidate()
         {
             if (Application.isPlaying) BuildClipTable();
-        }
-
-        void OnDestroy()
-        {
-            if (effectSystem != null) effectSystem.RecordPlayed -= OnRecordPlayed;
         }
 
         void BuildClipTable()
@@ -97,94 +88,33 @@ namespace MedalPusher
             return clip;
         }
 
-        /// <summary>つなぐ相手を探す。RecordEffectSystem の準備が終わってから使えるように、毎フレーム確かめる。</summary>
-        bool Connect()
-        {
-            if (effectSystem == null) effectSystem = FindFirstObjectByType<RecordEffectSystem>();
-            if (effectSystem == null) return false;
-            if (equipManager == null) equipManager = effectSystem.equipManager;
-            if (equipManager == null) equipManager = FindFirstObjectByType<EquipManager>();
-            if (equipManager == null) return false;
-            if (!subscribed)
-            {
-                effectSystem.RecordPlayed += OnRecordPlayed;
-                subscribed = true;
-            }
-            return true;
-        }
-
-        void OnRecordPlayed(RecordData record)
-        {
-            AudioClip clip = FindClip(record);
-            if (clip == null) return;
-            // 効果時間は RecordEffectSystem の調整（倍率・上書き）込みの値を使う
-            float duration = effectSystem != null ? effectSystem.GetDuration(record) : record.duration;
-            overrideRecord = record;
-            overrideRemaining = duration > 0f ? duration : clip.length;
-        }
-
         void Update()
         {
-            if (!Connect()) return;
+            if (effectSystem == null) effectSystem = FindFirstObjectByType<RecordEffectSystem>();
+            if (effectSystem == null) return;
 
-            if (overrideRecord != null)
+            RecordData current = effectSystem.Current;
+
+            // 新しくレコードが流された（同じレコードを流し直したときも PlayCount が増える）
+            if (effectSystem.PlayCount != lastPlayCount)
             {
-                overrideRemaining -= Time.deltaTime;
-                if (overrideRemaining <= 0f) overrideRecord = null;
+                lastPlayCount = effectSystem.PlayCount;
+                BeginSwitch(FindClip(current), current);
+            }
+            // 効果が終わった・止められたのに、まだ鳴っている
+            else if (current == null && NowPlaying != null && !switching)
+            {
+                BeginSwitch(null, null);
             }
 
-            // 新しく装着されたレコードがあれば、その曲に切り替える（付け替えたらすぐ聞こえるように）
-            RecordData newlyEquipped = null;
-            foreach (RecordData r in equipManager.Equipped)
-            {
-                if (!lastEquippedKeys.Contains(r.key) && FindClip(r) != null)
-                {
-                    newlyEquipped = r;
-                    break;
-                }
-            }
-            lastEquippedKeys.Clear();
-            foreach (RecordData r in equipManager.Equipped) lastEquippedKeys.Add(r.key);
-            if (newlyEquipped != null)
-            {
-                bgmKey = newlyEquipped.key;
-                advanceBgm = false;
-                resumeTime.Remove(FindClip(newlyEquipped));   // 新しく付けた曲は頭から流す
-            }
-
-            // BGM の曲が最後まで流れたら、次の枠のレコードへ進む
-            if (source.clip != null && !source.isPlaying && !fadingOut && overrideRecord == null && Application.isFocused)
-            {
-                resumeTime.Remove(source.clip);
-                source.clip = null;
-                NowPlaying = null;
-                advanceBgm = true;
-            }
-
-            RecordData desired = DesiredRecord();
-            AudioClip desiredClip = FindClip(desired);
-
-            // 流したい曲が変わったら、フェードアウトしてから切り替える
-            if (desiredClip != source.clip && !fadingOut)
-            {
-                fadingOut = true;
-                nextClip = desiredClip;
-                nextRecord = desired;
-            }
-            else if (fadingOut)
-            {
-                nextClip = desiredClip;
-                nextRecord = desired;
-            }
-
-            float step = fadeSeconds > 0f ? Time.deltaTime / fadeSeconds : 1f;
-            if (fadingOut)
+            float step = fadeSeconds > 0f ? Time.unscaledDeltaTime / fadeSeconds : 1f;
+            if (switching)
             {
                 currentVolume = Mathf.MoveTowards(currentVolume, 0f, step);
-                if (currentVolume <= 0f || source.clip == null)
+                if (currentVolume <= 0f || !source.isPlaying)
                 {
-                    SwitchTo(nextClip, nextRecord);
-                    fadingOut = false;
+                    StartClip(pendingClip, pendingRecord);
+                    switching = false;
                 }
             }
             else
@@ -192,23 +122,32 @@ namespace MedalPusher
                 currentVolume = Mathf.MoveTowards(currentVolume, 1f, step);
             }
             source.volume = currentVolume * volume;
+
+            // 曲が最後まで流れた
+            if (!switching && NowPlaying != null && !source.isPlaying && !AudioListener.pause && Application.isFocused)
+            {
+                NowPlaying = null;
+                source.clip = null;
+            }
         }
 
-        void SwitchTo(AudioClip clip, RecordData record)
+        /// <summary>フェードアウトしてから clip に切り替える（null なら止める）</summary>
+        void BeginSwitch(AudioClip clip, RecordData record)
         {
-            // 切り替える前の曲の位置を覚えておく（再生型の曲のあと、続きから戻すため）
-            if (source.clip != null && source.isPlaying) resumeTime[source.clip] = source.time;
+            pendingClip = clip;
+            pendingRecord = record;
+            switching = true;
+        }
 
+        void StartClip(AudioClip clip, RecordData record)
+        {
             source.Stop();
             source.clip = clip;
             NowPlaying = clip != null ? record : null;
-            currentVolume = 0f;
             if (clip == null) return;
-
-            float t = 0f;
-            if (resumeTime.TryGetValue(clip, out float saved) && saved < clip.length - 1f) t = saved;
-            source.time = t;
+            source.time = 0f;
             source.Play();
+            currentVolume = 1f;   // 曲の頭から、すぐに聞こえるようにする
         }
 
         void OnGUI()
@@ -219,43 +158,11 @@ namespace MedalPusher
                 labelStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.MiddleLeft, fontSize = 14 };
                 labelStyle.normal.textColor = Color.white;
             }
-            string text = NowPlaying != null && source.clip != null
-                ? $"♪ {NowPlaying.name}（{source.clip.name}）  {source.time:0}/{source.clip.length:0}秒"
-                : "♪ 曲なし（装着しているレコードに曲がありません）";
+            string text;
+            if (NowPlaying != null && source.clip != null) text = $"♪ {NowPlaying.name}（{source.clip.name}）  {source.time:0}/{source.clip.length:0}秒";
+            else if (CurrentRecord != null) text = $"♪ {CurrentRecord.name}（曲なし）";
+            else text = "♪ なし";
             GUI.Box(new Rect(10f, Screen.height * 0.45f - 30f, 440f, 26f), text, labelStyle);
-        }
-
-        /// <summary>いま流すべきレコード。再生型の効果中ならその曲、それ以外は装着しているレコードを枠の順に。</summary>
-        RecordData DesiredRecord()
-        {
-            if (overrideRecord != null) return overrideRecord;
-            if (!playEquippedAsBgm) return null;
-
-            var withClip = new List<RecordData>();
-            foreach (RecordData r in equipManager.Equipped)
-            {
-                if (FindClip(r) != null) withClip.Add(r);
-            }
-            if (withClip.Count == 0)
-            {
-                bgmKey = null;
-                return null;
-            }
-
-            // いまの BGM のレコードが装着中のままなら、それを続ける（外されていたら先頭から）
-            int index = withClip.FindIndex(r => r.key == bgmKey);
-            if (index < 0)
-            {
-                index = 0;
-                advanceBgm = false;
-            }
-            else if (advanceBgm)
-            {
-                index = (index + 1) % withClip.Count;
-                advanceBgm = false;
-            }
-            bgmKey = withClip[index].key;
-            return withClip[index];
         }
     }
 }
