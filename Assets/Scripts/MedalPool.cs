@@ -17,6 +17,9 @@ namespace MedalPusher
         Mesh visualMesh;
         Mesh modelMesh;              // モデルを使う時の見た目のメッシュ
         Material[] modelMaterials;
+        Material[] modelSourceMaterials;   // モデルに付いている元のマテリアル
+        Material[] normalMaterials;        // 普通のメダルの見た目
+        Material[] rareMaterials;          // レアメダルの見た目
         Vector3 modelScale = Vector3.one;
         Mesh colliderMesh;
         Material material;
@@ -38,6 +41,7 @@ namespace MedalPusher
             visualMesh = ProtoAssets.CreateCylinderMesh(r, tuning.medalThickness, 28);
             colliderMesh = ProtoAssets.CreateCylinderMesh(r, tuning.medalThickness, tuning.colliderSegments);
             PrepareModel();
+            PrepareMaterials();
 
             root = new GameObject("Medals").transform;
             for (int i = 0; i < prewarm; i++) free.Push(CreateMedal());
@@ -47,6 +51,7 @@ namespace MedalPusher
         {
             var go = new GameObject("Medal");
             go.SetActive(false);
+            MeshRenderer visualRenderer;
             go.transform.SetParent(root, false);
 
             if (modelMesh != null)
@@ -56,12 +61,12 @@ namespace MedalPusher
                 visual.transform.SetParent(go.transform, false);
                 visual.transform.localScale = modelScale;
                 visual.AddComponent<MeshFilter>().sharedMesh = modelMesh;
-                SetupRenderer(visual.AddComponent<MeshRenderer>(), modelMaterials);
+                visualRenderer = SetupRenderer(visual.AddComponent<MeshRenderer>(), normalMaterials);
             }
             else
             {
                 go.AddComponent<MeshFilter>().sharedMesh = visualMesh;
-                SetupRenderer(go.AddComponent<MeshRenderer>(), new[] { material });
+                visualRenderer = SetupRenderer(go.AddComponent<MeshRenderer>(), normalMaterials);
             }
 
             var col = go.AddComponent<MeshCollider>();
@@ -72,6 +77,7 @@ namespace MedalPusher
             var rb = go.AddComponent<Rigidbody>();
             var medal = go.AddComponent<Medal>();
             medal.Setup(rb, col); // 非アクティブなので Awake が走らない。明示的に渡す
+            medal.VisualRenderer = visualRenderer;
             ApplyBody(medal);
 
             all.Add(medal);
@@ -90,7 +96,10 @@ namespace MedalPusher
                 return;
             }
             modelMesh = mf.sharedMesh;
-            modelMaterials = visuals.overrideMedalColors ? TintMaterials(mr.sharedMaterials) : mr.sharedMaterials;
+            modelSourceMaterials = mr.sharedMaterials;
+            modelMaterials = visuals.overrideMedalColors
+                ? TintMaterials(modelSourceMaterials, visuals.medalFaceColor, visuals.medalRimColor, visuals.medalSmoothness)
+                : modelSourceMaterials;
             var size = modelMesh.bounds.size;
             modelScale = new Vector3(
                 tuning.medalDiameter / Mathf.Max(1e-5f, size.x),
@@ -98,11 +107,44 @@ namespace MedalPusher
                 tuning.medalDiameter / Mathf.Max(1e-5f, size.z));
         }
 
+        /// <summary>普通のメダルとレアメダルの見た目を用意する。</summary>
+        void PrepareMaterials()
+        {
+            if (modelMesh != null)
+            {
+                normalMaterials = modelMaterials;
+                rareMaterials = TintMaterials(modelSourceMaterials, visuals.rareFaceColor, visuals.rareRimColor, visuals.rareSmoothness);
+            }
+            else
+            {
+                normalMaterials = new[] { material };
+                var c = visuals != null ? visuals.rareFaceColor : Color.white;
+                rareMaterials = new[] { ProtoAssets.MakeMaterial(c, 0.2f, visuals != null ? visuals.rareSmoothness : 0.7f) };
+            }
+        }
+
+        /// <summary>メダルをレアメダルにする（または戻す）。見た目の色も切り替える。</summary>
+        public void SetRare(Medal medal, bool rare)
+        {
+            if (medal == null) return;
+            medal.IsRare = rare;
+            if (medal.VisualRenderer != null)
+                medal.VisualRenderer.sharedMaterials = rare ? rareMaterials : normalMaterials;
+        }
+
+        public int CountRare()
+        {
+            int n = 0;
+            for (int i = 0; i < active.Count; i++)
+                if (active[i] != null && active[i].IsRare) n++;
+            return n;
+        }
+
         /// <summary>
         /// モデルのマテリアルを複製し、色とつやだけを変える（元のモデルのマテリアルは変えない）。
         /// 名前に「Rim」が入るマテリアルはふちの色、それ以外は表面の色にする。
         /// </summary>
-        Material[] TintMaterials(Material[] source)
+        Material[] TintMaterials(Material[] source, Color faceColor, Color rimColor, float smoothness)
         {
             var result = new Material[source.Length];
             for (int i = 0; i < source.Length; i++)
@@ -110,11 +152,11 @@ namespace MedalPusher
                 var src = source[i];
                 if (src == null) continue;
                 var m = new Material(src) { name = src.name + "（色変更）" };
-                var c = src.name.Contains("Rim") ? visuals.medalRimColor : visuals.medalFaceColor;
+                var c = src.name.Contains("Rim") ? rimColor : faceColor;
                 m.color = c;
                 if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
-                if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", visuals.medalSmoothness);
-                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", visuals.medalSmoothness);
+                if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smoothness);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
                 if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
                 // .obj の Ks（反射の色）が白っぽいと、メダルが白く光って見えるので弱める
                 if (m.HasProperty("_SpecColor")) m.SetColor("_SpecColor", new Color(0.12f, 0.12f, 0.12f));
@@ -123,13 +165,14 @@ namespace MedalPusher
             return result;
         }
 
-        void SetupRenderer(MeshRenderer renderer, Material[] materials)
+        MeshRenderer SetupRenderer(MeshRenderer renderer, Material[] materials)
         {
             renderer.sharedMaterials = materials;
             renderer.shadowCastingMode = visuals != null && visuals.medalCastShadows
                 ? UnityEngine.Rendering.ShadowCastingMode.On
                 : UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = visuals != null && visuals.medalReceiveShadows;
+            return renderer;
         }
 
         void ApplyBody(Medal medal)
@@ -146,7 +189,7 @@ namespace MedalPusher
             rb.solverVelocityIterations = tuning.velocityIterations;
             rb.sleepThreshold = tuning.sleepThreshold;
             rb.maxDepenetrationVelocity = tuning.maxDepenetrationVelocity;
-            rb.maxAngularVelocity = 30f;
+            rb.maxAngularVelocity = tuning.medalMaxAngularVelocity;
         }
 
         public void ApplyBodySettings()
@@ -160,6 +203,7 @@ namespace MedalPusher
             var m = free.Count > 0 ? free.Pop() : CreateMedal();
             m.transform.SetPositionAndRotation(position, rotation);
             m.OnSpawn(active.Count);
+            SetRare(m, false); // 使い回すメダルは、いつも普通のメダルとして出す
             active.Add(m);
 
             m.gameObject.SetActive(true);
@@ -223,6 +267,35 @@ namespace MedalPusher
         }
 
         bool warnedDestroyed;
+
+        /// <summary>
+        /// 傾きすぎた（立ちかけている）メダルに、寝かせる向きの回転をかける。
+        /// プッシャーに押されたメダルが縁で起き上がり、ほかのメダルに寄りかかって立ったままになるのを防ぐ。
+        /// 眠っている（止まっている）メダルは計算しないので、軽い。
+        /// </summary>
+        void FixedUpdate()
+        {
+            if (tuning == null || tuning.antiStandTorque <= 0f || tuning.antiStandAngle >= 90f) return;
+            float cosLimit = Mathf.Cos(tuning.antiStandAngle * Mathf.Deg2Rad);
+            for (int i = 0; i < active.Count; i++)
+            {
+                var m = active[i];
+                if (m == null) continue;
+                var rb = m.Body;
+                if (rb.IsSleeping()) continue;
+
+                Vector3 axis = rb.rotation * Vector3.up;   // メダルの面の向き（寝ていれば真上か真下）
+                float flatness = Mathf.Abs(axis.y);        // 1 = 寝ている、0 = 立っている
+                if (flatness >= cosLimit) continue;
+
+                // 近い方の面（表か裏）が上を向くように回す。傾いているほど強く
+                Vector3 target = axis.y >= 0f ? Vector3.up : Vector3.down;
+                Vector3 turn = Vector3.Cross(axis, target);
+                if (turn.sqrMagnitude < 1e-8f) continue;
+                float strength = (cosLimit - flatness) / Mathf.Max(0.01f, cosLimit);
+                rb.AddTorque(turn.normalized * tuning.antiStandTorque * strength, ForceMode.Acceleration);
+            }
+        }
 
         public int CountAwake()
         {
