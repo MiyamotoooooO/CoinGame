@@ -482,6 +482,7 @@ namespace MedalPusher
 
         public void ResetGame()
         {
+            StopAllCoroutines(); // 降らせている途中の追加メダルを止める
             Pool.DespawnAll();
             Pusher.ResetPhase(rules.startPusherPosition);
             OwnedMedals = rules.startMedals;
@@ -491,6 +492,7 @@ namespace MedalPusher
             resetTime = Time.time;
             StartRound();
             Prefill();
+            MakeRandomRare(rules.rareStartCount);
             BeginArea();
         }
 
@@ -544,6 +546,7 @@ namespace MedalPusher
             RoundIndex++;
             RoundNumber++;
             StartRound();
+            DropBonusMedals();
             Monitor.ShowRound(RoundIndex);
             SetState(GameState.Playing);
         }
@@ -559,6 +562,7 @@ namespace MedalPusher
             RoundIndex = 0;
             RoundNumber++;
             StartRound();
+            DropBonusMedals();
             BeginArea();
         }
 
@@ -652,17 +656,18 @@ namespace MedalPusher
             if (State != GameState.Warmup && State != GameState.Intro)
             {
                 bool scoring = State == GameState.Playing || State == GameState.Grace;
+                float pointScale = medal.IsRare ? rules.rarePointMultiplier : 1f; // レアメダルはポイントが倍
                 switch (type)
                 {
                     case DropZoneType.Center:
                         CenterDrops++;
                         OwnedMedals += rules.centerMedalReturn;
-                        if (scoring) Points += rules.centerPoints;
+                        if (scoring) Points += Mathf.RoundToInt(rules.centerPoints * pointScale);
                         break;
                     case DropZoneType.Side:
                         SideDrops++;
                         OwnedMedals += rules.sideMedalReturn;
-                        if (scoring) Points += rules.sidePoints;
+                        if (scoring) Points += Mathf.RoundToInt(rules.sidePoints * pointScale);
                         break;
                     case DropZoneType.Lost:
                         LostDrops++;
@@ -944,6 +949,80 @@ namespace MedalPusher
             UnityEditor.Undo.RecordObject(this, label);
             UnityEditor.EditorUtility.SetDirty(this);
 #endif
+        }
+
+        /// <summary>盤面にあるメダル（上段・下段）からランダムに count 枚選び、レアメダルにする。</summary>
+        void MakeRandomRare(int count)
+        {
+            var candidates = new List<Medal>();
+            foreach (var m in Pool.Active)
+                if (m != null && !m.IsRare) candidates.Add(m);
+            for (int i = 0; i < count && candidates.Count > 0; i++)
+            {
+                int k = Random.Range(0, candidates.Count);
+                Pool.SetRare(candidates[k], true);
+                candidates.RemoveAt(k);
+            }
+        }
+
+        /// <summary>
+        /// 次のラウンドが始まる時のおまけ。盤面の上から rules.roundBonusMedals 枚を、画面の外から1枚ずつ降らせる。
+        /// rules.roundBonusRareChance の確率で、そのうち1枚をレアメダルにする。投入数・所持メダルは減らない。
+        /// </summary>
+        void DropBonusMedals()
+        {
+            int count = rules.roundBonusMedals;
+            if (count <= 0) return;
+            int rareIndex = Random.value < rules.roundBonusRareChance ? Random.Range(0, count) : -1;
+            StartCoroutine(DropMedalsRoutine(count, rareIndex));
+        }
+
+        System.Collections.IEnumerator DropMedalsRoutine(int count, int rareIndex)
+        {
+            float d = tuning.medalDiameter;
+            float r = d * 0.5f;
+            float half = BoardHalfWidth - r - d * 0.05f;
+            float zMin = layout.floorFrontZ + d;
+            float zMax = Mathf.Max(zMin, BackWallFrontZ - r - d * 0.05f);
+            for (int i = 0; i < count; i++)
+            {
+                float x = Random.Range(-half, half);
+                float z = Random.Range(zMin, zMax);
+                var rot = Quaternion.Euler(Random.Range(-15f, 15f), Random.Range(0f, 360f), Random.Range(-15f, 15f));
+                var m = Pool.Spawn(new Vector3(x, DropHeightAt(x, z), z), rot);
+                if (i == rareIndex) Pool.SetRare(m, true);
+                yield return new WaitForSeconds(rules.bonusDropInterval);
+            }
+        }
+
+        /// <summary>
+        /// メダルを降らせる高さ。カメラに映る範囲の上端より少し上（画面の外）にする。
+        /// ただし筐体の屋根より上だと屋根に乗ってしまうので、真上に屋根があればその少し下までにする。
+        /// </summary>
+        float DropHeightAt(float x, float z)
+        {
+            float d = tuning.medalDiameter;
+            float floorY = layout.launcherHeight + d;   // 最低でもこの高さ
+            float y = floorY;
+
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                // 画面の上端を通る線が、この奥行き（z）でどの高さを通るか
+                var t = cam.transform;
+                Vector3 topDir = Quaternion.AngleAxis(-cam.fieldOfView * 0.5f, t.right) * t.forward;
+                if (topDir.z > 0.01f)
+                {
+                    float k = (z - t.position.z) / topDir.z;
+                    y = Mathf.Max(y, t.position.y + topDir.y * k + d * 2f + rules.bonusDropExtraHeight);
+                }
+            }
+
+            // 真上に屋根（当たり判定）があれば、その下に収める
+            var from = new Vector3(x, floorY, z);
+            if (Physics.Raycast(from, Vector3.up, out var hit, 50f, ~0, QueryTriggerInteraction.Ignore))
+                y = Mathf.Min(y, hit.point.y - d);
+            return Mathf.Max(y, floorY);
         }
 
         /// <summary>負荷テスト用。盤面の上空からばらまく。</summary>

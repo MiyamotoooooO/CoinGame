@@ -21,6 +21,12 @@ namespace MedalPusher
         public bool WasInserted { get; private set; }
         public float InsertTime { get; private set; }
 
+        /// <summary>レアメダル（落とすとポイントが倍になる）。見た目の切り替えは MedalPool.SetRare で行う。</summary>
+        public bool IsRare { get; internal set; }
+
+        /// <summary>見た目のレンダラー（レアメダルの色の切り替えに使う）。</summary>
+        internal Renderer VisualRenderer { get; set; }
+
         private void Awake()
         {
             // アタッチされているオブジェクトのタグを自動的に "Coin" に設定する
@@ -39,6 +45,7 @@ namespace MedalPusher
             Consumed = false;
             WasInserted = false;
             InsertTime = 0f;
+            IsRare = false;
         }
 
         public void MarkInserted(float time)
@@ -47,4 +54,4 @@ namespace MedalPusher
             InsertTime = time;
         }
     }
-}
+}

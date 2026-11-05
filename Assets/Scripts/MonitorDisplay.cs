@@ -68,6 +68,15 @@ namespace MedalPusher
         Quaternion closeRot, playRot;
         float playLens;
 
+        // くっきり表示（ドット化した画面の上に、モニターだけ細かく描いて重ねる）
+        Camera overlayCamera;
+        LensDistortion overlayLens;
+        RenderTexture overlayTexture;
+        GameObject overlayCanvas;
+        RawImage overlayImage;
+        bool overlayActive;
+        int screenOriginalLayer;
+
         public bool IsPlayingIntro => introRoutine != null;
         public bool CanPlayIntro => screenRenderer != null && Camera.main != null;
 
@@ -82,10 +91,12 @@ namespace MedalPusher
             CreateSprites();
             CreateRig();
             AttachToScreen();
+            CreateOverlay();
         }
 
         void OnDestroy()
         {
+            if (overlayTexture != null) overlayTexture.Release();
             if (renderTexture != null) renderTexture.Release();
             if (screenMaterial != null) Destroy(screenMaterial);
         }
@@ -161,6 +172,94 @@ namespace MedalPusher
             screenMaterial.mainTextureScale = new Vector2(m.flipX ? -1f : 1f, m.flipY ? -1f : 1f);
             screenMaterial.mainTextureOffset = new Vector2(m.flipX ? 1f : 0f, m.flipY ? 1f : 0f);
             screenRenderer.sharedMaterial = screenMaterial;
+        }
+
+        // ================================================================
+        // くっきり表示
+        // ================================================================
+
+        /// <summary>
+        /// モニターの画面だけを描くカメラと、それを画面に重ねる Canvas を作る。
+        /// ArcadeCamera の画面（Sort Order -100）のすぐ上に重ねるので、モニターだけドット化や減色がかからない。
+        /// </summary>
+        void CreateOverlay()
+        {
+            if (screenRenderer == null) return;
+            screenOriginalLayer = screenRenderer.gameObject.layer;
+
+            var camGo = new GameObject("MonitorOverlayCamera");
+            overlayCamera = camGo.AddComponent<Camera>();
+            overlayCamera.clearFlags = CameraClearFlags.SolidColor;
+            overlayCamera.backgroundColor = new Color(0f, 0f, 0f, 0f); // モニター以外は透明
+            overlayCamera.cullingMask = 1 << game.monitor.overlayLayer;
+            overlayCamera.enabled = false;
+            overlayLens = camGo.AddComponent<LensDistortion>();      // メインカメラと同じゆがみをかけて位置を合わせる
+
+            overlayCanvas = new GameObject("MonitorOverlayCanvas");
+            var canvas = overlayCanvas.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            var arcade = Camera.main != null ? Camera.main.GetComponent<ArcadeCamera>() : null;
+            canvas.sortingOrder = arcade != null ? arcade.sortingOrder + 1 : 0;
+
+            var imageGo = new GameObject("Monitor");
+            imageGo.transform.SetParent(overlayCanvas.transform, false);
+            overlayImage = imageGo.AddComponent<RawImage>();
+            overlayImage.raycastTarget = false;
+            var rt = overlayImage.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            overlayCanvas.SetActive(false);
+        }
+
+        /// <summary>カメラが動いたあと（演出のズームも含む）に、重ねるカメラをメインカメラに合わせる。</summary>
+        void LateUpdate()
+        {
+            if (overlayCamera == null) return;
+            var main = Camera.main;
+            var arcade = main != null ? main.GetComponent<ArcadeCamera>() : null;
+            bool want = game.monitor.sharpMonitor && arcade != null && arcade.isActiveAndEnabled && arcade.effectEnabled;
+            int layerMask = 1 << game.monitor.overlayLayer;
+
+            if (want != overlayActive)
+            {
+                overlayActive = want;
+                overlayCanvas.SetActive(want);
+                overlayCamera.enabled = want;
+                // 重ねる時は、メインカメラ（ドット化される方）にはモニターを映さない
+                screenRenderer.gameObject.layer = want ? game.monitor.overlayLayer : screenOriginalLayer;
+                if (main != null)
+                {
+                    if (want) main.cullingMask &= ~layerMask;
+                    else main.cullingMask |= layerMask;
+                }
+            }
+            if (!want) return;
+
+            int h = game.monitor.monitorPixelHeight > 0 ? game.monitor.monitorPixelHeight : Screen.height;
+            h = Mathf.Clamp(h, 64, 4096);
+            int w = Mathf.Max(1, Mathf.RoundToInt(h * (float)Screen.width / Mathf.Max(1, Screen.height)));
+            if (overlayTexture == null || overlayTexture.width != w || overlayTexture.height != h)
+            {
+                if (overlayTexture != null) overlayTexture.Release();
+                overlayTexture = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
+                {
+                    name = "MonitorOverlay",
+                    filterMode = FilterMode.Point, // 引き伸ばす時にぼかさない（ドットはドットのまま）
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                overlayTexture.Create();
+                overlayCamera.targetTexture = overlayTexture;
+                overlayImage.texture = overlayTexture;
+            }
+
+            overlayCamera.transform.SetPositionAndRotation(main.transform.position, main.transform.rotation);
+            overlayCamera.fieldOfView = main.fieldOfView;
+            overlayCamera.nearClipPlane = main.nearClipPlane;
+            overlayCamera.farClipPlane = main.farClipPlane;
+            var mainLens = main.GetComponent<LensDistortion>();
+            overlayLens.strength = mainLens != null ? mainLens.strength : 0f;
         }
 
         // ================================================================

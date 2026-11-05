@@ -110,6 +110,14 @@ namespace MedalPusher
         [Tooltip("つや。低いほど白い光の反射が減り、参考作品のような落ち着いた見た目になる")]
         [Range(0f, 1f)] public float medalSmoothness = 0.25f;
 
+        [Header("レアメダルの色（仮。モデルができるまで色だけ変える）")]
+        [Tooltip("レアメダルの表面の色（銀色）")]
+        public Color rareFaceColor = new Color(0.86f, 0.88f, 1.00f);    // #DBE0FF
+        [Tooltip("レアメダルのふちの色（紫がかった銀）")]
+        public Color rareRimColor = new Color(0.62f, 0.60f, 0.90f);     // #9E99E6
+        [Tooltip("レアメダルのつや（普通のメダルより光らせて目立たせる）")]
+        [Range(0f, 1f)] public float rareSmoothness = 0.7f;
+
         [Header("影")]
         [Tooltip("メダルが影を落とす（オンにすると重なった所が暗くなり、少し重くなる）")]
         public bool medalCastShadows = false;
@@ -137,6 +145,14 @@ namespace MedalPusher
         [Range(0.25f, 4f)] public float introSpeed = 1f;
         [Tooltip("レコードの回る速さ（度/秒）")]
         public float recordSpinSpeed = 120f;
+
+        [Header("くっきり表示（画面のドット化を、モニターだけ別の細かさにする）")]
+        [Tooltip("ArcadeCamera で画面をドット化している時、モニターだけ別のカメラで細かく描いて上に重ねる")]
+        public bool sharpMonitor = true;
+        [Tooltip("モニターを描く縦のドット数。大きいほどくっきり（ゲーム画面は ArcadeCamera の Pixel Height）。0 で画面の解像度と同じ")]
+        [Range(0, 2160)] public int monitorPixelHeight = 720;
+        [Tooltip("モニターだけを描くためのレイヤー番号。ほかで使っていない番号にする")]
+        [Range(8, 31)] public int overlayLayer = 29;
     }
 
     public enum BoardSource
@@ -190,6 +206,14 @@ namespace MedalPusher
         [Range(0f, 1f)] public float medalStaticFriction = 0.35f;
         [Range(0f, 0.6f)] public float medalBounciness = 0f;
 
+        [Header("メダルが立つのを防ぐ")]
+        [Tooltip("メダルがこの角度より傾くと、寝かせる向きに回す力をかける（度）。90 で無効")]
+        [Range(20f, 90f)] public float antiStandAngle = 55f;
+        [Tooltip("寝かせる力の強さ。0 で無効。強すぎると、傾いたメダルが不自然にパタンと倒れる")]
+        [Range(0f, 200f)] public float antiStandTorque = 40f;
+        [Tooltip("メダルが回る速さの上限（ラジアン/秒）。低いほど、勢いよく起き上がりにくい")]
+        [Range(1f, 50f)] public float medalMaxAngularVelocity = 15f;
+
         [Header("盤面・プッシャー")]
         [Range(0f, 1f)] public float boardDynamicFriction = 0.25f;
         [Range(0f, 1f)] public float boardStaticFriction = 0.3f;
@@ -236,6 +260,22 @@ namespace MedalPusher
         [Tooltip("企画書: 端の穴は通常0pt（フォークで+2pt）")]
         public int sidePoints = 0;
         public int sideMedalReturn = 0;
+        [Header("レアメダル")]
+        [Tooltip("開始時に盤面（上段・下段）に混ぜるレアメダルの枚数")]
+        public int rareStartCount = 7;
+        [Tooltip("レアメダルを穴に落とした時のポイントの倍率")]
+        public float rarePointMultiplier = 2f;
+
+        [Header("ラウンドが進んだ時の追加メダル")]
+        [Tooltip("次のラウンド（次のエリアを含む）が始まる時に、上から落とすメダルの枚数")]
+        public int roundBonusMedals = 5;
+        [Tooltip("追加メダルの中に、レアメダルを1枚入れる確率（0.2 = 20%）")]
+        [Range(0f, 1f)] public float roundBonusRareChance = 0.2f;
+        [Tooltip("追加メダルを1枚ずつ降らせる間隔（秒）")]
+        [Range(0f, 1f)] public float bonusDropInterval = 0.15f;
+        [Tooltip("画面の上端からさらに上に出す高さ。0 で画面の外ぎりぎり（屋根より上にはならない）")]
+        public float bonusDropExtraHeight = 0.2f;
+
         [Header("初期盤面")]
         [Tooltip("Grid: すき間なく並べて段を重ねる / Random: ランダムに散らして山にする")]
         public PrefillStyle prefillStyle = PrefillStyle.Grid;

@@ -17,6 +17,7 @@ namespace MedalPusher
         float fps = 60f;
         float awakeTimer;
         int awakeCount;
+        int rareCount;
         bool changed;
 
         GUIStyle labelStyle, bigStyle, smallStyle;
@@ -44,6 +45,7 @@ namespace MedalPusher
             {
                 awakeTimer = 0.25f;
                 awakeCount = game.Pool.CountAwake();
+                rareCount = game.Pool.CountRare();
             }
 
             if (InputCompat.Down(GameKey.TogglePanel)) showPanel = !showPanel;
@@ -109,7 +111,7 @@ namespace MedalPusher
             else
                 GUILayout.Label($"ポイント: <b>{game.Points}</b> / {game.CurrentQuota}", labelStyle);
             GUILayout.Label($"落下  <color=#66ee88>中央 {game.CenterDrops}</color>   <color=#ff7777>端 {game.SideDrops}</color>   ロスト {game.LostDrops}", labelStyle);
-            GUILayout.Label($"盤面メダル: <b>{game.Pool.ActiveCount}</b>  （動いている: {awakeCount}）", labelStyle);
+            GUILayout.Label($"盤面メダル: <b>{game.Pool.ActiveCount}</b>  <color=#c8c8ff>レア {rareCount}</color>  （動いている: {awakeCount}）", labelStyle);
             GUILayout.Label($"<color={fpsColor}>FPS {fps:0}  ({ms} ms)</color>   物理 {game.tuning.physicsHz}Hz", labelStyle);
             GUILayout.EndArea();
         }
@@ -176,6 +178,8 @@ namespace MedalPusher
             t.medalBounciness = Slider("反発", t.medalBounciness, 0f, 0.6f, "0.00");
             t.medalDrag = Slider("空気抵抗", t.medalDrag, 0f, 2f, "0.00");
             t.medalAngularDrag = Slider("回転抵抗", t.medalAngularDrag, 0f, 5f, "0.00");
+            t.antiStandAngle = Slider("立ち防止の角度", t.antiStandAngle, 20f, 90f, "0");
+            t.antiStandTorque = Slider("立ち防止の強さ", t.antiStandTorque, 0f, 200f, "0");
 
             Header("盤面・プッシャー");
             t.boardDynamicFriction = Slider("摩擦（動）", t.boardDynamicFriction, 0f, 1f, "0.00");
@@ -215,6 +219,8 @@ namespace MedalPusher
                 camChanged = true;
             }
             if (camChanged) game.ApplyCameraPreset();
+            var m = game.monitor;
+            m.monitorPixelHeight = Mathf.RoundToInt(Slider("モニターのドット(縦)", m.monitorPixelHeight, 120f, 1440f, "0"));
 
             Header("投入・テスト");
             r.insertInterval = Slider("発射間隔(秒)", r.insertInterval, 0.05f, 1f, "0.00");
