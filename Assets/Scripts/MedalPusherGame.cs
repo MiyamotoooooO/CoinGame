@@ -39,6 +39,8 @@ namespace MedalPusher
         public AreaDefinition[] areas = DefaultAreas();
         [Header("モニター")]
         public MonitorSettings monitor = new MonitorSettings();
+        [Header("ショップ")]
+        public ShopSettings shop = new ShopSettings();
         [Header("見た目（右クリック →「メダルの見た目をモデルにする」で Medal.obj を入れられる）")]
         public VisualSettings visuals = new VisualSettings();
 
@@ -68,6 +70,12 @@ namespace MedalPusher
         public MedalLauncher Launcher { get; private set; }
         public DebugHud Hud { get; private set; }
         public MonitorDisplay Monitor { get; private set; }
+        public RecordShop Shop { get; private set; }
+        public RoundClearBar ClearBar { get; private set; }
+
+        /// <summary>1ラウンドに投入できる枚数（Rules の Insert Limit ＋ ショップで増やした分）</summary>
+        public int InsertLimit => rules.insertLimit + insertLimitBonus;
+        int insertLimitBonus;
 
         public AreaDefinition CurrentArea => areas[Mathf.Clamp(AreaIndex, 0, areas.Length - 1)];
         public RoundDefinition CurrentRound => CurrentArea.rounds[Mathf.Clamp(RoundIndex, 0, CurrentArea.rounds.Length - 1)];
@@ -81,7 +89,7 @@ namespace MedalPusher
         public float BackWallFrontZ => layout.pusherRetractZ + layout.backWallOffset;
         public float FloorBackZ => layout.pusherRetractZ + layout.pusherDepth + 0.5f;
 
-        public bool HasInsertsLeft => OwnedMedals > 0 && InsertedThisRound < rules.insertLimit;
+        public bool HasInsertsLeft => OwnedMedals > 0 && InsertedThisRound < InsertLimit;
         public bool CanInsert => rules.freePlay || (State == GameState.Playing && HasInsertsLeft);
 
         PhysicMaterial medalPhysicMaterial;
@@ -132,6 +140,11 @@ namespace MedalPusher
             EnsureAreas();
             Monitor = gameObject.AddComponent<MonitorDisplay>();
             Monitor.Init(this);
+
+            Shop = gameObject.AddComponent<RecordShop>();
+            Shop.Init(this);
+            ClearBar = gameObject.AddComponent<RoundClearBar>();
+            ClearBar.Init(this);
 
             ApplyTuning();
             ResetGame();
@@ -486,6 +499,8 @@ namespace MedalPusher
             Pool.DespawnAll();
             Pusher.ResetPhase(rules.startPusherPosition);
             OwnedMedals = rules.startMedals;
+            insertLimitBonus = 0;
+            Shop.ResetRun();
             RoundNumber = 1;
             AreaIndex = 0;
             RoundIndex = 0;
@@ -523,7 +538,7 @@ namespace MedalPusher
             CenterDrops = SideDrops = LostDrops = 0;
         }
 
-        /// <summary>Enter キー：演出のスキップ → 次のラウンド → ショップ → 次のエリア と進める。</summary>
+        /// <summary>Enter キー：演出のスキップ / クリア後に次へ進む / ショップを閉じる。</summary>
         public void Advance()
         {
             switch (State)
@@ -532,14 +547,51 @@ namespace MedalPusher
                     Monitor.SkipIntro();
                     break;
                 case GameState.Cleared:
-                    if (IsLastRoundOfArea) SetState(GameState.Shop);
-                    else NextRound();
+                    ProceedAfterClear();
                     break;
                 case GameState.Shop:
-                    NextArea();
+                    CloseShop();
                     break;
             }
         }
+
+        /// <summary>クリア後の「ショップへ入る」。カメラがモニターに寄って、モニターにショップが出る。</summary>
+        public void OpenShop()
+        {
+            if (State != GameState.Cleared || !Monitor.CanPlayIntro) return;
+            SetState(GameState.Shop);
+            Shop.OnShopOpened();
+            Monitor.OpenShop();
+        }
+
+        /// <summary>ショップの「閉じる」。カメラが盤面に戻ってから、次のラウンド（または次のエリア）に進む。</summary>
+        public void CloseShop()
+        {
+            if (State != GameState.Shop) return;
+            Monitor.CloseShop(ProceedAfterClear);
+        }
+
+        /// <summary>クリア後に次へ進む。エリアの最後のラウンドなら次のエリア、それ以外は次のラウンド。</summary>
+        public void ProceedAfterClear()
+        {
+            if (State != GameState.Cleared && State != GameState.Shop) return;
+            if (IsLastRoundOfArea) NextArea();
+            else NextRound();
+        }
+
+        /// <summary>所持メダルを使う（ショップでの購入など）。足りなければ使わずに false。</summary>
+        public bool TrySpendMedals(int amount)
+        {
+            if (amount < 0 || OwnedMedals < amount) return false;
+            OwnedMedals -= amount;
+            return true;
+        }
+
+        /// <summary>ポイントを足す（レコードの効果など、穴に落ちた時の基本のポイント以外）。</summary>
+        public void AddPoints(int amount) => Points += amount;
+
+        /// <summary>投入上限を増やす（ショップの投入上限アップ）。リセットで元に戻る。</summary>
+        public void AddInsertLimit(int amount) => insertLimitBonus += amount;
 
         void NextRound()
         {

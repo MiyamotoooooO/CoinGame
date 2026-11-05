@@ -125,6 +125,27 @@ namespace MedalPusher
         public bool medalReceiveShadows = false;
     }
 
+    /// <summary>ショップの設定（値段などは仮）。</summary>
+    [Serializable]
+    public class ShopSettings
+    {
+        [Header("リロール（並んでいるレコードを入れ替える）")]
+        [Tooltip("ショップを開いて最初のリロールの値段（メダル）")]
+        public int rerollBaseCost = 5;
+        [Tooltip("リロールするたびに上がる値段（ショップを開き直すと元に戻る）")]
+        public int rerollCostStep = 2;
+
+        [Header("投入上限アップ")]
+        [Tooltip("1回の購入で増える、1ラウンドに投入できる枚数")]
+        public int limitStep = 5;
+        [Tooltip("1回目の値段（メダル）")]
+        public int limitBaseCost = 20;
+        [Tooltip("買うたびに上がる値段")]
+        public int limitCostStep = 10;
+        [Tooltip("投入上限の最大")]
+        public int limitMax = 60;
+    }
+
     /// <summary>筐体のモニターに映す内容の設定。</summary>
     [Serializable]
     public class MonitorSettings
@@ -145,6 +166,8 @@ namespace MedalPusher
         [Range(0.25f, 4f)] public float introSpeed = 1f;
         [Tooltip("レコードの回る速さ（度/秒）")]
         public float recordSpinSpeed = 120f;
+        [Tooltip("ショップを開く・閉じる時に、カメラがモニターに寄る・離れるのにかかる秒数")]
+        [Range(0.2f, 3f)] public float shopZoomSeconds = 1.0f;
 
         [Header("くっきり表示（画面のドット化を、モニターだけ別の細かさにする）")]
         [Tooltip("ArcadeCamera で画面をドット化している時、モニターだけ別のカメラで細かく描いて上に重ねる")]

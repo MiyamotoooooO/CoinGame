@@ -1,0 +1,11 @@
+newmtl MedalFace
+Kd 0.860 0.660 0.220
+Ks 0.750 0.750 0.750
+Ns 378
+d 1.0
+
+newmtl MedalRim
+Kd 0.930 0.760 0.320
+Ks 0.850 0.850 0.850
+Ns 426
+d 1.0

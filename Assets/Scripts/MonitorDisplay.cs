@@ -20,7 +20,7 @@ namespace MedalPusher
     /// プレイ中は、ノルマとポイント（ボス戦はHPバー）を映す。
     /// 画面は 1500×600（モニターと同じ 2.5:1）の座標で組んでいる。左上が (0, 0)。
     /// </summary>
-    public class MonitorDisplay : MonoBehaviour
+    public partial class MonitorDisplay : MonoBehaviour
     {
         const int UiLayer = 5;               // Unity 標準の「UI」レイヤー。メインカメラには映さない
         const float CanvasW = 1500f;
@@ -322,6 +322,8 @@ namespace MedalPusher
             NewText("ArrowLText", arrows, 50f, 87f, 64f, 64f, "◀", 30, new Color(0.15f, 0.15f, 0.15f));
             NewImage("ArrowR", arrows, 1448f, 87f, 64f, 64f, new Color(0.85f, 0.15f, 0.12f), circleSprite);
             NewText("ArrowRText", arrows, 1450f, 87f, 64f, 64f, "▶", 30, Color.white);
+
+            BuildShopPage(root); // ショップの画面（MonitorDisplay.Shop.cs）。普段は隠しておく
         }
 
         /// <summary>左のマスコット。画像が無ければ仮の図形を出す。</summary>
@@ -400,6 +402,7 @@ namespace MedalPusher
         public void ShowArea(int area, int round)
         {
             StopIntro(false);
+            StopShop();
             areaIndex = Mathf.Clamp(area, 0, game.areas.Length - 1);
             roundIndex = round;
             RebuildRoundItems();
@@ -561,6 +564,16 @@ namespace MedalPusher
         /// <summary>カメラをモニターの正面に寄せ、モニターが画面いっぱいに映るようにする。</summary>
         void BeginCloseup()
         {
+            ComputeCloseup();
+            var cam = Camera.main;
+            cam.transform.SetPositionAndRotation(closePos, closeRot);
+            SetLens(cam, 0f);
+            cameraOverridden = true;
+        }
+
+        /// <summary>プレイ中のカメラの位置（playPos）と、モニターに寄った位置（closePos）を求める。カメラは動かさない。</summary>
+        void ComputeCloseup()
+        {
             var cam = Camera.main;
             game.ApplyCameraPreset();            // まずプレイ中の位置を求める
             playPos = cam.transform.position;
@@ -575,10 +588,7 @@ namespace MedalPusher
             float dist = Mathf.Max(b.extents.x / Mathf.Tan(hHalf), b.extents.y / Mathf.Tan(vHalf));
             closePos = new Vector3(b.center.x, b.center.y, b.min.z - dist);
             closeRot = Quaternion.identity;
-
-            cam.transform.SetPositionAndRotation(closePos, closeRot);
-            SetLens(cam, 0f);
-            cameraOverridden = true;
+            cam.transform.SetPositionAndRotation(playPos, playRot);
         }
 
         void RestoreCamera()
@@ -651,6 +661,7 @@ namespace MedalPusher
                 for (int i = 0; i < items.Count; i++) items[i].group.alpha = i == roundIndex ? 1f : 0.55f;
 
             UpdatePlayPanel();
+            UpdateShop();
         }
 
         void UpdatePlayPanel()
@@ -669,12 +680,12 @@ namespace MedalPusher
                 playValue.text = $"{game.Points} / {quota} pt";
             }
 
-            string sub = $"残り投入 {Mathf.Max(0, game.rules.insertLimit - game.InsertedThisRound)}";
+            string sub = $"残り投入 {Mathf.Max(0, game.InsertLimit - game.InsertedThisRound)}";
             switch (game.State)
             {
                 case GameState.Cleared: sub = game.IsLastRoundOfArea ? "エリアクリア！" : "クリア！"; break;
                 case GameState.Failed: sub = "失敗…"; break;
-                case GameState.Shop: sub = "ショップ（準備中）"; break;
+                case GameState.Shop: sub = "ショップ"; break;
                 case GameState.Finished: sub = "おしまい（仮）"; break;
             }
             playSub.text = sub;
