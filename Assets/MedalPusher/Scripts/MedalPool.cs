@@ -90,12 +90,37 @@ namespace MedalPusher
                 return;
             }
             modelMesh = mf.sharedMesh;
-            modelMaterials = mr.sharedMaterials;
+            modelMaterials = visuals.overrideMedalColors ? TintMaterials(mr.sharedMaterials) : mr.sharedMaterials;
             var size = modelMesh.bounds.size;
             modelScale = new Vector3(
                 tuning.medalDiameter / Mathf.Max(1e-5f, size.x),
                 tuning.medalThickness / Mathf.Max(1e-5f, size.y),
                 tuning.medalDiameter / Mathf.Max(1e-5f, size.z));
+        }
+
+        /// <summary>
+        /// モデルのマテリアルを複製し、色とつやだけを変える（元のモデルのマテリアルは変えない）。
+        /// 名前に「Rim」が入るマテリアルはふちの色、それ以外は表面の色にする。
+        /// </summary>
+        Material[] TintMaterials(Material[] source)
+        {
+            var result = new Material[source.Length];
+            for (int i = 0; i < source.Length; i++)
+            {
+                var src = source[i];
+                if (src == null) continue;
+                var m = new Material(src) { name = src.name + "（色変更）" };
+                var c = src.name.Contains("Rim") ? visuals.medalRimColor : visuals.medalFaceColor;
+                m.color = c;
+                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
+                if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", visuals.medalSmoothness);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", visuals.medalSmoothness);
+                if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+                // .obj の Ks（反射の色）が白っぽいと、メダルが白く光って見えるので弱める
+                if (m.HasProperty("_SpecColor")) m.SetColor("_SpecColor", new Color(0.12f, 0.12f, 0.12f));
+                result[i] = m;
+            }
+            return result;
         }
 
         void SetupRenderer(MeshRenderer renderer, Material[] materials)

@@ -119,7 +119,8 @@ namespace MedalPusher
 
             Pool = gameObject.AddComponent<MedalPool>();
             // 仮のメダル（モデルが無い時）は金属っぽさを控えめにする。強いと、映り込む景色が無いため暗く沈む
-            Pool.Init(tuning, visuals, ProtoAssets.MakeMaterial(MedalColor, 0.2f, 0.5f), medalPhysicMaterial,
+            var medalColor = visuals.overrideMedalColors ? visuals.medalFaceColor : MedalColor;
+            Pool.Init(tuning, visuals, ProtoAssets.MakeMaterial(medalColor, 0.2f, 0.5f), medalPhysicMaterial,
                 rules.prefillMedals + 150);
 
             Launcher = gameObject.AddComponent<MedalLauncher>();
@@ -280,18 +281,25 @@ namespace MedalPusher
         /// </summary>
         void CheckModelScale(Transform playfield)
         {
-            if (playfield == null) return;
-            var renderers = playfield.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) return;
+            float actual = MeasureWidth(playfield);
+            if (actual <= 0f) return;
+            float expected = layout.boardWidth + layout.wallThickness * 2f;
+            if (Mathf.Abs(actual - expected) > expected * 0.1f)
+            {
+                Debug.LogWarning($"[MedalPusher] Playfield の幅が {actual:0.###} ですが、Layout では {expected:0.###} の想定です。" +
+                                 "MedalPusherGame を右クリック →「今の設定をシーンの盤面の大きさに合わせる」で合わせられます。");
+            }
+        }
+
+        /// <summary>モデルの見た目の横幅。見つからなければ -1。</summary>
+        static float MeasureWidth(Transform root)
+        {
+            if (root == null) return -1f;
+            var renderers = root.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return -1f;
             var b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
-            float expected = layout.boardWidth + layout.wallThickness * 2f;
-            if (Mathf.Abs(b.size.x - expected) > expected * 0.1f)
-            {
-                Debug.LogWarning($"[MedalPusher] Playfield の幅が {b.size.x:0.###} ですが、Layout では {expected:0.###} の想定です。" +
-                                 "モデルの Scale Factor（盤面モデル v3 なら 10）か、Layout の寸法を確認してください。" +
-                                 "（MedalPusherGame を右クリック →「盤面モデル v3 の寸法を入れる」でも合わせられます）");
-            }
+            return b.size.x;
         }
 
         static Transform Pick(Transform assigned, string name) => assigned != null ? assigned : FindByName(name);
@@ -789,6 +797,65 @@ namespace MedalPusher
             rules.launchSpeed = 3.5f;
             rules.launchUpSpeed = 0.3f;
             rules.launchForwardSpeed = 0.1f;
+        }
+
+        /// <summary>
+        /// シーンの Playfield の実際の幅を測り、今の設定の長さをすべて同じ倍率で拡大・縮小する。
+        /// 盤面モデルを別の大きさで置き直した時用（例: StageVer2 は今までの 0.714 倍）。
+        /// メダルの大きさやカメラの位置など、今までの調整は比率を保ったまま引き継ぐ。
+        /// </summary>
+        [ContextMenu("今の設定をシーンの盤面の大きさに合わせる")]
+        void FitSettingsToSceneBoard()
+        {
+            float actual = MeasureWidth(FindByName("Playfield"));
+            float expected = layout.boardWidth + layout.wallThickness * 2f;
+            if (actual <= 0f || expected <= 0f)
+            {
+                Debug.LogWarning("[MedalPusher] シーンに有効な「Playfield」が見つかりません。");
+                return;
+            }
+            float k = actual / expected;
+            if (Mathf.Abs(k - 1f) < 0.001f)
+            {
+                Debug.Log("[MedalPusher] 設定はすでにシーンの盤面の大きさに合っています。");
+                return;
+            }
+            RecordUndo("今の設定をシーンの盤面の大きさに合わせる");
+            ScaleLengths(k);
+            Debug.Log($"[MedalPusher] 設定の長さを {k:0.###} 倍にしました（盤面の幅 {layout.boardWidth:0.###}、メダルの直径 {tuning.medalDiameter:0.###}）。");
+        }
+
+        /// <summary>長さの設定をすべて k 倍にする。発射の速さは、飛ぶ距離が k 倍になるよう √k 倍にする。</summary>
+        void ScaleLengths(float k)
+        {
+            var l = layout;
+            l.boardWidth *= k;
+            l.floorFrontZ *= k;
+            l.wallHeight *= k;
+            l.wallThickness *= k;
+            l.pusherHeight *= k;
+            l.pusherDepth *= k;
+            l.pusherRetractZ *= k;
+            l.pusherSideGap *= k;
+            l.backWallOffset *= k;
+            l.backWallGap *= k;
+            l.centerHoleWidth *= k;
+            l.holeTopY *= k;
+            l.holeBottomY *= k;
+            l.holeDepth *= k;
+            l.launcherHeight *= k;
+            l.launcherZFromWall *= k;
+            l.cameraPosition *= k;   // 原点を中心に縮めるので、同じ角度・視野角で同じ構図になる
+
+            tuning.pusherStroke *= k;
+            tuning.medalDiameter *= k;
+            tuning.medalThickness *= k;
+            tuning.contactOffset *= k;
+
+            float v = Mathf.Sqrt(k);
+            rules.launchSpeed *= v;
+            rules.launchUpSpeed *= v;
+            rules.launchForwardSpeed *= v;
         }
 
         /// <summary>メダルの見た目に、盤面モデル一式の Medal.obj を入れる（エディタでのみ動く）。</summary>

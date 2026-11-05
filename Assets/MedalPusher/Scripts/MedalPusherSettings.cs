@@ -100,6 +100,17 @@ namespace MedalPusher
         [Tooltip("メダルの見た目に使うモデル（例: Models/Medal.obj）。空ならコードで作った仮のメダル。" +
                  "当たり判定はモデルに関係なく、Tuning の直径・厚さで作る")]
         public GameObject medalModel;
+        [Header("メダルの色（モデルの形はそのままで、色だけ変える）")]
+        [Tooltip("オフにすると、モデルに付いている元の色（金色）のまま")]
+        public bool overrideMedalColors = true;
+        [Tooltip("表面の色（参考作品の銅色）")]
+        public Color medalFaceColor = new Color(0.85f, 0.52f, 0.25f);   // #D9853F
+        [Tooltip("ふちの色。表面より少し濃くすると立体感が出る")]
+        public Color medalRimColor = new Color(0.72f, 0.35f, 0.16f);    // #B85A29
+        [Tooltip("つや。低いほど白い光の反射が減り、参考作品のような落ち着いた見た目になる")]
+        [Range(0f, 1f)] public float medalSmoothness = 0.25f;
+
+        [Header("影")]
         [Tooltip("メダルが影を落とす（オンにすると重なった所が暗くなり、少し重くなる）")]
         public bool medalCastShadows = false;
         [Tooltip("メダルが影を受ける（オフにすると筐体やほかのメダルの影で暗くならない）")]
