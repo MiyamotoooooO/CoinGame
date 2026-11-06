@@ -1,12 +1,15 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class GameManager : MonoBehaviour
 {
-    public int currentArea = 1;
-    public int currentRound = 1;
+    public SaveManager saveManager;
+    public MedalPusher.MedalPusherGame game;
 
+    public int area = 0;
+    public int round = 0;
     public int medal = 50;
     public int point = 0;
 
@@ -20,39 +23,29 @@ public class GameManager : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.F5))
         {
             SaveGame();
-            Debug.Log("セーブ");
         }
 
         if (Input.GetKeyDown(KeyCode.F9))
         {
-            LoadGame();
-            Debug.Log("ロード");
+            SceneManager.LoadScene("TitleScene");
         }
     }
 
     public void SaveGame()
     {
-        SaveManager.Instance.SaveGame(currentArea, currentRound, medal, point, "Pops", "Jazz", "Rock");
+        Debug.Log($"保存 Area={game.AreaIndex} Round={game.RoundIndex}");
+        saveManager.Save(game.AreaIndex, game.RoundIndex, game.OwnedMedals, game.AreaPoints);
     }
 
     public void LoadGame()
     {
-        SaveData data = SaveManager.Instance.LoadGame();
+        SaveData data = saveManager.Load();
 
         if (data == null)
             return;
 
-        currentArea = data.area;
-        currentRound = data.round;
+        game.LoadProgress(data.area, data.round, data.medal, data.point);
 
-        medal = data.medal;
-        point = data.point;
-
-        Debug.Log($"エリア{currentArea} ラウンド{currentRound}");
-    }
-
-    private void OnApplicationQuit()
-    {
-        SaveGame();
+        Debug.Log($"Area:{area} Round:{round} Medal:{medal} Point:{point}");
     }
 }

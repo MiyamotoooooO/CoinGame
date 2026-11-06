@@ -522,6 +522,21 @@ namespace MedalPusher
             BeginArea();
         }
 
+        public void LoadProgress(int area, int round, int medal, int point)
+        {
+            AreaIndex = area;
+            RoundIndex = round;
+
+            OwnedMedals = medal;
+            AreaPoints = point;
+
+            Monitor.ShowRound(RoundIndex);
+
+            BeginArea();
+
+            Debug.Log($"ロード Area={AreaIndex} Round={RoundIndex}");
+        }
+
         /// <summary>エリアの始まり。モニターの演出を流し、終わったらプレイを始める。</summary>
         void BeginArea()
         {
@@ -1137,6 +1152,21 @@ namespace MedalPusher
                 var rot = Quaternion.Euler(Random.Range(-20f, 20f), Random.Range(0f, 360f), Random.Range(-20f, 20f));
                 Pool.Spawn(pos, rot);
             }
+        }
+
+        public void SetProgress(int area, int round, int medals, int points)
+        {
+            AreaIndex = area;
+            RoundIndex = round;
+
+            OwnedMedals = medals;
+            AreaPoints = points;
+
+            StartRound();
+
+            Monitor.ShowRound(RoundIndex);
+
+            SetState(GameState.Playing);
         }
     }
 }
