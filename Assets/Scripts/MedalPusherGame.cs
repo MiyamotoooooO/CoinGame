@@ -50,6 +50,8 @@ namespace MedalPusher
         /// <summary>プレイヤーがメダルを投入した</summary>
         public event System.Action<Medal> MedalInserted;
         public event System.Action<GameState> StateChanged;
+        /// <summary>ゲームをリセットした時（R キー）に呼ばれる</summary>
+        public event System.Action GameReset;
 
         public GameState State { get; private set; }
         public float StateTime { get; private set; }
@@ -60,7 +62,12 @@ namespace MedalPusher
         public int RoundIndex { get; private set; }
         public int OwnedMedals { get; private set; }
         public int InsertedThisRound { get; private set; }
+        /// <summary>このラウンドで稼いだポイント（ノルマ・ボスのHPの判定に使う）。ラウンドごとに0から</summary>
         public int Points { get; private set; }
+        /// <summary>このエリアで貯めたポイント（ショップの支払いに使う）。ラウンドをまたいで貯まり、次のエリアで0に戻る</summary>
+        public int AreaPoints { get; private set; }
+        /// <summary>特殊ポイント。ショップでエリアのポイントと交換する。エリアを移っても残る（リセットで0）</summary>
+        public int SpecialPoints { get; private set; }
         public int CenterDrops { get; private set; }
         public int SideDrops { get; private set; }
         public int LostDrops { get; private set; }
@@ -496,9 +503,13 @@ namespace MedalPusher
         public void ResetGame()
         {
             StopAllCoroutines(); // 降らせている途中の追加メダルを止める
+            ClearBar.HideConfirm();
+            GameReset?.Invoke();
             Pool.DespawnAll();
             Pusher.ResetPhase(rules.startPusherPosition);
             OwnedMedals = rules.startMedals;
+            AreaPoints = 0;
+            SpecialPoints = 0;
             insertLimitBonus = 0;
             Shop.ResetRun();
             RoundNumber = 1;
@@ -541,13 +552,14 @@ namespace MedalPusher
         /// <summary>Enter キー：演出のスキップ / クリア後に次へ進む / ショップを閉じる。</summary>
         public void Advance()
         {
+            if (ClearBar.IsConfirmOpen) return; // 確認を出している間は、ボタンで選んでもらう
             switch (State)
             {
                 case GameState.Intro:
                     Monitor.SkipIntro();
                     break;
                 case GameState.Cleared:
-                    ProceedAfterClear();
+                    RequestProceed();
                     break;
                 case GameState.Shop:
                     CloseShop();
@@ -564,11 +576,26 @@ namespace MedalPusher
             Monitor.OpenShop();
         }
 
-        /// <summary>ショップの「閉じる」。カメラが盤面に戻ってから、次のラウンド（または次のエリア）に進む。</summary>
+        /// <summary>
+        /// 次のエリアに進むとエリアのポイントがなくなる時に、確認を出すか。
+        /// （ボスのラウンドのあとで、ポイントが残っている時）
+        /// </summary>
+        public bool NeedsAreaChangeWarning => shop.warnOnAreaChange && IsLastRoundOfArea && AreaPoints > 0;
+
+        /// <summary>クリア後の帯の「閉じる」（Enter キーも同じ）。必要なら確認を出してから次へ進む。</summary>
+        public void RequestProceed()
+        {
+            if (State != GameState.Cleared || ClearBar.IsConfirmOpen) return;
+            if (NeedsAreaChangeWarning) ClearBar.ShowAreaChangeConfirm(AreaPoints, ProceedAfterClear);
+            else ProceedAfterClear();
+        }
+
+        /// <summary>ショップの「閉じる」。必要なら確認を出し、カメラが盤面に戻ってから次のラウンド（または次のエリア）に進む。</summary>
         public void CloseShop()
         {
-            if (State != GameState.Shop) return;
-            Monitor.CloseShop(ProceedAfterClear);
+            if (State != GameState.Shop || ClearBar.IsConfirmOpen) return;
+            if (NeedsAreaChangeWarning) ClearBar.ShowAreaChangeConfirm(AreaPoints, () => Monitor.CloseShop(ProceedAfterClear));
+            else Monitor.CloseShop(ProceedAfterClear);
         }
 
         /// <summary>クリア後に次へ進む。エリアの最後のラウンドなら次のエリア、それ以外は次のラウンド。</summary>
@@ -587,8 +614,26 @@ namespace MedalPusher
             return true;
         }
 
-        /// <summary>ポイントを足す（レコードの効果など、穴に落ちた時の基本のポイント以外）。</summary>
-        public void AddPoints(int amount) => Points += amount;
+        /// <summary>
+        /// ポイントを足す。ラウンドのポイント（ノルマ用）とエリアのポイント（ショップ用）の両方に入る。
+        /// 穴に落ちた時の基本のポイントもここを通る。レコードの効果などもここを使う。
+        /// </summary>
+        public void AddPoints(int amount)
+        {
+            Points += amount;
+            AreaPoints = Mathf.Max(0, AreaPoints + amount);
+        }
+
+        /// <summary>エリアのポイントを使う（ショップでの購入）。足りなければ使わずに false。</summary>
+        public bool TrySpendPoints(int amount)
+        {
+            if (amount < 0 || AreaPoints < amount) return false;
+            AreaPoints -= amount;
+            return true;
+        }
+
+        /// <summary>特殊ポイントを足す（ショップの交換）。</summary>
+        public void AddSpecialPoints(int amount) => SpecialPoints += amount;
 
         /// <summary>投入上限を増やす（ショップの投入上限アップ）。リセットで元に戻る。</summary>
         public void AddInsertLimit(int amount) => insertLimitBonus += amount;
@@ -612,6 +657,7 @@ namespace MedalPusher
             }
             AreaIndex++;
             RoundIndex = 0;
+            AreaPoints = 0; // エリアのポイントは次のエリアに持ち越さない
             RoundNumber++;
             StartRound();
             DropBonusMedals();
@@ -714,12 +760,12 @@ namespace MedalPusher
                     case DropZoneType.Center:
                         CenterDrops++;
                         OwnedMedals += rules.centerMedalReturn;
-                        if (scoring) Points += Mathf.RoundToInt(rules.centerPoints * pointScale);
+                        if (scoring) AddPoints(Mathf.RoundToInt(rules.centerPoints * pointScale));
                         break;
                     case DropZoneType.Side:
                         SideDrops++;
                         OwnedMedals += rules.sideMedalReturn;
-                        if (scoring) Points += Mathf.RoundToInt(rules.sidePoints * pointScale);
+                        if (scoring) AddPoints(Mathf.RoundToInt(rules.sidePoints * pointScale));
                         break;
                     case DropZoneType.Lost:
                         LostDrops++;

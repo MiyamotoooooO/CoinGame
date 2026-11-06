@@ -75,6 +75,7 @@ namespace MedalPusher
         GameObject overlayCanvas;
         RawImage overlayImage;
         bool overlayActive;
+        float particleScanTimer;
         int screenOriginalLayer;
 
         public bool IsPlayingIntro => introRoutine != null;
@@ -205,6 +206,9 @@ namespace MedalPusher
             imageGo.transform.SetParent(overlayCanvas.transform, false);
             overlayImage = imageGo.AddComponent<RawImage>();
             overlayImage.raycastTarget = false;
+            // パーティクルも重ねるので、半透明の所が暗くならない重ね方（乗算済みアルファ）にする
+            var premultiplied = Shader.Find("Hidden/MedalPusher/OverlayPremultiplied");
+            if (premultiplied != null) overlayImage.material = new Material(premultiplied);
             var rt = overlayImage.rectTransform;
             rt.anchorMin = Vector2.zero;
             rt.anchorMax = Vector2.one;
@@ -221,6 +225,8 @@ namespace MedalPusher
             var arcade = main != null ? main.GetComponent<ArcadeCamera>() : null;
             bool want = game.monitor.sharpMonitor && arcade != null && arcade.isActiveAndEnabled && arcade.effectEnabled;
             int layerMask = 1 << game.monitor.overlayLayer;
+            int fxLayerMask = 1 << game.monitor.frontEffectsLayer;
+            bool fxInFront = want && game.monitor.effectsInFrontOfMonitor;
 
             if (want != overlayActive)
             {
@@ -235,7 +241,15 @@ namespace MedalPusher
                     else main.cullingMask |= layerMask;
                 }
             }
+            // パーティクル：重ねる時は、メインカメラでは描かずにモニターと一緒に上に描く
+            if (main != null)
+            {
+                if (fxInFront) main.cullingMask &= ~fxLayerMask;
+                else main.cullingMask |= fxLayerMask;
+            }
             if (!want) return;
+            overlayCamera.cullingMask = layerMask | (fxInFront ? fxLayerMask : 0);
+            if (fxInFront) MoveParticlesToFrontLayer();
 
             int h = game.monitor.monitorPixelHeight > 0 ? game.monitor.monitorPixelHeight : Screen.height;
             h = Mathf.Clamp(h, 64, 4096);
@@ -260,6 +274,21 @@ namespace MedalPusher
             overlayCamera.farClipPlane = main.farClipPlane;
             var mainLens = main.GetComponent<LensDistortion>();
             overlayLens.strength = mainLens != null ? mainLens.strength : 0f;
+        }
+
+        /// <summary>
+        /// シーンのパーティクル（レイヤーが Default の物）を、上に重ねるレイヤーに移す。
+        /// 重ねるカメラはモニターとパーティクルだけを描くので、モニターより手前のパーティクルはモニターの上に、
+        /// 奥のパーティクルはモニターに隠れて見える。新しく出たパーティクルも拾うように、0.25秒ごとに探す。
+        /// </summary>
+        void MoveParticlesToFrontLayer()
+        {
+            particleScanTimer -= Time.unscaledDeltaTime;
+            if (particleScanTimer > 0f) return;
+            particleScanTimer = 0.25f;
+            int layer = game.monitor.frontEffectsLayer;
+            foreach (var r in FindObjectsByType<ParticleSystemRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (r.gameObject.layer == 0) r.gameObject.layer = layer;
         }
 
         // ================================================================
@@ -323,6 +352,7 @@ namespace MedalPusher
             NewImage("ArrowR", arrows, 1448f, 87f, 64f, 64f, new Color(0.85f, 0.15f, 0.12f), circleSprite);
             NewText("ArrowRText", arrows, 1450f, 87f, 64f, 64f, "▶", 30, Color.white);
 
+            BuildEffectLayer(root); // レコードの演出の文字（MonitorDisplay.Effects.cs）
             BuildShopPage(root); // ショップの画面（MonitorDisplay.Shop.cs）。普段は隠しておく
         }
 
@@ -661,6 +691,7 @@ namespace MedalPusher
                 for (int i = 0; i < items.Count; i++) items[i].group.alpha = i == roundIndex ? 1f : 0.55f;
 
             UpdatePlayPanel();
+            UpdateEffects();
             UpdateShop();
         }
 
@@ -680,7 +711,7 @@ namespace MedalPusher
                 playValue.text = $"{game.Points} / {quota} pt";
             }
 
-            string sub = $"残り投入 {Mathf.Max(0, game.InsertLimit - game.InsertedThisRound)}";
+            string sub = $"残り投入 {Mathf.Max(0, game.InsertLimit - game.InsertedThisRound)}　所持 {game.AreaPoints} pt";
             switch (game.State)
             {
                 case GameState.Cleared: sub = game.IsLastRoundOfArea ? "エリアクリア！" : "クリア！"; break;

@@ -10,8 +10,9 @@ namespace MedalPusher
     /// モニターに映すショップの画面（MonitorDisplay の続き）。
     ///
     /// ・開く時は、エリアの始まりの演出と同じようにカメラがモニターに寄る。閉じる時は盤面に戻る
-    /// ・画面は1枚：上にタイトルと所持メダル、中央にレコード6枚（ジャケット・名前・値段・購入）、
-    ///   右に投入上限アップ、左下にリロール、右下に閉じる
+    /// ・画面は1枚：上にタイトルと所持ポイント・特殊ポイント、中央にレコード6枚（ジャケット・名前・値段・購入）、
+    ///   右に投入上限アップと特殊ポイントへの交換、左下にリロール、右下に閉じる
+    /// ・支払いはエリアのポイント（pt）
     /// ・レコードにカーソルを合わせると、効果の説明を Resources/ShopTooltipFrame の枠に出す
     /// ・モニターは RenderTexture に描いているので、マウスの位置をモニターの画面の座標に直して、ボタンを自分で判定する
     /// </summary>
@@ -21,7 +22,8 @@ namespace MedalPusher
         static readonly Color ShopPanel = new Color(0.08f, 0.25f, 0.28f);
         static readonly Color ShopLine = new Color(0.35f, 0.75f, 0.75f);
         static readonly Color CardHighlight = new Color(0.60f, 0.95f, 0.95f);
-        static readonly Color CoinColor = new Color(0.95f, 0.62f, 0.22f);
+        static readonly Color PointColor = new Color(1f, 0.85f, 0.35f);
+        static readonly Color SpecialColor = new Color(0.62f, 0.88f, 0.82f);
         static readonly Color BuyColor = new Color(0.86f, 0.80f, 0.62f);      // 参考作品の「購入」ボタン風
         static readonly Color RerollColor = new Color(0.82f, 0.82f, 0.82f);
         static readonly Color CloseColor = new Color(0.75f, 0.22f, 0.18f);
@@ -54,16 +56,17 @@ namespace MedalPusher
         }
 
         RectTransform shopRoot, tooltip;
-        Text shopMedalsText, shopMessageText, rerollCostText, limitValueText, limitCostText, limitButtonText;
+        Text shopPointsText, shopSpecialText, shopMessageText, rerollCostText, limitValueText, limitCostText, limitButtonText;
+        Text exchangeValueText;
         Text tipName, tipSub, tipEffect;
-        Image rerollButton, limitButton;
+        Image rerollButton, limitButton, exchangeButton;
         readonly ShopCard[] cards = new ShopCard[RecordShop.OfferCount];
         readonly List<Hot> hots = new List<Hot>();
         Coroutine shopRoutine;
         bool shopOpen;      // ショップの画面を出している
         bool shopReady;     // カメラが寄り切って、操作できる
         float messageTimer;
-        int lastMedals = -1;
+        int lastPoints = -1, lastSpecial = -1;
         RecordArtwork artwork;
         bool artworkLookedUp;
 
@@ -84,7 +87,7 @@ namespace MedalPusher
             shopOpen = true;
             shopReady = false;
             shopMessageText.text = "";
-            lastMedals = -1;
+            lastPoints = -1;
             RefreshShop();
             ShowTooltip(-1);
             shopRoot.gameObject.SetActive(true);
@@ -180,10 +183,12 @@ namespace MedalPusher
             for (int i = 0; i < letters.Length; i++)
                 NewText("Title" + letters[i], shopRoot, 70f + i * 50f, 52f, 60f, 70f, letters[i], 62, colors[i]);
 
-            // 所持メダル（右上）
-            NewImage("MedalIcon", shopRoot, 1150f, 52f, 34f, 34f, CoinColor, circleSprite);
-            shopMedalsText = NewText("Medals", shopRoot, 1335f, 52f, 300f, 50f, "", 32, Color.white);
-            shopMedalsText.alignment = TextAnchor.MiddleLeft;
+            // 所持ポイント（このエリアで使える）と特殊ポイント（右上）
+            shopPointsText = NewText("Points", shopRoot, 960f, 52f, 420f, 50f, "", 32, PointColor);
+            shopPointsText.alignment = TextAnchor.MiddleRight;
+            NewImage("SpecialIcon", shopRoot, 1218f, 52f, 26f, 26f, SpecialColor, circleSprite);
+            shopSpecialText = NewText("Special", shopRoot, 1360f, 52f, 240f, 50f, "", 28, SpecialColor);
+            shopSpecialText.alignment = TextAnchor.MiddleLeft;
 
             // 見出し
             var header = NewText("RecordsHeader", shopRoot, 340f, 108f, 600f, 40f, "レコード  ›", 28, Color.white);
@@ -194,14 +199,12 @@ namespace MedalPusher
             BuildLimitPanel();
 
             // リロール（左下）
-            NewImage("RerollIcon", shopRoot, 80f, 458f, 24f, 24f, CoinColor, circleSprite);
-            rerollCostText = NewText("RerollCost", shopRoot, 160f, 458f, 120f, 34f, "", 26, Color.white);
-            rerollCostText.alignment = TextAnchor.MiddleLeft;
+            rerollCostText = NewText("RerollCost", shopRoot, 130f, 458f, 200f, 34f, "", 26, Color.white);
             rerollButton = NewImage("Reroll", shopRoot, 130f, 515f, 200f, 62f, RerollColor);
             ButtonLabel(rerollButton, "リロール", 30, DarkText);
             AddHot(rerollButton.rectTransform, 130f, 515f, 200f, 62f, OnReroll);
 
-            // メッセージ（購入した・メダルが足りない など）
+            // メッセージ（購入した・ポイントが足りない など）
             shopMessageText = NewText("Message", shopRoot, 750f, 470f, 900f, 40f, "", 24, new Color(1f, 0.85f, 0.35f));
 
             // 閉じる（右下）
@@ -209,7 +212,7 @@ namespace MedalPusher
             ButtonLabel(close, "閉じる", 30, Color.white).GetComponent<Shadow>().enabled = true;
             AddHot(close.rectTransform, 1350f, 532f, 220f, 62f, () => game.CloseShop());
 
-            NewText("Hint", shopRoot, 750f, 572f, 1000f, 26f, "レコードにカーソルを合わせると効果を表示 ／ クリックで購入", 17, new Color(0.7f, 0.8f, 0.8f));
+            NewText("Hint", shopRoot, 750f, 572f, 1000f, 26f, "レコードにカーソルを合わせると効果を表示 ／ ポイントは次のエリアに持ち越せません", 17, new Color(0.7f, 0.8f, 0.8f));
 
             BuildTooltip(); // 一番上に描くように最後に作る
             shopRoot.gameObject.SetActive(false);
@@ -238,9 +241,7 @@ namespace MedalPusher
 
             c.name = NewText("Name", c.root, mid, 172f, w, 30f, "", 22, Color.white);
             c.sub = NewText("Sub", c.root, mid, 198f, w, 24f, "", 16, Color.white);
-            NewImage("PriceIcon", c.root, mid - 22f, 228f, 20f, 20f, CoinColor, circleSprite);
-            c.price = NewText("Price", c.root, mid + 22f, 228f, 60f, 30f, "", 22, Color.white);
-            c.price.alignment = TextAnchor.MiddleLeft;
+            c.price = NewText("Price", c.root, mid, 228f, w, 30f, "", 22, PointColor);
 
             c.button = NewImage("Buy", c.root, mid, 270f, 124f, 38f, BuyColor);
             c.buttonText = ButtonLabel(c.button, "購入", 22, DarkText);
@@ -248,19 +249,29 @@ namespace MedalPusher
             return c;
         }
 
-        /// <summary>右側の「投入上限アップ」。</summary>
+        /// <summary>右側の上「投入上限アップ」と、下「特殊ポイントに交換」（カードと同じ高さを2段に分ける）。</summary>
         void BuildLimitPanel()
         {
-            NewImage("LimitPanel", shopRoot, 1305f, 290f, 330f, CardH, ShopPanel);
-            NewText("LimitHeader", shopRoot, 1305f, 170f, 320f, 40f, "投入上限アップ", 26, Color.white);
-            NewText("LimitSub", shopRoot, 1305f, 203f, 320f, 26f, "1ラウンドに投入できる枚数", 17, new Color(0.7f, 0.8f, 0.8f));
-            limitValueText = NewText("LimitValue", shopRoot, 1305f, 262f, 320f, 60f, "", 44, new Color(1f, 0.85f, 0.35f));
-            NewImage("LimitIcon", shopRoot, 1275f, 318f, 22f, 22f, CoinColor, circleSprite);
-            limitCostText = NewText("LimitCost", shopRoot, 1345f, 318f, 100f, 30f, "", 24, Color.white);
-            limitCostText.alignment = TextAnchor.MiddleLeft;
-            limitButton = NewImage("LimitBuy", shopRoot, 1305f, 380f, 150f, 42f, BuyColor);
-            limitButtonText = ButtonLabel(limitButton, "購入", 24, DarkText);
-            AddHot(limitButton.rectTransform, 1305f, 380f, 150f, 42f, OnBuyLimit);
+            var subColor = new Color(0.7f, 0.8f, 0.8f);
+
+            // 上段：投入上限アップ（y 140〜285）
+            NewImage("LimitPanel", shopRoot, 1305f, 212.5f, 330f, 145f, ShopPanel);
+            NewText("LimitHeader", shopRoot, 1305f, 160f, 320f, 32f, "投入上限アップ", 24, Color.white);
+            NewText("LimitSub", shopRoot, 1305f, 184f, 320f, 22f, "1ラウンドに投入できる枚数", 15, subColor);
+            limitValueText = NewText("LimitValue", shopRoot, 1305f, 220f, 320f, 44f, "", 32, PointColor);
+            limitCostText = NewText("LimitCost", shopRoot, 1222f, 262f, 140f, 30f, "", 22, PointColor);
+            limitButton = NewImage("LimitBuy", shopRoot, 1375f, 262f, 130f, 38f, BuyColor);
+            limitButtonText = ButtonLabel(limitButton, "購入", 22, DarkText);
+            AddHot(limitButton.rectTransform, 1375f, 262f, 130f, 38f, OnBuyLimit);
+
+            // 下段：特殊ポイントに交換（y 295〜440）
+            NewImage("ExchangePanel", shopRoot, 1305f, 367.5f, 330f, 145f, ShopPanel);
+            NewText("ExchangeHeader", shopRoot, 1305f, 315f, 320f, 32f, "特殊ポイントに交換", 24, SpecialColor);
+            NewText("ExchangeSub", shopRoot, 1305f, 339f, 320f, 22f, "エリアを移っても残るポイント", 15, subColor);
+            exchangeValueText = NewText("ExchangeValue", shopRoot, 1305f, 374f, 320f, 40f, "", 26, Color.white);
+            exchangeButton = NewImage("ExchangeBuy", shopRoot, 1305f, 417f, 150f, 38f, SpecialColor);
+            ButtonLabel(exchangeButton, "交換", 22, DarkText);
+            AddHot(exchangeButton.rectTransform, 1305f, 417f, 150f, 38f, OnExchange);
         }
 
         /// <summary>レコードの効果を出す説明の枠。</summary>
@@ -323,7 +334,7 @@ namespace MedalPusher
         {
             if (shopRoot == null || game.Shop == null) return;
             var shop = game.Shop;
-            int medals = game.OwnedMedals;
+            int points = game.AreaPoints;
 
             for (int i = 0; i < cards.Length; i++)
             {
@@ -348,25 +359,26 @@ namespace MedalPusher
                 c.name.text = r.name;
                 c.sub.text = $"{r.category}・{r.rarity}";
                 c.sub.color = RarityColor(r.rarity);
-                c.price.text = r.buyPrice.ToString();
+                int price = shop.RecordPrice(r);
+                c.price.text = $"{price} pt";
                 var tex = GetJacket(r);
                 c.jacket.texture = tex;
                 c.jacket.enabled = tex != null;
                 c.jacketColor.color = RecordArtwork.CategoryColor(r.category);
                 c.initial.text = tex == null && r.name.Length > 0 ? r.name.Substring(0, 1) : "";
                 c.buttonText.text = sold ? "購入済み" : "購入";
-                c.button.color = sold || medals < r.buyPrice ? DisabledColor : BuyColor;
+                c.button.color = sold || points < price ? DisabledColor : BuyColor;
             }
 
-            rerollCostText.text = shop.RerollCost.ToString();
-            rerollButton.color = medals >= shop.RerollCost ? RerollColor : DisabledColor;
+            rerollCostText.text = $"{shop.RerollCost} pt";
+            rerollButton.color = points >= shop.RerollCost ? RerollColor : DisabledColor;
 
             if (shop.CanUpgradeLimit)
             {
                 limitValueText.text = $"{game.InsertLimit} → {shop.NextInsertLimit}";
-                limitCostText.text = shop.LimitUpgradeCost.ToString();
+                limitCostText.text = $"{shop.LimitUpgradeCost} pt";
                 limitButtonText.text = "購入";
-                limitButton.color = medals >= shop.LimitUpgradeCost ? BuyColor : DisabledColor;
+                limitButton.color = points >= shop.LimitUpgradeCost ? BuyColor : DisabledColor;
             }
             else
             {
@@ -376,8 +388,13 @@ namespace MedalPusher
                 limitButton.color = DisabledColor;
             }
 
-            shopMedalsText.text = $"所持メダル  {medals}";
-            lastMedals = medals;
+            exchangeValueText.text = $"{shop.ExchangeCost} pt → 特殊 +{shop.ExchangeAmount}";
+            exchangeButton.color = points >= shop.ExchangeCost ? SpecialColor : DisabledColor;
+
+            shopPointsText.text = $"ポイント  {points} pt";
+            shopSpecialText.text = $"特殊ポイント  {game.SpecialPoints}";
+            lastPoints = points;
+            lastSpecial = game.SpecialPoints;
         }
 
         Texture2D GetJacket(RecordData r)
@@ -430,6 +447,13 @@ namespace MedalPusher
             RefreshShop();
         }
 
+        void OnExchange()
+        {
+            game.Shop.ExchangeSpecial(out string message);
+            ShowMessage(message);
+            RefreshShop();
+        }
+
         // ================================================================
         // マウス
         // ================================================================
@@ -437,7 +461,8 @@ namespace MedalPusher
         void UpdateShop()
         {
             if (!shopOpen) return;
-            if (game.OwnedMedals != lastMedals) RefreshShop();   // 払い戻しなどで所持メダルが変わった時
+            // レコードの効果などでポイントが変わった時
+            if (game.AreaPoints != lastPoints || game.SpecialPoints != lastSpecial) RefreshShop();
 
             if (messageTimer > 0f)
             {
@@ -447,7 +472,9 @@ namespace MedalPusher
 
             var outside = new Vector2(-1000f, -1000f);
             Vector2 p = outside;
-            bool hasPoint = shopReady && TryGetCanvasPoint(out p);
+            // 次のエリアに進む確認を出している間は、ショップを操作できない
+            bool blocked = game.ClearBar.IsConfirmOpen || game.ClearBar.ConfirmClosedFrame == Time.frameCount;
+            bool hasPoint = shopReady && !blocked && TryGetCanvasPoint(out p);
             if (!hasPoint) p = outside;
 
             // ボタン：カーソルを合わせると少し大きく
@@ -491,7 +518,7 @@ namespace MedalPusher
             }
 
             tipName.text = r.name;
-            tipSub.text = $"{r.category}・{r.rarity}　　購入 {r.buyPrice} / 売却 {r.sellPrice}";
+            tipSub.text = $"{r.category}・{r.rarity}　　{game.Shop.RecordPrice(r)} pt";
             tipSub.color = RarityColor(r.rarity);
             tipEffect.text = r.effectText;
 
