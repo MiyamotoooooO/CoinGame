@@ -1042,6 +1042,50 @@ namespace MedalPusher
 #endif
         }
 
+        /// <summary>
+        /// ショップの画面の 3D の場面を、レコードショップの背景モデル（RecordShop_Back と RecordShop_Front）にする。
+        /// 2つを店のモデルに入れ、店員の大きさ・位置とカメラを、その背景に合う値にする（エディタでのみ動く）。
+        /// </summary>
+        [ContextMenu("ショップの場面をレコードショップの背景にする")]
+        void ApplyRecordShopBackdrop()
+        {
+#if UNITY_EDITOR
+            var models = new List<GameObject>();
+            foreach (var name in new[] { "RecordShop_Back", "RecordShop_Front" })
+            {
+                GameObject found = null;
+                foreach (var guid in UnityEditor.AssetDatabase.FindAssets(name + " t:Model"))
+                {
+                    string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    if (System.IO.Path.GetFileNameWithoutExtension(path) != name) continue;
+                    found = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                    break;
+                }
+                if (found == null)
+                {
+                    Debug.LogWarning($"[MedalPusher] {name} のモデルが見つかりません。Shop の Stage Prefabs に直接ドラッグしてください。");
+                    return;
+                }
+                models.Add(found);
+            }
+            RecordUndo("ショップの場面をレコードショップの背景にする");
+            shop.stagePrefabs = models.ToArray();
+            // 背景はメートル単位（幅約7m・高さ約3.2m）。店員（約1m）はエサ箱と奥の壁のあいだ（z 0.7〜1.3）に立つ
+            shop.clerkHeight = 1.2f;
+            shop.clerkSpacing = 1.3f;
+            shop.clerkZ = 1.0f;
+            // カメラは低め・近めにして、手前のエサ箱を大きく、店員は箱の上から上半身が見えるくらいにする
+            shop.stageCameraPosition = new Vector3(0f, 1.2f, -3.0f);
+            shop.stageCameraLookAt = new Vector3(0f, 0.7f, 1.0f);
+            shop.stageCameraFov = 46f;
+            shop.stageLightIntensity = 1f;
+            shop.stageAmbientOverride = true;
+            shop.stageAmbient = new Color(0.40f, 0.37f, 0.34f);
+            shop.stageMatte = true;
+            Debug.Log("[MedalPusher] ショップの場面をレコードショップの背景にしました（RecordShop_Back・RecordShop_Front）。");
+#endif
+        }
+
         /// <summary>コードで作る仮の盤面（最初の試作）の寸法に戻す。</summary>
         [ContextMenu("試作の仮盤面に戻す")]
         void ApplyGeneratedPreset()

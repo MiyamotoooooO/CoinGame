@@ -161,6 +161,40 @@ namespace MedalPusher
         [Header("エリア移動の注意")]
         [Tooltip("ポイントが残ったまま次のエリアに進む時に、確認を出す")]
         public bool warnOnAreaChange = true;
+
+        [Header("ショップの画面の上に映す 3D の場面（店員と店）")]
+        [Tooltip("差し替え用：店員のキャラクター（左から順に並べる。1〜3体くらい）。" +
+                 "大きさは店員の高さ（clerkHeight）に自動で合わせ、足もとをカウンターの後ろの床に置く。空なら仮の店員3人")]
+        public GameObject[] clerkPrefabs = new GameObject[0];
+        [Tooltip("店員の高さ（場面の中の長さ）。仮の店員は約3。カウンターの上面は約1.1")]
+        [Range(0.5f, 6f)] public float clerkHeight = 2.8f;
+        [Tooltip("店員どうしの間隔")]
+        [Range(0.5f, 5f)] public float clerkSpacing = 2.6f;
+        [Tooltip("店員が立つ奥行き（場面の中の z。カメラは -z 側から見る）")]
+        [Range(-2f, 4f)] public float clerkZ = 1.3f;
+        [Tooltip("店員を少し上下に揺らす")]
+        public bool clerkBob = true;
+        [Tooltip("差し替え用：店（内装・カウンターなど）のモデルや Prefab。いくつでも入れられ、すべて同じ原点（0, 0, 0）に置く。" +
+                 "空なら箱で作った仮の店。中に Camera があれば、そのカメラで写す。中に Light が1つも無ければ、場面用の明かりを足す。" +
+                 "店員も中に入れてある時は、上の clerkPrefabs を空にする")]
+        public GameObject[] stagePrefabs = new GameObject[0];
+        [Tooltip("3D の場面だけを写すためのレイヤー番号。ほかで使っていない番号にする")]
+        [Range(8, 31)] public int stageLayer = 27;
+        [Tooltip("場面を写すカメラの位置（場面の中の座標。Prefab にカメラが無い時に使う）")]
+        public Vector3 stageCameraPosition = new Vector3(0f, 2.2f, -6.5f);
+        [Tooltip("カメラが向く所（場面の中の座標）")]
+        public Vector3 stageCameraLookAt = new Vector3(0f, 1.0f, 1.2f);
+        [Tooltip("カメラの画角（縦・度）")]
+        [Range(10f, 90f)] public float stageCameraFov = 40f;
+        [Tooltip("場面用の明かりの強さ（倍率）。まぶしい時は小さく。店のモデルに Light が無い時に足す明かりに効く")]
+        [Range(0f, 3f)] public float stageLightIntensity = 1f;
+        [Tooltip("場面を写す間だけ、環境光（影の部分の明るさ）を下の色にする。オフなら盤面と同じ環境光")]
+        public bool stageAmbientOverride = true;
+        [Tooltip("場面の環境光の色（明るいほど全体が白っぽくなる）")]
+        public Color stageAmbient = new Color(0.40f, 0.37f, 0.34f);
+        [Tooltip("場面のモデルのつや（光の照り返しと、まわりの映り込み）を消して、色をはっきり出す。" +
+                 "OBJ のモデルはつやがあり、空の色が映り込んで全体が白っぽく見えるため")]
+        public bool stageMatte = true;
     }
 
     /// <summary>筐体のモニターに映す内容の設定。</summary>
@@ -175,6 +209,9 @@ namespace MedalPusher
         public Texture2D mascot;
         [Tooltip("モニターの映像の解像度（横）。縦は画面の比率 2.5:1 から決まる")]
         public int resolutionWidth = 1500;
+        [Tooltip("プレイ中のカメラでモニターの上が切れる分（画面の座標 0〜900 の、上からの量）。" +
+                 "中身はこれより下に収まるように縮めて下に寄せる。0 で画面いっぱい")]
+        [Range(0f, 450f)] public float contentTop = 260f;
         [Tooltip("映像が左右反転して見える時にオン")]
         public bool flipX;
         [Tooltip("映像が上下反転して見える時にオン")]

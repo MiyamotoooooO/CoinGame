@@ -41,10 +41,10 @@ namespace MedalPusher
         /// <summary>演出用の層を作る（ショップの画面より下）。</summary>
         void BuildEffectLayer(RectTransform root)
         {
-            fxRoot = NewRect("RecordEffects", root, 750f, 300f, CanvasW, CanvasH);
+            fxRoot = NewRect("RecordEffects", root, CanvasW * 0.5f, CanvasH * 0.5f, CanvasW, CanvasH);
 
             // 大きな文字（レコードの絵の上）
-            bannerRoot = NewRect("Banner", fxRoot, RecordX, RecordCanvasY, BannerW, BannerH);
+            bannerRoot = NewRect("Banner", fxRoot, BannerX, BannerY, BannerW, BannerH); // 今のポイントの右
             bannerGroup = bannerRoot.gameObject.AddComponent<CanvasGroup>();
             bannerGroup.alpha = 0f;
             NewImage("BannerBorder", bannerRoot, BannerW * 0.5f, BannerH * 0.5f, BannerW, BannerH, Line);
@@ -56,7 +56,7 @@ namespace MedalPusher
         }
 
         /// <summary>
-        /// 「+3」などの文字を弾けるように出す。位置を省くと、レコードのまわりに少しばらして出す。
+        /// 「+3」などの文字を弾けるように出す。位置を省くと、今のポイントの右あたりに少しばらして出す。
         /// 位置はモニターの画面の座標（左上が (0, 0)、1500×900）。
         /// </summary>
         public void PopText(string text, Color color, Vector2? position = null)
