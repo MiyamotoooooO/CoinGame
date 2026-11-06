@@ -1,4 +1,7 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
 [Serializable]
 public class SaveData
@@ -8,7 +11,9 @@ public class SaveData
     public int medal;
     public int point;
 
-    public string slot1;
-    public string slot2;
-    public string slot3;
+    // 所持レコード
+    public List<string> ownedRecords = new();
+
+    //装備レコード
+    public string slot;
 }

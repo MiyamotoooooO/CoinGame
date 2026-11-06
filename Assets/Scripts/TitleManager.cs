@@ -3,6 +3,8 @@ using UnityEngine.SceneManagement;
 
 public class TitleManager : MonoBehaviour
 {
+    public SaveManager saveManager;
+
     public void ContinueGame()
     {
         SceneManager.LoadScene("MainScene");
@@ -10,7 +12,7 @@ public class TitleManager : MonoBehaviour
 
     public void newGame()
     {
-        PlayerPrefs.DeleteAll();
+        saveManager.DeleteSave();
 
         SceneManager.LoadScene("MainScene");
     }
