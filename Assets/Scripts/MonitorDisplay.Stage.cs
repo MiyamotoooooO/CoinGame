@@ -7,10 +7,10 @@ namespace MedalPusher
     /// <summary>
     /// モニターの真ん中（ステージ）の差し替え（MonitorDisplay の続き）。
     ///
-    /// ・NOW PLAYING：レコードを再生している間、マスコットの所にジャケット・名前・効果・残り時間を出す
+    /// ・NOW PLAYING：レコードを再生している間、今のポイントの下に、ジャケット・名前・効果・残り時間の帯を出す
     ///   （RecordEffectSystem の Current / Remaining / CurrentDuration を見て、自動で出し入れする）
     ///   右の回るレコードのラベルにも、同じジャケットを丸く切り抜いて貼る
-    /// ・天気予報：ShowWeather を呼ぶと、ステージ全体が天気予報の画面に変わる。ClearWeather で戻る
+    /// ・天気予報：ShowWeather を呼ぶと、画面のまん中（今のポイントのところ）が天気予報に変わる。ClearWeather で戻る
     ///   例）game.Monitor.ShowWeather("SUNNY", "晴れ", "POINT ×1.5", new[] { "晴れ", "くもり", "雨", "雷" });
     ///
     /// 新しい演出の画面を足す時は、ここに Build〜 と Show〜 / Clear〜 を足し、
@@ -18,15 +18,12 @@ namespace MedalPusher
     /// </summary>
     public partial class MonitorDisplay
     {
-        const int EqBars = 14;
-
         // NOW PLAYING
         RectTransform npRoot;
         CanvasGroup npGroup;
         Text npName, npEffect, npCategory, npTime, npInitial;
         RawImage npJacket;
         Image npJacketBg, npTimeFill;
-        RectTransform[] npBars;
         RecordData npShown;
         Texture2D npJacketTex;
 
@@ -83,53 +80,45 @@ namespace MedalPusher
         // NOW PLAYING
         // ================================================================
 
+        /// <summary>今のポイントの下に出す、横長の NOW PLAYING の帯。</summary>
         void BuildNowPlaying(RectTransform parent)
         {
-            const float w = 460f, h = 300f;
-            npRoot = NewRect("NowPlaying", parent, 742f, 290f, w, h);
+            const float w = 720f, h = 76f;
+            npRoot = NewRect("NowPlaying", parent, CanvasW * 0.5f, 562f, w, h);
             npGroup = npRoot.gameObject.AddComponent<CanvasGroup>();
             npGroup.alpha = 0f;
 
-            NewImage("Border", npRoot, w * 0.5f, h * 0.5f, w, h, Line);
-            NewImage("Fill", npRoot, w * 0.5f, h * 0.5f, w - 4f, h - 4f, Panel);
-            NewImage("AccentTop", npRoot, w * 0.5f, 2f, w, 4f, Accent);
-            Tag("NpTag", npRoot, 88f, 32f, 140f, 26f, "NOW PLAYING", 14, Accent, Bg);
-            npCategory = Label("Category", npRoot, w - 20f, 32f, 200f, 20f, "", 13, Mute, TextAnchor.MiddleRight, font);
+            var border = NewImage("Border", npRoot, w * 0.5f, h * 0.5f, w, h, Line, pillSprite);
+            border.type = Image.Type.Sliced;
+            var fill = NewImage("Fill", npRoot, w * 0.5f, h * 0.5f, w - 4f, h - 4f, WithAlpha(Panel, 0.95f), pillSprite);
+            fill.type = Image.Type.Sliced;
+            Tag("NpTag", npRoot, 104f, h * 0.5f, 140f, 28f, "NOW PLAYING", 14, Accent, Panel);
 
             // ジャケット（画像が無ければ、系統の色の板に頭文字）
-            npJacketBg = NewImage("JacketBg", npRoot, 99f, 140f, 150f, 150f, Line);
-            npInitial = Label("Initial", npRoot, 99f, 140f, 150f, 150f, "", 64, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
-            npJacket = NewRect("Jacket", npRoot, 99f, 140f, 150f, 150f).gameObject.AddComponent<RawImage>();
+            npJacketBg = NewImage("JacketBg", npRoot, 216f, h * 0.5f, 56f, 56f, Line);
+            npInitial = Label("Initial", npRoot, 216f, h * 0.5f, 56f, 56f, "", 28, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
+            npJacket = NewRect("Jacket", npRoot, 216f, h * 0.5f, 56f, 56f).gameObject.AddComponent<RawImage>();
             npJacket.raycastTarget = false;
             npJacket.enabled = false;
 
-            npName = Label("Name", npRoot, 190f, 84f, 250f, 44f, "", 28, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
+            npName = Label("Name", npRoot, 258f, 24f, 300f, 34f, "", 26, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
             npName.horizontalOverflow = HorizontalWrapMode.Wrap;
             npName.verticalOverflow = VerticalWrapMode.Truncate;
             npName.resizeTextForBestFit = true;
-            npName.resizeTextMinSize = 16;
-            npName.resizeTextMaxSize = 28;
-            npEffect = Label("Effect", npRoot, 190f, 140f, 250f, 60f, "", 16, Mute, TextAnchor.UpperLeft, font);
+            npName.resizeTextMinSize = 14;
+            npName.resizeTextMaxSize = 26;
+            npEffect = Label("Effect", npRoot, 258f, 49f, 340f, 20f, "", 14, Mute, TextAnchor.MiddleLeft, font);
             npEffect.horizontalOverflow = HorizontalWrapMode.Wrap;
             npEffect.verticalOverflow = VerticalWrapMode.Truncate;
 
-            // イコライザーの棒（下をそろえて、高さだけ動かす）
-            npBars = new RectTransform[EqBars];
-            for (int i = 0; i < EqBars; i++)
-            {
-                var bar = NewImage($"Eq{i + 1}", npRoot, 196f + i * 18f, 228f, 12f, 10f, Accent).rectTransform;
-                bar.pivot = new Vector2(0.5f, 0f);
-                bar.anchoredPosition = new Vector2(196f + i * 18f, -228f);
-                npBars[i] = bar;
-            }
-
             // 残り時間
-            NewImage("TimeBg", npRoot, 205f, 264f, 362f, 6f, Line);
-            npTimeFill = NewImage("TimeFill", npRoot, 205f, 264f, 362f, 6f, Accent, whiteSprite);
+            NewImage("TimeBg", npRoot, 428f, 66f, 340f, 4f, Line);
+            npTimeFill = NewImage("TimeFill", npRoot, 428f, 66f, 340f, 4f, Accent, whiteSprite);
             npTimeFill.type = Image.Type.Filled;
             npTimeFill.fillMethod = Image.FillMethod.Horizontal;
             npTimeFill.fillOrigin = (int)Image.OriginHorizontal.Left;
-            npTime = Label("Time", npRoot, w - 20f, 264f, 60f, 24f, "0:00", 18, Fg, TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
+            npTime = Label("Time", npRoot, w - 30f, 28f, 90f, 30f, "0:00", 26, Fg, TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
+            npCategory = Label("Category", npRoot, w - 30f, 54f, 110f, 18f, "", 13, Mute, TextAnchor.MiddleRight, font);
         }
 
         void SetNowPlaying(RecordData r)
@@ -172,7 +161,9 @@ namespace MedalPusher
 
         void BuildWeather(RectTransform parent)
         {
-            weatherLayer = NewRect("Weather", parent, StageW * 0.5f, StageH * 0.5f, StageW, StageH);
+            // 天気予報は 1000×554 で組んである。画面のまん中に少し縮めて置く（上の帯と左下の札にかからない大きさ）
+            weatherLayer = NewRect("Weather", parent, CanvasW * 0.5f, StageCenterY, StageW, StageH);
+            weatherLayer.localScale = new Vector3(StageScale, StageScale, 1f);
             weatherGroup = weatherLayer.gameObject.AddComponent<CanvasGroup>();
             weatherGroup.alpha = 0f;
 
@@ -331,7 +322,6 @@ namespace MedalPusher
             recordRoot.localScale = new Vector3(rs, rs, 1f);
 
             npGroup.alpha = Mathf.MoveTowards(npGroup.alpha, playing ? 1f : 0f, Time.deltaTime * 5f);
-            mascotSlotGroup.alpha = 1f - npGroup.alpha;
 
             if (playing)
             {
@@ -341,18 +331,8 @@ namespace MedalPusher
                 int sec = Mathf.CeilToInt(rem);
                 npTime.text = dur > 0f ? $"{sec / 60}:{sec % 60:00}" : "--";
             }
-            if (npGroup.alpha > 0f)
-            {
-                float t = Time.time;
-                for (int i = 0; i < npBars.Length; i++)
-                {
-                    float wave = Mathf.Abs(Mathf.Sin(t * (3f + i * 0.37f) + i * 1.3f));
-                    float h = 6f + 34f * wave * (0.6f + 0.4f * Mathf.PerlinNoise(t * 2f, i * 0.7f));
-                    npBars[i].sizeDelta = new Vector2(12f, h);
-                }
-            }
 
-            // ---- 天気予報（ステージのいつもの中身と入れ替える。右のレコードとゲージはそのまま） ----
+            // ---- 天気予報（まん中の今のポイントと入れ替える。上の帯・札・レコードはそのまま） ----
             weatherAnim = Mathf.MoveTowards(weatherAnim, weatherOn ? 1f : 0f, Time.deltaTime * 4f);
             weatherGroup.alpha = weatherAnim;
             normalLayerGroup.alpha = 1f - weatherAnim;

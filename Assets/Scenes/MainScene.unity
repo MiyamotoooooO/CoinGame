@@ -449,6 +449,7 @@ MonoBehaviour:
     screenObjectName: MonitorScreen
     mascot: {fileID: 0}
     resolutionWidth: 1500
+    contentTop: 260
     flipX: 0
     flipY: 0
     introSpeed: 1
@@ -470,6 +471,25 @@ MonoBehaviour:
     specialExchangeCost: 100
     specialExchangeAmount: 1
     warnOnAreaChange: 1
+    clerkPrefabs:
+    - {fileID: 5936263246072757943, guid: cce95f9b5652acf4bbb8e0d83231967c, type: 3}
+    - {fileID: 3290389324900991614, guid: 52d9585fd34a99c48a186e447650eca2, type: 3}
+    - {fileID: 8657048815175142455, guid: 90bbc777e22614344b44066ddb4b21ec, type: 3}
+    clerkHeight: 1.2
+    clerkSpacing: 1.3
+    clerkZ: 1
+    clerkBob: 1
+    stagePrefabs:
+    - {fileID: 919132149155446097, guid: ddec2c4c0d74971449e7d6e2f62e2898, type: 3}
+    - {fileID: 919132149155446097, guid: a46b38d654865e54abe00b56e0390769, type: 3}
+    stageLayer: 27
+    stageCameraPosition: {x: 0, y: 1.2, z: -3}
+    stageCameraLookAt: {x: 0, y: 0.7, z: 1}
+    stageCameraFov: 46
+    stageLightIntensity: 1
+    stageAmbientOverride: 0
+    stageAmbient: {r: 0.872, g: 0.48686665, b: 0.17439999, a: 0.62352943}
+    stageMatte: 1
   visuals:
     medalModel: {fileID: 919132149155446097, guid: 182d4a6e3d3cbd8419cd08f55740bd03, type: 3}
     overrideMedalColors: 1

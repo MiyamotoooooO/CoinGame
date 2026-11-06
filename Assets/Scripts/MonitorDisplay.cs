@@ -10,25 +10,33 @@ namespace MedalPusher
     /// 筐体のモニター（背板いっぱいの大きな画面）に映す画面。UI を RenderTexture に描き、MonitorScreen に貼る。
     ///
     /// 画面の割り振り（1500×900、左上が (0, 0)）：
-    ///  ・上の帯（いつも同じ）：斜めのタグ「AREA 01」、エリア名、右にラウンドとスコア
-    ///  ・左のステージ（演出ごとに入れ替わる）：ROUND 番号・ラウンド名・マスコット。
-    ///    レコード再生中は NOW PLAYING、天気予報などの演出はステージごと差し替える（MonitorDisplay.Stage.cs）
-    ///  ・右のデッキ：回るレコードと、流しているレコードの名前（グルーヴゲージは筐体の GrooveGauge が出す）
-    ///  ・数字の帯：所持メダル・投入・落ちた枚数・直近の1枚・エリアのポイント
-    ///  ・下の帯（いつも同じ）：ラウンドのチップと、ノルマ（ボス戦はHP）の目盛りバー
-    ///  ・色は黒に近いグレー＋白＋差し色1色（オレンジ）。ボスは赤、天気は水色
+    ///  ・上の帯：左にレコードのマークとラウンド名、まん中に垂れ下がったタブ（ラウンド 01/15）、右に再生ボタン風の飾り
+    ///  ・まん中：「現在」と今のポイント（大きく）、ノルマまでのバー、目標のポイント（ボス戦は残りHP）
+    ///    レコード再生中は、その下に NOW PLAYING の帯（MonitorDisplay.Stage.cs）
+    ///  ・左下：所持ポイント（ショップで使える）と特殊ポイントの札
+    ///  ・下のまん中：回るレコード（下半分は画面の外）と、左右のイコライザー
+    ///  ・右下：所持メダル
+    ///  ・色はスレート（青みのグレー）の地に白い文字。差し色はオレンジ、札は紫とベージュ。ボスは赤、天気は水色
     ///
     /// エリアの始まりの演出（PlayIntro）：
     ///  1. カメラがモニターに寄る
-    ///  2. 上の帯が出る
-    ///  3. ステージが左から右へ開く（オレンジの線が走る）
-    ///  4. ラウンドのチップと数字の帯が順に出る
-    ///  5. レコードが右から入って回り始め、エリア名・ROUND・マスコットが出る
+    ///  2. 上の帯が出て、まん中にエリア名が出る
+    ///  3. ラウンドのタブが上から下りてきて、紫の線が左右に伸びる
+    ///  4. エリア名が消え、今のポイントとバーが出る
+    ///  5. 札と所持メダルが順に出て、レコードが下から上がって回り始める
     ///  6. カメラが引いて、いつものプレイ画面に戻る
     ///
     /// 文字のフォント：Resources/MonitorFonts/Display（英字・数字用）と Resources/MonitorFonts/Body（日本語用）を
     /// 置くと使う。無ければ Unity 標準のフォントで出す。
     /// 画面の四隅は筐体の壁に少し隠れるので、大事な物は端から 30 くらい内側に置く。
+    ///
+    /// プレイ中のカメラではモニターの上の方が画面の外に切れるので、中身（1500×900 で組んだもの）は
+    /// 設定の contentTop より下に収まるよう、まとめて縮めて下に寄せる（ApplyContentLayout）。
+    /// 縮めて空いた左右には、左の物（ラウンド名・札）と右の物（再生ボタン風の飾り・所持メダル）を広げる。
+    /// 上の切れる所は上の帯の色で塗る。
+    /// カメラがモニターに寄っている間（始まりの演出）はモニター全体が見えるので、縮めずに画面いっぱいに出し、
+    /// カメラが引くのに合わせてプレイ中の配置に変える（layoutBlend）。
+    /// ショップの画面は寄った時にしか見ないので、いつも画面いっぱいに出す。
     /// </summary>
     public partial class MonitorDisplay : MonoBehaviour
     {
@@ -36,84 +44,130 @@ namespace MedalPusher
         const float CanvasW = 1500f;
         const float CanvasH = 900f;          // モニターの画面と同じ 5:3
 
-        // 枠の大きさ
-        const float TopH = 84f;              // 上の帯
-        const float StageTop = 86f;          // ステージとデッキの上端
-        const float StageH = 554f;           // ステージとデッキの高さ（86〜640）
-        const float StageW = 1000f;          // ステージの幅（左）
-        const float DeckLeft = 1004f;        // デッキ（右）の左端
-        const float DeckW = CanvasW - DeckLeft;
-        const float InfoTop = 642f;          // 数字の帯の上端
-        const float InfoH = 148f;
-        const float BottomTop = 792f;        // 下の帯の上端
-        const float BottomH = CanvasH - BottomTop;
+        // 上の帯
+        const float TopH = 96f;
+        const float TabTop = 0f;
+        const float TabH = 176f;
+        const float TabTopW = 400f;          // タブの上の幅
+        const float TabBottomW = 330f;       // タブの下の幅
 
-        // デッキの中身
-        const float RecordLocalY = 250f;     // レコードの中心（デッキの上端から）
-        const float RecordX = DeckLeft + DeckW * 0.5f;      // レコードの中心（画面の左から）
-        const float RecordCanvasY = StageTop + RecordLocalY; // レコードの中心（画面の上から）
-        const float RecordSize = 380f;
+        // まん中（今のポイント）
+        const float ScoreTop = 190f;         // まん中の上端
+        const float ScoreH = 330f;
+        const float BarLeft = 420f;
+        const float BarRight = 1080f;
+        const float BarY = 395f;             // バーの上下の中心（画面の上から）
+        const float BarH = 46f;
 
-        // 下の帯
-        const float ChipsLeft = 44f;
-        const float ChipW = 96f;
-        const float ChipH = 42f;
-        const float ChipStep = 108f;
-        const int QuotaSegments = 25;
-        const float QuotaLeft = 760f;
-        const float QuotaRight = 1456f;
+        // 天気予報などでまん中を差し替える時の大きさ（MonitorDisplay.Stage.cs）
+        const float StageW = 1000f;
+        const float StageH = 554f;
+        const float StageScale = 0.85f;
+        const float StageCenterY = 365f;
+
+        // レコード（下のまん中。下半分は画面の外）
+        const float RecordX = CanvasW * 0.5f;
+        const float RecordCanvasY = 940f;
+        const float RecordSize = 600f;
+        const float RecordHiddenOffset = 440f; // 始まりの演出で、画面の下に隠しておく量
+
+        // イコライザー（レコードの左右）
+        const int EqColumns = 5;
+        const int EqBlocks = 6;
+        const float EqBlockW = 14f;
+        const float EqBlockH = 13f;
+        const float EqStepX = 19f;
+        const float EqStepY = 17f;
+        const float EqBaseY = 880f;          // 一番下のブロックの中心
+
+        // 「LAST 5」などの大きな文字（MonitorDisplay.Effects.cs）
+        const float BannerX = 1255f;
+        const float BannerY = 270f;
 
         static readonly Vector3 RigPosition = new Vector3(0f, -500f, 0f); // メインカメラから見えない場所
 
         /// <summary>フォントを置く場所（Resources の中）</summary>
         public const string FontFolder = "MonitorFonts";
 
-        // 色（黒に近いグレー＋白＋差し色1色）
-        static readonly Color Bg = new Color32(0x0c, 0x0c, 0x0e, 0xff);
-        static readonly Color Panel = new Color32(0x15, 0x15, 0x18, 0xff);
-        static readonly Color Line = new Color32(0x2b, 0x2b, 0x31, 0xff);
-        static readonly Color Mute = new Color32(0x7c, 0x7c, 0x86, 0xff);
-        static readonly Color Fg = new Color32(0xf2, 0xf2, 0xee, 0xff);
-        static readonly Color Accent = new Color32(0xff, 0x7a, 0x1a, 0xff);  // 差し色（オレンジ）
-        static readonly Color Yellow = new Color32(0xff, 0xd2, 0x3f, 0xff);  // ノルマ達成・ゲージ満タン
-        static readonly Color Boss = new Color32(0xff, 0x2e, 0x4d, 0xff);    // ボス
-        static readonly Color Sky = new Color32(0x38, 0xc8, 0xff, 0xff);     // 天気
+        // 色（スレートの地＋白＋差し色）
+        static readonly Color Bg = new Color32(0x2b, 0x2d, 0x37, 0xff);       // 地
+        static readonly Color Panel = new Color32(0x20, 0x22, 0x2a, 0xff);    // 濃い板（「現在」の札など）
+        static readonly Color Line = new Color32(0x4a, 0x4d, 0x5b, 0xff);     // 線
+        static readonly Color Mute = new Color32(0x9c, 0x9e, 0xae, 0xff);     // 薄い文字
+        static readonly Color Fg = new Color32(0xf4, 0xf4, 0xf6, 0xff);       // 文字
+        static readonly Color Accent = new Color32(0xff, 0x8a, 0x1f, 0xff);   // 差し色（オレンジ）
+        static readonly Color Yellow = new Color32(0xff, 0xd2, 0x3f, 0xff);   // ノルマ達成
+        static readonly Color Boss = new Color32(0xff, 0x3d, 0x5a, 0xff);     // ボス
+        static readonly Color Sky = new Color32(0x38, 0xc8, 0xff, 0xff);      // 天気
+        static readonly Color TopBarColor = new Color32(0x22, 0x24, 0x2d, 0xff);
+        static readonly Color TabFill = new Color32(0x2c, 0x2e, 0x39, 0xff);
+        static readonly Color TabBorder = new Color32(0x63, 0x66, 0x75, 0xff);
+        static readonly Color Lavender = new Color32(0x9d, 0x90, 0xe6, 0xff); // 上の帯の下の線
+        static readonly Color PillPurple = new Color32(0x7b, 0x70, 0xb6, 0xff);
+        static readonly Color PillBeige = new Color32(0xd9, 0xbc, 0x8c, 0xff);
+        static readonly Color PillDarkText = new Color32(0x24, 0x22, 0x26, 0xff); // ベージュの札の文字
+        static readonly Color EqColor = new Color32(0x8a, 0x8d, 0x9e, 0xff);
 
         MedalPusherGame game;
+        RectTransform contentRoot;    // 中身（ショップ以外）。contentTop より下に縮めて置く
+        Image topBarFull;             // 画面の上の端から上の帯までを塗る
+        float layoutBlend = 1f;       // 0：画面いっぱい（カメラが寄っている時）、1：プレイ中の配置
+        float spread;                 // 左右の物を外へずらす量（中身の座標で）
+        float lineT = 1f;             // 紫の線の伸び具合（0〜1）
+        const float EdgeMargin = 40f; // 左右に広げる時、画面の端から空ける量
+
+        /// <summary>左右に広げる物（side：-1 が左へ、1 が右へ）</summary>
+        class SpreadItem
+        {
+            public RectTransform rt;
+            public float baseX;
+            public float side;
+        }
+        readonly List<SpreadItem> spreadItems = new List<SpreadItem>();
         RenderTexture renderTexture;
         Renderer screenRenderer;
         Material screenMaterial;
         Font font;          // 日本語用
         Font displayFont;   // 英字・数字用
-        Sprite whiteSprite, circleSprite, ringSprite, recordSprite, stripeSprite, fineStripeSprite, dotSprite;
+        Sprite whiteSprite, circleSprite, ringSprite, recordSprite, stripeSprite;
+        Sprite pillSprite, pillRingSprite, triangleSprite, trapezoidSprite, coinSprite, backgroundSprite;
 
         // 上の帯
-        RectTransform topRoot;
-        CanvasGroup topGroup, statsGroup;
-        TagParts areaTag;
-        Text titleText, subtitleText, statRoundValue, statScoreValue;
+        RectTransform topRoot, tabRoot, lineLeft, lineRight, smallRecord;
+        CanvasGroup topGroup, topLeftGroup, iconsGroup;
+        Image tabBorder, playIcon;
+        Text roundNameText, tabRoundText;
 
-        // ステージ
-        RectTransform stageMask, stageEdge, normalLayer, mascotSlot, mascotRoot, infoRoot, roundBlock, bossBlock;
-        CanvasGroup normalLayerGroup, mascotSlotGroup, mascotGroup, infoGroup;
-        Text roundOutlineText, roundNumberText, roundNameText, bossNameText;
+        // まん中（今のポイント）。天気予報などの時はまとめて隠す（normalLayerGroup）
+        RectTransform normalLayer;
+        CanvasGroup normalLayerGroup, scoreGroup;
+        Image nowPill, barFill;
+        Text nowPillText, scoreText, targetText;
+        float scorePulse;
+        int lastScore = -1;
 
-        // デッキ（レコードとグルーヴゲージ）
-        RectTransform deckRoot, recordRoot, recordDisc;
-        CanvasGroup deckInfoGroup;
-        Text deckName, deckSub;
+        // エリアの始まりの演出で、まん中に出すエリア名
+        CanvasGroup areaTitleGroup;
+        Text areaNumberText, areaTitleText;
 
-        // 数字の帯
-        CanvasGroup infoBandGroup;
-        readonly List<InfoTile> tiles = new List<InfoTile>();
-        InfoTile tileMedals, tileInsert, tileDrops, tileLast, tileArea;
+        // 左下の札
+        RectTransform pillsRoot;
+        readonly List<CanvasGroup> pillGroups = new List<CanvasGroup>();
+        readonly List<RectTransform> pillRoots = new List<RectTransform>();
+        Text pointsValue, specialValue;
 
-        // 下の帯
-        RectTransform chipsRoot;
-        CanvasGroup quotaGroup;
-        Text quotaLabel, quotaValue;
-        Image[] segments;
-        readonly List<RoundChip> chips = new List<RoundChip>();
+        // 右下の所持メダル
+        RectTransform medalRoot;
+        CanvasGroup medalGroup;
+        Text medalValue;
+        int lastMedals = -1;
+        float medalPulse;
+
+        // レコードとイコライザー
+        RectTransform recordRoot, recordDisc;
+        CanvasGroup eqGroup;
+        Image[,] eqLeft, eqRight;
+        float[] eqLevels;
 
         // クリア・失敗などの帯
         RectTransform statusRoot;
@@ -123,31 +177,12 @@ namespace MedalPusher
         string statusKey;
         float statusAnim;
 
-        class RoundChip
-        {
-            public RectTransform root;
-            public CanvasGroup group;
-            public Image outer, inner, underline;
-            public Text label;
-            public bool boss;
-        }
-
         /// <summary>斜めのタグ（背景と文字）</summary>
         class TagParts
         {
             public RectTransform root;
             public Image bg;
             public Text text;
-        }
-
-        /// <summary>数字の帯の1マス（見出し・大きな数字・小さな補足）</summary>
-        class InfoTile
-        {
-            public RectTransform root;
-            public CanvasGroup group;
-            public Text value, sub;
-            public string last;
-            public float pulse;
         }
 
         // 状態
@@ -407,17 +442,50 @@ namespace MedalPusher
 
         void Build(RectTransform root)
         {
-            NewImage("Background", root, CanvasW * 0.5f, CanvasH * 0.5f, CanvasW, CanvasH, Bg);
+            // 地（スレートのグラデーションと、ゆるい波）
+            NewImage("Background", root, CanvasW * 0.5f, CanvasH * 0.5f, CanvasW, CanvasH, Color.white, backgroundSprite);
+            topBarFull = NewImage("TopBarFull", root, CanvasW * 0.5f, 0f, CanvasW, 0f, TopBarColor);
 
-            BuildStage(root);
-            BuildDeck(root);
-            BuildInfoBand(root);
-            BuildTopBar(root);
-            BuildBottomBar(root);
-            BuildStatus(root);
+            // 中身は 1500×900 のつもりで組み、あとでまとめて縮めて下に寄せる
+            contentRoot = NewRect("Content", root, CanvasW * 0.5f, CanvasH * 0.5f, CanvasW, CanvasH);
+            var c = contentRoot;
+            BuildRecord(c);
+            BuildScore(c);
+            BuildNowPlaying(normalLayer); // MonitorDisplay.Stage.cs（天気予報の時は一緒に隠す）
+            BuildWeather(c);              // MonitorDisplay.Stage.cs
+            BuildPills(c);
+            BuildMedals(c);
+            BuildTopBar(c);
+            BuildStatus(c);
+            BuildEffectLayer(c);          // レコードの演出の文字（MonitorDisplay.Effects.cs）
+            ApplyContentLayout();
 
-            BuildEffectLayer(root); // レコードの演出の文字（MonitorDisplay.Effects.cs）
             BuildShopPage(root);    // ショップの画面（MonitorDisplay.Shop.cs）。普段は隠しておく
+        }
+
+        /// <summary>
+        /// 中身を、設定の contentTop（画面の上から）より下に収まるように縮めて置く。
+        /// 横も同じ割合で縮めるので、左右に少し余白ができる（文字がつぶれないように）。
+        /// </summary>
+        void ApplyContentLayout()
+        {
+            float top = Mathf.Clamp(game.monitor.contentTop, 0f, CanvasH * 0.5f) * Mathf.Clamp01(layoutBlend);
+            float s = (CanvasH - top) / CanvasH;
+            contentRoot.localScale = new Vector3(s, s, 1f);
+            contentRoot.anchoredPosition = new Vector2(CanvasW * 0.5f, -(top + CanvasH * 0.5f * s));
+
+            // 縮めて空いた左右へ、左の物と右の物を広げる（中身の x=40 が画面の x=40 に来る量）
+            float half = CanvasW * 0.5f - EdgeMargin;
+            spread = half / s - half;
+            foreach (var item in spreadItems)
+                item.rt.anchoredPosition = new Vector2(item.baseX + item.side * spread, item.rt.anchoredPosition.y);
+            SetTopLines(lineT);
+
+            // 画面の上の端から、縮めた上の帯の下までを、上の帯の色で塗る
+            float h = top + TopH * s;
+            topBarFull.rectTransform.sizeDelta = new Vector2(CanvasW, h);
+            topBarFull.rectTransform.anchoredPosition = new Vector2(CanvasW * 0.5f, -h * 0.5f);
+            topBarFull.color = WithAlpha(TopBarColor, topGroup != null ? topGroup.alpha : 1f);
         }
 
         // ---- 上の帯 ----
@@ -426,293 +494,180 @@ namespace MedalPusher
         {
             topRoot = NewRect("Top", root, CanvasW * 0.5f, TopH * 0.5f, CanvasW, TopH);
             topGroup = topRoot.gameObject.AddComponent<CanvasGroup>();
-            NewImage("TopBg", topRoot, CanvasW * 0.5f, TopH * 0.5f, CanvasW, TopH, Panel);
-            NewImage("TopLine", topRoot, CanvasW * 0.5f, TopH + 1f, CanvasW, 2f, Line);
-            NewImage("AccentBlock", topRoot, 34f, TopH * 0.5f, 8f, TopH - 24f, Accent);
+            NewImage("TopBg", topRoot, CanvasW * 0.5f, TopH * 0.5f, CanvasW, TopH, TopBarColor);
 
-            areaTag = Tag("AreaTag", topRoot, 130f, TopH * 0.5f + 2f, 140f, 38f, "AREA 01", 22, Fg, Bg);
-            titleText = Label("AreaTitle", topRoot, 225f, 36f, 700f, 40f, "", 32, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
-            subtitleText = Label("AreaSub", topRoot, 227f, 64f, 700f, 18f, "", 13, Mute, TextAnchor.MiddleLeft, displayFont);
+            // 帯の下の紫の線（タブの左右から外へ伸びる）
+            lineLeft = NewImage("LineLeft", topRoot, 0f, TopH + 3f, 0f, 6f, Lavender, pillSprite).rectTransform;
+            lineLeft.pivot = new Vector2(1f, 0.5f);
+            lineRight = NewImage("LineRight", topRoot, 0f, TopH + 3f, 0f, 6f, Lavender, pillSprite).rectTransform;
+            lineRight.pivot = new Vector2(0f, 0.5f);
+            lineLeft.GetComponent<Image>().type = Image.Type.Sliced;
+            lineRight.GetComponent<Image>().type = Image.Type.Sliced;
+            SetTopLines(1f);
 
-            var stats = NewRect("Stats", topRoot, CanvasW * 0.5f, TopH * 0.5f, CanvasW, TopH);
-            statsGroup = stats.gameObject.AddComponent<CanvasGroup>();
-            statRoundValue = Stat(stats, 1280f, "ROUND");
-            Slash(stats, 1330f);
-            statScoreValue = Stat(stats, 1450f, "SCORE");
+            // 左：レコードのマークとラウンド名
+            var left = NewRect("TopLeft", topRoot, 300f, TopH * 0.5f, 560f, TopH);
+            Spread(left, -1f);
+            topLeftGroup = left.gameObject.AddComponent<CanvasGroup>();
+            smallRecord = NewImage("RecordIcon", left, 70f, TopH * 0.5f, 60f, 60f, Color.white, recordSprite).rectTransform;
+            roundNameText = Label("RoundName", left, 118f, TopH * 0.5f, 430f, 50f, "", 36, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
+
+            // 右：再生ボタン風の飾り（▶ は、レコードを流している間だけ明るい）
+            var icons = NewRect("Icons", topRoot, 1330f, TopH * 0.5f, 300f, TopH);
+            Spread(icons, 1f);
+            iconsGroup = icons.gameObject.AddComponent<CanvasGroup>();
+            playIcon = NewImage("Play", icons, 60f, TopH * 0.5f, 40f, 44f, Fg, triangleSprite);
+            NewImage("PauseL", icons, 142f, TopH * 0.5f, 12f, 40f, Fg, pillSprite).type = Image.Type.Sliced;
+            NewImage("PauseR", icons, 164f, TopH * 0.5f, 12f, 40f, Fg, pillSprite).type = Image.Type.Sliced;
+            NewImage("Ff1", icons, 236f, TopH * 0.5f, 32f, 40f, Accent, triangleSprite);
+            NewImage("Ff2", icons, 264f, TopH * 0.5f, 32f, 40f, Accent, triangleSprite);
+
+            // まん中：上から垂れ下がったタブ（ラウンド 01/15）
+            tabRoot = NewRect("Tab", topRoot, CanvasW * 0.5f, TabTop + TabH * 0.5f, TabTopW + 12f, TabH + 6f);
+            tabBorder = NewImage("TabBorder", tabRoot, (TabTopW + 12f) * 0.5f, (TabH + 6f) * 0.5f, TabTopW + 12f, TabH + 6f, TabBorder, trapezoidSprite);
+            NewImage("TabFill", tabRoot, (TabTopW + 12f) * 0.5f, TabH * 0.5f, TabTopW, TabH, TabFill, trapezoidSprite);
+            Label("TabLabel", tabRoot, (TabTopW + 12f) * 0.5f, 48f, 300f, 40f, "ラウンド", 32, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
+            tabRoundText = Label("TabRound", tabRoot, (TabTopW + 12f) * 0.5f, 120f, 360f, 90f, "01", 80, Fg, TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
+            tabRoundText.supportRichText = true;
         }
 
-        /// <summary>右上の数字（小さい見出し＋大きい数字）。right は右端の x。</summary>
-        Text Stat(RectTransform parent, float right, string label)
+        /// <summary>左右に広げる物として覚えておく。</summary>
+        void Spread(RectTransform rt, float side)
         {
-            Label(label + "Label", parent, right, 26f, 160f, 18f, label, 13, Mute, TextAnchor.MiddleRight, displayFont);
-            return Label(label + "Value", parent, right, 55f, 200f, 36f, "0", 30, Fg, TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
+            spreadItems.Add(new SpreadItem { rt = rt, baseX = rt.anchoredPosition.x, side = side });
         }
 
-        void Slash(RectTransform parent, float cx)
+        /// <summary>帯の下の紫の線の長さ（0〜1）。タブの左右から外へ伸びる。</summary>
+        void SetTopLines(float t)
         {
-            Label("Slash", parent, cx, TopH * 0.5f + 2f, 30f, 60f, "/", 44, Accent, TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
+            lineT = t;
+            float tabHalf = TabTopW * 0.5f - 10f;
+            float len = (CanvasW * 0.5f - tabHalf - 40f + spread) * t;
+            lineLeft.anchoredPosition = new Vector2(CanvasW * 0.5f - tabHalf, -(TopH + 3f));
+            lineLeft.sizeDelta = new Vector2(len, 6f);
+            lineRight.anchoredPosition = new Vector2(CanvasW * 0.5f + tabHalf, -(TopH + 3f));
+            lineRight.sizeDelta = new Vector2(len, 6f);
         }
 
-        // ---- ステージ（左） ----
+        // ---- まん中：今のポイント ----
 
-        void BuildStage(RectTransform root)
+        void BuildScore(RectTransform root)
         {
-            var stage = NewRect("Stage", root, StageW * 0.5f, StageTop + StageH * 0.5f, StageW, StageH);
-
-            // 左から右へ開くための枠（はみ出しは切る）
-            stageMask = NewRect("StageMask", stage, 0f, 0f, 0f, 0f);
-            stageMask.anchorMin = new Vector2(0f, 0f);
-            stageMask.anchorMax = new Vector2(0f, 1f);
-            stageMask.pivot = new Vector2(0f, 0.5f);
-            stageMask.anchoredPosition = Vector2.zero;
-            stageMask.sizeDelta = new Vector2(StageW, 0f);
-            stageMask.gameObject.AddComponent<RectMask2D>();
-            var s = stageMask;
-
-            // 飾り（斜めの線・網点・うすい大きな文字）
-            var stripes = NewImage("Stripes", s, 850f, StageH * 0.5f, 300f, StageH, WithAlpha(Fg, 0.035f), fineStripeSprite);
-            stripes.type = Image.Type.Tiled;
-            var dots = NewImage("Dots", s, 330f, 490f, 660f, 128f, WithAlpha(Fg, 0.06f), dotSprite);
-            dots.type = Image.Type.Tiled;
-            var back = Label("BackWord", s, 990f, 470f, 900f, 200f, "MEDAL", 170, WithAlpha(Fg, 0.04f),
-                TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
-            Skew(back, 0.12f);
-            NewImage("AccentLine", s, 44f, StageH * 0.5f, 3f, 380f, Accent);
-            Label("Caption", s, 74f, 34f, 200f, 20f, Spaced("ON STAGE"), 13, Mute, TextAnchor.MiddleLeft, displayFont);
-            NewImage("CaptionLine", s, 440f, 34f, 400f, 1f, Line);
-
-            // いつもの中身（天気予報などの演出の時は、まとめて隠す）
-            normalLayer = NewRect("Normal", s, StageW * 0.5f, StageH * 0.5f, StageW, StageH);
+            // 天気予報などの時は、この層ごと隠す
+            normalLayer = NewRect("Normal", root, CanvasW * 0.5f, CanvasH * 0.5f, CanvasW, CanvasH);
             normalLayerGroup = normalLayer.gameObject.AddComponent<CanvasGroup>();
-            BuildMascot(normalLayer);
-            BuildInfo(normalLayer);
-            BuildNowPlaying(normalLayer); // MonitorDisplay.Stage.cs
 
-            BuildWeather(s);              // MonitorDisplay.Stage.cs
+            var score = NewRect("Score", normalLayer, CanvasW * 0.5f, ScoreTop + ScoreH * 0.5f, CanvasW, ScoreH);
+            scoreGroup = score.gameObject.AddComponent<CanvasGroup>();
+            float y0 = ScoreTop; // score の中の座標に直す時に引く
 
-            // 開く時に走るオレンジの線
-            stageEdge = NewImage("WipeEdge", stage, 0f, StageH * 0.5f, 6f, StageH, Accent).rectTransform;
-            stageEdge.gameObject.SetActive(false);
+            // 「現在」の札（ボス戦は「ボス」）
+            nowPill = NewImage("NowPill", score, 330f, 265f - y0, 130f, 64f, Panel, pillSprite);
+            nowPill.type = Image.Type.Sliced;
+            nowPillText = Label("NowPillText", nowPill.rectTransform, 65f, 32f, 130f, 64f, "現在", 30, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
+
+            scoreText = Label("Score", score, 418f, 262f - y0, 640f, 210f, "0", 190, Fg, TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
+
+            // ノルマまでのバー（ふちだけの枠の中に、白い中身が伸びる）
+            float barW = BarRight - BarLeft;
+            var frame = NewImage("BarFrame", score, BarLeft + barW * 0.5f, BarY - y0, barW, BarH, WithAlpha(Fg, 0.85f), pillRingSprite);
+            frame.type = Image.Type.Sliced;
+            barFill = NewImage("BarFill", score, BarLeft + 7f, BarY - y0, 0f, BarH - 14f, Fg, pillSprite);
+            barFill.type = Image.Type.Sliced;
+            barFill.rectTransform.pivot = new Vector2(0f, 0.5f);
+            barFill.rectTransform.anchoredPosition = new Vector2(BarLeft + 7f, -(BarY - y0));
+
+            targetText = Label("Target", score, BarRight, 470f - y0, 600f, 60f, "", 52, Fg, TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
+            targetText.supportRichText = true;
+
+            // エリアの始まりの演出で出すエリア名（ふだんは隠す）
+            var areaTitle = NewRect("AreaTitle", normalLayer, CanvasW * 0.5f, 360f, CanvasW, 300f);
+            areaTitleGroup = areaTitle.gameObject.AddComponent<CanvasGroup>();
+            areaTitleGroup.alpha = 0f;
+            areaNumberText = Label("AreaNumber", areaTitle, CanvasW * 0.5f, 110f, 900f, 140f, "AREA 01", 120, Accent,
+                TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
+            areaTitleText = Label("AreaName", areaTitle, CanvasW * 0.5f, 210f, 1100f, 70f, "", 56, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
         }
 
-        /// <summary>マスコット。画像が無ければ仮の図形（レコード頭のキャラ）を出す。</summary>
-        void BuildMascot(RectTransform parent)
-        {
-            mascotSlot = NewRect("MascotSlot", parent, 770f, 300f, 260f, 300f);
-            mascotSlotGroup = mascotSlot.gameObject.AddComponent<CanvasGroup>(); // NOW PLAYING の時に隠す
-            mascotRoot = NewRect("Mascot", mascotSlot, 130f, 150f, 260f, 300f);
-            mascotGroup = mascotRoot.gameObject.AddComponent<CanvasGroup>();     // 始まりの演出で出す
+        // ---- 左下：所持ポイント・特殊ポイント ----
 
-            if (game.monitor.mascot != null)
-            {
-                var raw = NewRect("MascotImage", mascotRoot, 130f, 150f, 260f, 260f).gameObject.AddComponent<RawImage>();
-                raw.texture = game.monitor.mascot;
-                raw.raycastTarget = false;
-                return;
-            }
-            NewImage("Shadow", mascotRoot, 130f, 284f, 170f, 14f, new Color(0f, 0f, 0f, 0.6f), circleSprite);
-            // 台形の体（真ん中の四角＋左右を斜めにした四角）
-            NewImage("BodyCenter", mascotRoot, 130f, 228f, 80f, 100f, Line);
-            Skew(NewImage("BodyLeft", mascotRoot, 100f, 228f, 60f, 100f, Line), 0.3f);
-            Skew(NewImage("BodyRight", mascotRoot, 160f, 228f, 60f, 100f, Line), -0.3f);
-            NewImage("Collar", mascotRoot, 130f, 181f, 96f, 6f, Accent);
-            // レコードの頭
-            NewImage("Head", mascotRoot, 130f, 100f, 170f, 170f, Color.white, recordSprite);
-            NewImage("EyeL", mascotRoot, 119f, 98f, 9f, 14f, Fg, circleSprite);
-            NewImage("EyeR", mascotRoot, 141f, 98f, 9f, 14f, Fg, circleSprite);
-            NewImage("PhoneL", mascotRoot, 40f, 104f, 22f, 58f, Accent);
-            NewImage("PhoneR", mascotRoot, 220f, 104f, 22f, 58f, Accent);
-            Label("MascotLabel", mascotRoot, 130f, 298f, 260f, 16f, "MASCOT（仮）", 12, Mute, TextAnchor.MiddleCenter, font);
+        void BuildPills(RectTransform root)
+        {
+            pillsRoot = NewRect("Pills", root, 0f, 0f, 0f, 0f);
+            Spread(pillsRoot, -1f);
+            pointsValue = Pill("Points", 205f, 600f, "所持ポイント", PillPurple, Fg);
+            specialValue = Pill("Special", 205f, 742f, "特殊ポイント", PillBeige, PillDarkText);
         }
 
-        /// <summary>左の ROUND 番号とラウンド名（ボス戦は BOSS に切り替わる）。</summary>
-        void BuildInfo(RectTransform parent)
+        /// <summary>見出しと、色の付いた丸い札に数字。cx は中心、top は見出しの上下の中心。</summary>
+        Text Pill(string name, float cx, float top, string label, Color color, Color textColor)
         {
-            infoRoot = NewRect("Info", parent, StageW * 0.5f, StageH * 0.5f, StageW, StageH);
-            infoGroup = infoRoot.gameObject.AddComponent<CanvasGroup>();
-
-            // ---- いつものラウンド ----
-            roundBlock = NewRect("RoundBlock", infoRoot, 300f, StageH * 0.5f, 540f, StageH); // 左端は x=30
-            roundOutlineText = Label("RoundOutline", roundBlock, 44f, 165f, 500f, 140f, "ROUND", 120, Bg,
-                TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
-            var outline = roundOutlineText.gameObject.AddComponent<Outline>(); // 中を地の色で塗り、ふちだけ白く見せる
-            outline.effectColor = WithAlpha(Fg, 0.85f);
-            outline.effectDistance = new Vector2(2f, -2f);
-            Skew(roundOutlineText, 0.12f);
-            roundNumberText = Label("RoundNumber", roundBlock, 250f, 245f, 280f, 230f, "01", 210, Accent,
-                TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
-            Skew(roundNumberText, 0.12f);
-            Tag("StageTag", roundBlock, 109f, 400f, 130f, 26f, "STAGE NAME", 14, Fg, Bg);
-            roundNameText = Label("RoundName", roundBlock, 44f, 448f, 500f, 54f, "", 44, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
-
-            // ---- ボス戦 ----
-            bossBlock = NewRect("BossBlock", infoRoot, 300f, StageH * 0.5f, 540f, StageH);
-            var hazardTop = NewImage("HazardTop", bossBlock, 280f, 88f, 500f, 22f, Boss, stripeSprite);
-            hazardTop.type = Image.Type.Tiled;
-            Tag("Warning", bossBlock, 104f, 132f, 120f, 26f, "WARNING", 14, Boss, Bg);
-            var bossWord = Label("BossWord", bossBlock, 44f, 240f, 500f, 200f, "BOSS", 180, Boss,
-                TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
-            Skew(bossWord, 0.12f);
-            var hazardBottom = NewImage("HazardBottom", bossBlock, 280f, 352f, 500f, 8f, Boss, stripeSprite);
-            hazardBottom.type = Image.Type.Tiled;
-            Tag("TargetTag", bossBlock, 99f, 400f, 110f, 26f, "TARGET", 14, Boss, Bg);
-            bossNameText = Label("BossName", bossBlock, 44f, 448f, 500f, 54f, "", 44, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
-            bossBlock.gameObject.SetActive(false);
+            const float w = 250f, h = 66f;
+            var r = NewRect(name, pillsRoot, cx, top + 52f, w, 120f);
+            var g = r.gameObject.AddComponent<CanvasGroup>();
+            pillRoots.Add(r);
+            pillGroups.Add(g);
+            Label("Label", r, w * 0.5f, 12f, w + 40f, 34f, label, 26, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
+            var bg = NewImage("Bg", r, w * 0.5f, 72f, w, h, color, pillSprite);
+            bg.type = Image.Type.Sliced;
+            return Label("Value", r, w * 0.5f, 72f, w, h, "0", 40, textColor, TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
         }
 
-        // ---- デッキ（右）：回るレコード（グルーヴゲージは筐体の GrooveGauge に移した） ----
+        // ---- 右下：所持メダル ----
 
-        void BuildDeck(RectTransform root)
+        void BuildMedals(RectTransform root)
         {
-            deckRoot = NewRect("Deck", root, DeckLeft + DeckW * 0.5f, StageTop + StageH * 0.5f, DeckW, StageH);
-            NewImage("DeckBg", deckRoot, DeckW * 0.5f, StageH * 0.5f, DeckW, StageH, Panel);
-            NewImage("DeckLine", deckRoot, -1f, StageH * 0.5f, 2f, StageH, Line);
-            var stripes = NewImage("DeckStripes", deckRoot, DeckW * 0.5f, StageH * 0.5f, DeckW, StageH, WithAlpha(Fg, 0.025f), fineStripeSprite);
-            stripes.type = Image.Type.Tiled;
-            Label("DeckCaption", deckRoot, 28f, 34f, 200f, 20f, Spaced("ON DECK"), 13, Mute, TextAnchor.MiddleLeft, displayFont);
-            NewImage("CornerH", deckRoot, DeckW - 48f, 26f, 36f, 2f, Mute);
-            NewImage("CornerV", deckRoot, DeckW - 31f, 42f, 2f, 34f, Mute);
+            Spread(NewImage("MedalDivider", root, 1185f, 765f, 3f, 220f, Line).rectTransform, 1f);
+            medalRoot = NewRect("Medals", root, 1330f, 765f, 280f, 220f);
+            Spread(medalRoot, 1f);
+            medalGroup = medalRoot.gameObject.AddComponent<CanvasGroup>();
+            Label("Label", medalRoot, 140f, 30f, 280f, 34f, "所持メダル", 26, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
+            NewImage("Coin", medalRoot, 62f, 125f, 84f, 84f, Color.white, coinSprite);
+            medalValue = Label("Value", medalRoot, 116f, 125f, 170f, 90f, "0", 76, Fg, TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
+        }
 
-            // レコード
-            recordRoot = NewRect("Record", deckRoot, DeckW * 0.5f, RecordLocalY, 0f, 0f);
-            NewImage("Ring", recordRoot, 0f, 0f, RecordSize + 30f, RecordSize + 30f, Line, ringSprite);
+        // ---- 下のまん中：回るレコードとイコライザー ----
+
+        void BuildRecord(RectTransform root)
+        {
+            recordRoot = NewRect("Record", root, RecordX, RecordCanvasY, 0f, 0f);
+            NewImage("Ring", recordRoot, 0f, 0f, RecordSize + 20f, RecordSize + 20f, WithAlpha(Fg, 0.35f), ringSprite);
             recordDisc = NewImage("Disc", recordRoot, 0f, 0f, RecordSize, RecordSize, Color.white, recordSprite).rectTransform;
             BuildDiscLabel(recordDisc); // 再生中のレコードのジャケットをラベルに貼る（MonitorDisplay.Stage.cs）
 
-            // 流しているレコードの名前（流していない時は NO RECORD）
-            var info = NewRect("DeckInfo", deckRoot, DeckW * 0.5f, 500f, DeckW, 80f);
-            deckInfoGroup = info.gameObject.AddComponent<CanvasGroup>();
-            deckName = Label("DeckName", info, DeckW * 0.5f, 28f, DeckW - 60f, 40f, "", 30, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
-            deckSub = Label("DeckSub", info, DeckW * 0.5f, 62f, DeckW - 60f, 20f, "", 14, Mute, TextAnchor.MiddleCenter, font);
+            var eq = NewRect("Equalizer", root, 0f, 0f, 0f, 0f);
+            eqGroup = eq.gameObject.AddComponent<CanvasGroup>();
+            eqLeft = BuildEqualizer(eq, "EqLeft", 352f);
+            eqRight = BuildEqualizer(eq, "EqRight", CanvasW - 352f - (EqColumns - 1) * EqStepX);
+            eqLevels = new float[EqColumns * 2];
         }
 
-        // ---- 数字の帯 ----
-
-        void BuildInfoBand(RectTransform root)
+        /// <summary>四角いブロックを積んだイコライザー（left は一番左の列の中心）。</summary>
+        Image[,] BuildEqualizer(RectTransform parent, string name, float left)
         {
-            var band = NewRect("InfoBand", root, CanvasW * 0.5f, InfoTop + InfoH * 0.5f, CanvasW, InfoH);
-            infoBandGroup = band.gameObject.AddComponent<CanvasGroup>();
-            NewImage("BandBg", band, CanvasW * 0.5f, InfoH * 0.5f, CanvasW, InfoH, Bg);
-            NewImage("BandLine", band, CanvasW * 0.5f, -1f, CanvasW, 2f, Line);
-
-            const float left = 30f;
-            float w = (CanvasW - left * 2f) / 5f;
-            tileMedals = Tile(band, left + w * 0.5f, w, "MEDALS", "所持メダル");
-            tileInsert = Tile(band, left + w * 1.5f, w, "INSERT", "投入");
-            tileDrops = Tile(band, left + w * 2.5f, w, "DROPS", "落ちた枚数");
-            tileLast = Tile(band, left + w * 3.5f, w, "LAST DROP", "直近の1枚");
-            tileArea = Tile(band, left + w * 4.5f, w, "AREA PT", "エリアのポイント");
-            for (int i = 1; i < 5; i++)
-                Skew(NewImage("Sep", band, left + w * i, InfoH * 0.5f, 2f, InfoH - 40f, Line), 0.25f);
-        }
-
-        InfoTile Tile(RectTransform parent, float cx, float w, string en, string ja)
-        {
-            var t = new InfoTile { root = NewRect(en, parent, cx, InfoH * 0.5f, w, InfoH) };
-            t.group = t.root.gameObject.AddComponent<CanvasGroup>();
-            float x = 24f;
-            Label("En", t.root, x, 30f, w, 18f, Spaced(en), 13, Mute, TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
-            Label("Ja", t.root, w - 20f, 30f, w, 18f, ja, 14, Mute, TextAnchor.MiddleRight, font);
-            t.value = Label("Value", t.root, x, 80f, w - 40f, 60f, "0", 52, Fg, TextAnchor.MiddleLeft, displayFont, FontStyle.Bold);
-            Skew(t.value, 0.12f);
-            t.sub = Label("Sub", t.root, x, 124f, w - 40f, 20f, "", 14, Mute, TextAnchor.MiddleLeft, font);
-            tiles.Add(t);
-            return t;
-        }
-
-        /// <summary>マスの数字を入れる。変わった時だけ少しはずむ。</summary>
-        static void SetTile(InfoTile t, string value, string sub, Color color)
-        {
-            t.value.color = color;
-            t.sub.text = sub;
-            if (value == t.last) return;
-            if (t.last != null) t.pulse = 1f;
-            t.last = value;
-            t.value.text = value;
-        }
-
-        // ---- 下の帯 ----
-
-        void BuildBottomBar(RectTransform root)
-        {
-            var bottom = NewRect("Bottom", root, CanvasW * 0.5f, BottomTop + BottomH * 0.5f, CanvasW, BottomH);
-            NewImage("BottomBg", bottom, CanvasW * 0.5f, BottomH * 0.5f, CanvasW, BottomH, Panel);
-            NewImage("BottomLine", bottom, CanvasW * 0.5f, -1f, CanvasW, 2f, Line);
-            Label("RoundsLabel", bottom, ChipsLeft, 24f, 300f, 18f, Spaced("ROUNDS"), 13, Mute, TextAnchor.MiddleLeft, displayFont);
-            chipsRoot = NewRect("Chips", bottom, 0f, 64f, 0f, 0f);
-
-            var quota = NewRect("Quota", bottom, CanvasW * 0.5f, BottomH * 0.5f, CanvasW, BottomH);
-            quotaGroup = quota.gameObject.AddComponent<CanvasGroup>();
-            quotaLabel = Label("QuotaLabel", quota, QuotaLeft, 24f, 300f, 18f, "QUOTA", 13, Mute, TextAnchor.MiddleLeft, displayFont);
-            quotaValue = Label("QuotaValue", quota, QuotaRight, 24f, 400f, 30f, "", 24, Fg, TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
-
-            const float gap = 5f;
-            float segW = (QuotaRight - QuotaLeft - (QuotaSegments - 1) * gap) / QuotaSegments;
-            segments = new Image[QuotaSegments];
-            for (int i = 0; i < QuotaSegments; i++)
-            {
-                float cx = QuotaLeft + segW * 0.5f + i * (segW + gap);
-                segments[i] = NewImage($"Seg{i + 1}", quota, cx, 66f, segW, 26f, Line);
-                Skew(segments[i], 0.35f);
-            }
-        }
-
-        void RebuildRoundChips()
-        {
-            foreach (var chip in chips) Destroy(chip.root.gameObject);
-            chips.Clear();
-
-            var rounds = game.areas[areaIndex].rounds;
-            for (int i = 0; i < rounds.Length; i++)
-            {
-                var r = rounds[i];
-                var root = NewRect($"Round{i + 1}", chipsRoot, ChipsLeft + ChipW * 0.5f + i * ChipStep, 0f, ChipW, ChipH);
-                var chip = new RoundChip { root = root, group = root.gameObject.AddComponent<CanvasGroup>(), boss = r.isBoss };
-                chip.outer = NewImage("Outer", root, ChipW * 0.5f, ChipH * 0.5f, ChipW, ChipH, Line);
-                Skew(chip.outer, 0.35f);
-                chip.inner = NewImage("Inner", root, ChipW * 0.5f, ChipH * 0.5f, ChipW - 4f, ChipH - 4f, Panel);
-                Skew(chip.inner, 0.35f);
-                chip.label = Label("No", root, ChipW * 0.5f, ChipH * 0.5f, ChipW, ChipH, r.isBoss ? "BOSS" : (i + 1).ToString("00"),
-                    20, Fg, TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
-                Skew(chip.label, 0.12f);
-                chip.underline = NewImage("Mark", root, ChipW * 0.5f, ChipH + 8f, ChipW * 0.6f, 3f, Accent);
-                chips.Add(chip);
-            }
-        }
-
-        /// <summary>チップの色：今のラウンドは塗りつぶし、終わったラウンドは暗く、これからのラウンドは枠だけ。</summary>
-        void RefreshChips()
-        {
-            for (int i = 0; i < chips.Count; i++)
-            {
-                var c = chips[i];
-                bool current = i == roundIndex;
-                bool cleared = i < roundIndex;
-                Color hi = c.boss ? Boss : Accent;
-                c.outer.color = current ? hi : Line;
-                c.inner.color = current ? hi : (cleared ? Line : Panel);
-                c.label.color = current ? Bg : (cleared ? Mute : (c.boss ? Boss : Fg));
-                c.underline.enabled = current;
-                c.underline.color = hi;
-            }
+            var blocks = new Image[EqColumns, EqBlocks];
+            for (int c = 0; c < EqColumns; c++)
+                for (int b = 0; b < EqBlocks; b++)
+                    blocks[c, b] = NewImage($"{name}_{c}_{b}", parent, left + c * EqStepX, EqBaseY - b * EqStepY, EqBlockW, EqBlockH, EqColor, whiteSprite);
+            return blocks;
         }
 
         // ---- クリア・失敗などの帯 ----
 
         void BuildStatus(RectTransform root)
         {
-            statusRoot = NewRect("Status", root, CanvasW * 0.5f, StageTop + StageH * 0.5f, CanvasW, 150f);
+            statusRoot = NewRect("Status", root, CanvasW * 0.5f, 400f, CanvasW, 150f);
             statusRoot.localRotation = Quaternion.Euler(0f, 0f, 3f);
             statusGroup = statusRoot.gameObject.AddComponent<CanvasGroup>();
             statusGroup.alpha = 0f;
-            statusBg = NewImage("Band", statusRoot, CanvasW * 0.5f, 75f, CanvasW + 140f, 130f, Accent);
-            var stripes = NewImage("BandStripes", statusRoot, CanvasW * 0.5f, 75f, CanvasW + 140f, 130f, WithAlpha(Bg, 0.10f), stripeSprite);
+            statusBg = NewImage("Band", statusRoot, CanvasW * 0.5f, 75f, CanvasW + 1000f, 130f, Accent);
+            var stripes = NewImage("BandStripes", statusRoot, CanvasW * 0.5f, 75f, CanvasW + 1000f, 130f, WithAlpha(Panel, 0.10f), stripeSprite);
             stripes.type = Image.Type.Tiled;
-            NewImage("BandLineTop", statusRoot, CanvasW * 0.5f, 6f, CanvasW + 140f, 2f, Bg);
-            NewImage("BandLineBottom", statusRoot, CanvasW * 0.5f, 144f, CanvasW + 140f, 2f, Bg);
-            statusEn = Label("En", statusRoot, CanvasW * 0.5f, 62f, 1400f, 100f, "", 88, Bg, TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
+            NewImage("BandLineTop", statusRoot, CanvasW * 0.5f, 6f, CanvasW + 1000f, 2f, Panel);
+            NewImage("BandLineBottom", statusRoot, CanvasW * 0.5f, 144f, CanvasW + 1000f, 2f, Panel);
+            statusEn = Label("En", statusRoot, CanvasW * 0.5f, 62f, 1400f, 100f, "", 88, Panel, TextAnchor.MiddleCenter, displayFont, FontStyle.Bold);
             Skew(statusEn, 0.15f);
-            statusJa = Label("Ja", statusRoot, CanvasW * 0.5f, 120f, 1400f, 26f, "", 22, Bg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
+            statusJa = Label("Ja", statusRoot, CanvasW * 0.5f, 120f, 1400f, 26f, "", 22, Panel, TextAnchor.MiddleCenter, font, FontStyle.Bold);
         }
 
         // ================================================================
@@ -726,36 +681,32 @@ namespace MedalPusher
             StopShop();
             areaIndex = Mathf.Clamp(area, 0, game.areas.Length - 1);
             roundIndex = round;
-            areaTag.text.text = $"AREA {areaIndex + 1:00}";
-            RebuildRoundChips();
+            areaNumberText.text = $"AREA {areaIndex + 1:00}";
+            areaTitleText.text = AreaTitle;
             ShowRound(round, true);
             SetFinalVisuals();
         }
 
-        /// <summary>ラウンドが変わった時。ROUND 番号・ラウンド名・チップを切り替える。</summary>
+        /// <summary>ラウンドが変わった時。タブのラウンド番号とラウンド名を切り替える。</summary>
         public void ShowRound(int round, bool instant = false)
         {
             roundIndex = round;
             var rounds = game.areas[areaIndex].rounds;
             var r = rounds[Mathf.Clamp(round, 0, rounds.Length - 1)];
-            roundNumberText.text = (round + 1).ToString("00");
-            roundNameText.text = r.title;
-            bossNameText.text = r.title;
-            roundBlock.gameObject.SetActive(!r.isBoss);
-            bossBlock.gameObject.SetActive(r.isBoss);
-            subtitleText.text = Spaced($"ROUND {round + 1:00}") + "   /   " + Spaced(r.isBoss ? "BOSS BATTLE" : "MEDAL PUSHER");
-            statRoundValue.text = $"{round + 1:00} / {rounds.Length:00}";
-            RefreshChips();
+            roundNameText.text = r.isBoss ? $"BOSS　{r.title}" : r.title;
+            roundNameText.color = r.isBoss ? Boss : Fg;
+            tabRoundText.text = $"{round + 1:00}<size=44>/{rounds.Length:00}</size>";
+            nowPillText.text = r.isBoss ? "ボス" : "現在";
+            nowPill.color = r.isBoss ? Boss : Panel;
             ApplyTagColor();
-            if (!instant) roundPulse = 1f; // 番号がはずむ
+            if (!instant) roundPulse = 1f; // タブの番号がはずむ
         }
 
-        /// <summary>左上のタグの色（ボスは赤、天気は水色、いつもは白）。</summary>
+        /// <summary>タブのふちの色（ボスは赤、天気は水色、いつもはグレー）。</summary>
         void ApplyTagColor()
         {
-            if (areaTag == null) return;
-            areaTag.bg.color = weatherOn ? Sky : (IsBoss ? Boss : Fg);
-            areaTag.text.color = Bg;
+            if (tabBorder == null) return;
+            tabBorder.color = weatherOn ? Sky : (IsBoss ? Boss : TabBorder);
         }
 
         /// <summary>エリアの始まりの演出を流す。終わったら（スキップした時も）onFinished を呼ぶ。</summary>
@@ -808,62 +759,55 @@ namespace MedalPusher
             BeginCloseup();
             yield return Wait(0.4f);
 
-            // 1. 上の帯
+            // 1. 上の帯と、まん中のエリア名
             yield return Tween(0.4f, t =>
             {
                 topGroup.alpha = t;
                 topRoot.localScale = new Vector3(1f, EaseOut(t), 1f);
             });
-
-            // 2. ステージが左から右へ開く（オレンジの線が走る）。デッキも一緒に出る
-            stageEdge.gameObject.SetActive(true);
-            StartCoroutine(Tween(0.5f, t => deckRoot.localScale = new Vector3(1f, EaseOut(t), 1f)));
-            yield return Tween(0.7f, t =>
+            StartCoroutine(Tween(0.5f, t =>
             {
-                float w = StageW * EaseInOut(t);
-                stageMask.sizeDelta = new Vector2(w, 0f);
-                stageEdge.anchoredPosition = new Vector2(w, -StageH * 0.5f);
+                areaTitleGroup.alpha = t;
+                areaTitleGroup.transform.localScale = Vector3.one * Mathf.Lerp(1.3f, 1f, EaseOut(t));
+            }));
+
+            // 2. タブが上から下りてきて、紫の線が左右に伸びる
+            var tabHome = new Vector2(CanvasW * 0.5f, -(TabTop + TabH * 0.5f));
+            var tabFrom = tabHome + new Vector2(0f, TabH + 20f);
+            yield return Tween(0.5f, t => tabRoot.anchoredPosition = Vector2.LerpUnclamped(tabFrom, tabHome, EaseOutBack(t)));
+            yield return Tween(0.4f, t => SetTopLines(EaseOut(t)));
+            StartCoroutine(Tween(0.35f, t =>
+            {
+                topLeftGroup.alpha = t;
+                iconsGroup.alpha = t;
+            }));
+            yield return Wait(0.9f);
+
+            // 3. エリア名が消え、今のポイントとバーが出る
+            yield return Tween(0.3f, t => areaTitleGroup.alpha = 1f - t);
+            var scoreRt = (RectTransform)scoreGroup.transform;
+            var scoreHome = new Vector2(CanvasW * 0.5f, -(ScoreTop + ScoreH * 0.5f));
+            yield return Tween(0.45f, t =>
+            {
+                scoreGroup.alpha = t;
+                scoreRt.anchoredPosition = scoreHome + new Vector2(-80f * (1f - EaseOut(t)), 0f);
             });
-            stageEdge.gameObject.SetActive(false);
 
-            // 3. ラウンドのチップと数字の帯を順に
-            infoBandGroup.alpha = 1f;
-            foreach (var tile in tiles)
+            // 4. 札と所持メダルが順に出て、レコードが下から上がる
+            for (int i = 0; i < pillGroups.Count; i++)
             {
-                StartCoroutine(PopIn(tile.group, tile.root, 0.25f));
-                yield return Wait(0.07f);
+                StartCoroutine(PopIn(pillGroups[i], pillRoots[i], 0.3f));
+                yield return Wait(0.1f);
             }
-            foreach (var chip in chips)
-            {
-                StartCoroutine(PopIn(chip.group, chip.root, 0.25f));
-                yield return Wait(0.08f);
-            }
-            yield return Wait(0.15f);
-
-            // 4. レコードが右から入る
-            var target = new Vector2(DeckW * 0.5f, -RecordLocalY);
-            var from = new Vector2(DeckW * 0.5f + 600f, -RecordLocalY);
-            yield return Tween(0.6f, t => recordRoot.anchoredPosition = Vector2.LerpUnclamped(from, target, EaseOutBack(t)));
-
-            // 5. 回り始めると同時に、レコードの名前・エリア名・ROUND・マスコット
+            StartCoroutine(PopIn(medalGroup, medalRoot, 0.3f));
+            var recordHome = new Vector2(RecordX, -RecordCanvasY);
+            var recordFrom = recordHome + new Vector2(0f, -RecordHiddenOffset);
             spinning = true;
-            StartCoroutine(Tween(0.4f, t => deckInfoGroup.alpha = t));
-            titleText.text = AreaTitle;
-            StartCoroutine(Tween(0.4f, t =>
-            {
-                titleText.color = WithAlpha(Fg, t);
-                subtitleText.color = WithAlpha(Mute, t);
-            }));
-            var infoBase = new Vector2(StageW * 0.5f, -StageH * 0.5f);
-            StartCoroutine(Tween(0.45f, t =>
-            {
-                infoGroup.alpha = t;
-                infoRoot.anchoredPosition = infoBase + new Vector2(-80f * (1f - EaseOut(t)), 0f);
-            }));
-            StartCoroutine(PopIn(mascotGroup, mascotRoot, 0.4f));
-            yield return Wait(2.0f);
+            yield return Tween(0.6f, t => recordRoot.anchoredPosition = Vector2.LerpUnclamped(recordFrom, recordHome, EaseOutBack(t)));
+            StartCoroutine(Tween(0.3f, t => eqGroup.alpha = t));
+            yield return Wait(1.6f);
 
-            // 6. 縮んで筐体のモニターに戻る
+            // 5. 縮んで筐体のモニターに戻る
             yield return Tween(1.4f, t =>
             {
                 float e = EaseInOut(t);
@@ -871,13 +815,9 @@ namespace MedalPusher
                 if (cam == null) return;
                 cam.transform.SetPositionAndRotation(Vector3.Lerp(closePos, playPos, e), Quaternion.Slerp(closeRot, playRot, e));
                 SetLens(cam, Mathf.Lerp(0f, playLens, e));
+                layoutBlend = e; // カメラが引くのに合わせて、プレイ中の配置に変える
             });
             RestoreCamera();
-            yield return Tween(0.3f, t =>
-            {
-                statsGroup.alpha = t;
-                quotaGroup.alpha = t;
-            });
 
             FinishIntro();
         }
@@ -885,61 +825,45 @@ namespace MedalPusher
         /// <summary>演出の始まりの状態：背景だけ。</summary>
         void SetIntroStartVisuals()
         {
+            layoutBlend = 0f; // カメラが寄っている間は画面いっぱい
             topGroup.alpha = 0f;
             topRoot.localScale = new Vector3(1f, 0f, 1f);
-            titleText.text = "";
-            stageMask.sizeDelta = new Vector2(0f, 0f);
-            stageEdge.gameObject.SetActive(false);
-            deckRoot.localScale = new Vector3(1f, 0f, 1f);
-            foreach (var chip in chips)
-            {
-                chip.group.alpha = 0f;
-                chip.root.localScale = Vector3.zero;
-            }
-            infoBandGroup.alpha = 0f;
-            foreach (var tile in tiles)
-            {
-                tile.group.alpha = 0f;
-                tile.root.localScale = Vector3.zero;
-            }
-            recordRoot.anchoredPosition = new Vector2(DeckW * 0.5f + 600f, -RecordLocalY);
+            tabRoot.anchoredPosition = new Vector2(CanvasW * 0.5f, -(TabTop + TabH * 0.5f) + TabH + 20f);
+            SetTopLines(0f);
+            topLeftGroup.alpha = 0f;
+            iconsGroup.alpha = 0f;
+            areaTitleGroup.alpha = 0f;
+            scoreGroup.alpha = 0f;
+            foreach (var g in pillGroups) g.alpha = 0f;
+            foreach (var r in pillRoots) r.localScale = Vector3.zero;
+            medalGroup.alpha = 0f;
+            medalRoot.localScale = Vector3.zero;
+            recordRoot.anchoredPosition = new Vector2(RecordX, -RecordCanvasY - RecordHiddenOffset);
             recordDisc.localRotation = Quaternion.identity;
             spinning = false;
-            deckInfoGroup.alpha = 0f;
-            mascotGroup.alpha = 0f;
-            mascotRoot.localScale = Vector3.zero;
-            infoGroup.alpha = 0f;
-            statsGroup.alpha = 0f;
-            quotaGroup.alpha = 0f;
+            eqGroup.alpha = 0f;
         }
 
         /// <summary>すべて出そろった状態（プレイ中の画面）。</summary>
         void SetFinalVisuals()
         {
+            layoutBlend = 1f;
             topGroup.alpha = 1f;
             topRoot.localScale = Vector3.one;
-            titleText.text = AreaTitle;
-            titleText.color = Fg;
-            subtitleText.color = Mute;
-            stageMask.sizeDelta = new Vector2(StageW, 0f);
-            stageEdge.gameObject.SetActive(false);
-            deckRoot.localScale = Vector3.one;
-            foreach (var chip in chips) chip.root.localScale = Vector3.one;
-            infoBandGroup.alpha = 1f;
-            foreach (var tile in tiles)
-            {
-                tile.group.alpha = 1f;
-                tile.root.localScale = Vector3.one;
-            }
-            recordRoot.anchoredPosition = new Vector2(DeckW * 0.5f, -RecordLocalY);
+            tabRoot.anchoredPosition = new Vector2(CanvasW * 0.5f, -(TabTop + TabH * 0.5f));
+            SetTopLines(1f);
+            topLeftGroup.alpha = 1f;
+            iconsGroup.alpha = 1f;
+            areaTitleGroup.alpha = 0f;
+            scoreGroup.alpha = 1f;
+            ((RectTransform)scoreGroup.transform).anchoredPosition = new Vector2(CanvasW * 0.5f, -(ScoreTop + ScoreH * 0.5f));
+            foreach (var g in pillGroups) g.alpha = 1f;
+            foreach (var r in pillRoots) r.localScale = Vector3.one;
+            medalGroup.alpha = 1f;
+            medalRoot.localScale = Vector3.one;
+            recordRoot.anchoredPosition = new Vector2(RecordX, -RecordCanvasY);
             spinning = true;
-            deckInfoGroup.alpha = 1f;
-            mascotGroup.alpha = 1f;
-            mascotRoot.localScale = Vector3.one;
-            infoGroup.alpha = 1f;
-            infoRoot.anchoredPosition = new Vector2(StageW * 0.5f, -StageH * 0.5f);
-            statsGroup.alpha = 1f;
-            quotaGroup.alpha = 1f;
+            eqGroup.alpha = 1f;
         }
 
         /// <summary>カメラをモニターの正面に寄せ、モニターが画面いっぱいに映るようにする。</summary>
@@ -1029,106 +953,114 @@ namespace MedalPusher
         {
             if (game == null || recordDisc == null) return;
 
+            ApplyContentLayout(); // 再生中に Inspector で contentTop を変えても反映する
+
             if (spinning)
-                recordDisc.Rotate(0f, 0f, -game.monitor.recordSpinSpeed * Time.deltaTime);
-
-            // マスコットが少し上下に揺れる
-            mascotRoot.anchoredPosition = new Vector2(130f, -(150f + Mathf.Sin(Time.time * 2.2f) * 4f));
-
-            // ラウンドが変わった時に番号がはずむ
-            roundPulse = Mathf.MoveTowards(roundPulse, 0f, Time.deltaTime * 2.5f);
-            float ps = 1f + 0.25f * roundPulse * roundPulse;
-            roundNumberText.rectTransform.localScale = new Vector3(ps, ps, 1f);
-
-            // 終わったラウンドのチップは少し暗く（演出中は PopIn に任せる）。今のラウンドの下線は点滅
-            if (introRoutine == null)
-                for (int i = 0; i < chips.Count; i++) chips[i].group.alpha = i < roundIndex ? 0.6f : 1f;
-            if (roundIndex >= 0 && roundIndex < chips.Count)
             {
-                var mark = chips[roundIndex].underline;
-                mark.color = WithAlpha(mark.color, 0.55f + 0.45f * Mathf.Sin(Time.time * 5f));
+                float spin = -game.monitor.recordSpinSpeed * Time.deltaTime;
+                recordDisc.Rotate(0f, 0f, spin);
+                smallRecord.Rotate(0f, 0f, spin);
             }
 
-            UpdateHud();
-            UpdateDeck();
-            UpdateInfoBand();
+            // ラウンドが変わった時に、タブの番号がはずむ
+            roundPulse = Mathf.MoveTowards(roundPulse, 0f, Time.deltaTime * 2.5f);
+            float ps = 1f + 0.25f * roundPulse * roundPulse;
+            tabRoundText.rectTransform.localScale = new Vector3(ps, ps, 1f);
+
+            UpdateScore();
+            UpdateCounters();
+            UpdateEqualizer();
             UpdateStatus();
             UpdateStage();   // MonitorDisplay.Stage.cs
             UpdateEffects(); // MonitorDisplay.Effects.cs
             UpdateShop();    // MonitorDisplay.Shop.cs
         }
 
-        /// <summary>上の帯のスコアと、下の帯のノルマ（ボス戦はHP）。</summary>
-        void UpdateHud()
+        /// <summary>まん中：今のポイントとノルマのバー（ボス戦は残りHP）。</summary>
+        void UpdateScore()
         {
             int quota = Mathf.Max(1, game.CurrentQuota);
             bool boss = game.IsBossRound;
+            int shown;
             float ratio;
             if (boss)
             {
-                quotaLabel.text = Spaced("BOSS HP");
+                shown = Mathf.Max(0, game.BossHp);
                 ratio = Mathf.Clamp01((float)game.BossHp / quota);
-                quotaValue.text = $"{game.BossHp} / {quota}";
+                targetText.text = $"{quota:N0} <size=30>HP</size>";
             }
             else
             {
-                quotaLabel.text = Spaced("QUOTA");
+                shown = game.Points;
                 ratio = Mathf.Clamp01((float)game.Points / quota);
-                quotaValue.text = $"{game.Points} / {quota} PT";
+                targetText.text = $"{quota:N0} <size=30>目標</size>";
             }
             shownRatio = Mathf.Lerp(shownRatio, ratio, 1f - Mathf.Exp(-10f * Time.deltaTime));
 
-            Color on = boss ? Boss : (ratio >= 1f ? Yellow : Accent);
-            float filled = shownRatio * QuotaSegments;
-            for (int i = 0; i < segments.Length; i++)
-            {
-                float f = Mathf.Clamp01(filled - i);
-                segments[i].color = Color.Lerp(Line, on, f < 1f ? f * 0.6f : 1f); // 途中の目盛りは薄く
-            }
+            float inner = BarRight - BarLeft - 14f;
+            barFill.rectTransform.sizeDelta = new Vector2(inner * shownRatio, BarH - 14f);
+            barFill.color = boss ? Boss : (ratio >= 1f ? Yellow : Fg);
 
-            statScoreValue.text = game.Points.ToString();
+            // 数字が変わった時に少しはずむ
+            if (shown != lastScore)
+            {
+                if (lastScore >= 0) scorePulse = 1f;
+                lastScore = shown;
+                scoreText.text = shown.ToString("N0");
+            }
+            scorePulse = Mathf.MoveTowards(scorePulse, 0f, Time.deltaTime * 4f);
+            float s = 1f + 0.08f * scorePulse * scorePulse;
+            scoreText.rectTransform.localScale = new Vector3(s, s, 1f);
+
+            // ▶ はレコードを流している間だけ明るい
+            var fx = EffectSystem;
+            bool playing = fx != null && !RecordData.IsNullOrEmpty(fx.Current);
+            playIcon.color = playing ? Color.Lerp(Fg, Accent, 0.5f + 0.5f * Mathf.Sin(Time.time * 6f)) : Fg;
         }
 
-        /// <summary>右のデッキ：流しているレコードの名前。</summary>
-        void UpdateDeck()
+        /// <summary>左下の札（所持ポイント・特殊ポイント）と、右下の所持メダル。</summary>
+        void UpdateCounters()
         {
-            var fx = EffectSystem;
-            var cur = fx != null ? fx.Current : null;
-            if (!RecordData.IsNullOrEmpty(cur))
+            pointsValue.text = $"{game.AreaPoints:N0}";
+            specialValue.text = $"{game.SpecialPoints:N0}";
+
+            int medals = game.OwnedMedals;
+            if (medals != lastMedals)
             {
-                deckName.text = cur.name;
-                deckName.color = Fg;
-                deckSub.text = Spaced("NOW PLAYING");
-                deckSub.color = Accent;
+                if (lastMedals >= 0) medalPulse = 1f;
+                lastMedals = medals;
+                medalValue.text = medals.ToString();
             }
-            else
-            {
-                deckName.text = "NO RECORD";
-                deckName.color = Mute;
-                deckSub.text = "E キーでレコードを選ぶ";
-                deckSub.color = Mute;
-            }
+            medalPulse = Mathf.MoveTowards(medalPulse, 0f, Time.deltaTime * 4f);
+            float s = 1f + 0.15f * medalPulse * medalPulse;
+            medalValue.rectTransform.localScale = new Vector3(s, s, 1f);
+            medalValue.color = medals <= 5 ? Boss : Fg; // 残りわずか
         }
 
-        /// <summary>数字の帯：所持メダル・投入・落ちた枚数・直近の1枚・エリアのポイント。</summary>
-        void UpdateInfoBand()
+        /// <summary>レコードの左右のイコライザー。流している間は大きく動き、ふだんは静かに揺れる。</summary>
+        void UpdateEqualizer()
         {
             var fx = EffectSystem;
-            int left = Mathf.Max(0, game.InsertLimit - game.InsertedThisRound);
-            int drops = game.CenterDrops + game.SideDrops;
-            int last = fx != null ? fx.LastDropPoints : 0;
-
-            SetTile(tileMedals, game.OwnedMedals.ToString(), "手持ちのメダル", Fg);
-            SetTile(tileInsert, $"{game.InsertedThisRound}/{game.InsertLimit}", $"あと {left} 枚", left <= 5 ? Boss : Fg);
-            SetTile(tileDrops, drops.ToString(), $"中央 {game.CenterDrops}　横 {game.SideDrops}　ロスト {game.LostDrops}", Fg);
-            SetTile(tileLast, last > 0 ? $"+{last}" : "0", fx != null ? $"レコード {fx.PlayCount} 回再生" : "", last > 0 ? Accent : Fg);
-            SetTile(tileArea, game.AreaPoints.ToString(), $"特殊ポイント {game.SpecialPoints}", Yellow);
-
-            foreach (var t in tiles)
+            bool playing = fx != null && !RecordData.IsNullOrEmpty(fx.Current);
+            float t = Time.time;
+            for (int i = 0; i < eqLevels.Length; i++)
             {
-                t.pulse = Mathf.MoveTowards(t.pulse, 0f, Time.deltaTime * 4f);
-                float s = 1f + 0.18f * t.pulse * t.pulse;
-                t.value.rectTransform.localScale = new Vector3(s, s, 1f);
+                float wave = Mathf.Abs(Mathf.Sin(t * (2.6f + i * 0.31f) + i * 1.7f)) * (0.55f + 0.45f * Mathf.PerlinNoise(t * 1.8f, i * 0.9f));
+                float target = playing ? 1f + wave * (EqBlocks - 1) : 1f + wave * 1.5f;
+                eqLevels[i] = Mathf.Lerp(eqLevels[i], target, 1f - Mathf.Exp(-12f * Time.deltaTime));
+            }
+            for (int c = 0; c < EqColumns; c++)
+            {
+                // 外側ほど低く（レコードに近い方が高い山になる）
+                float shapeL = 0.6f + 0.4f * c / (EqColumns - 1f);
+                float shapeR = 0.6f + 0.4f * (EqColumns - 1 - c) / (EqColumns - 1f);
+                int levelL = Mathf.RoundToInt(eqLevels[c] * shapeL);
+                int levelR = Mathf.RoundToInt(eqLevels[EqColumns + c] * shapeR);
+                for (int b = 0; b < EqBlocks; b++)
+                {
+                    eqLeft[c, b].enabled = b < levelL;
+                    eqRight[c, b].enabled = b < levelR;
+                }
             }
         }
 
@@ -1280,11 +1212,58 @@ namespace MedalPusher
             });
             recordSprite = MakeSprite(512, RecordPixel);
             stripeSprite = MakeTileSprite(32, (i, j) => (i + j) % 32 < 16 ? 1f : 0f);     // 太い斜め線（ボス・帯）
-            fineStripeSprite = MakeTileSprite(24, (i, j) => (i + j) % 24 < 3 ? 1f : 0f);  // 細い斜め線（飾り）
-            dotSprite = MakeTileSprite(14, (i, j) =>
+
+            // 丸い札（9スライスで、どの長さでも両端が丸くなる）と、そのふちだけの版
+            pillSprite = MakeSlicedSprite(64, 32, (x, y) => new Color(1f, 1f, 1f, Edge(1f - Radius(x, y), 64)));
+            pillRingSprite = MakeSlicedSprite(64, 32, (x, y) =>
             {
-                float dx = i + 0.5f - 7f, dy = j + 0.5f - 7f;
-                return Mathf.Clamp01(2.6f - Mathf.Sqrt(dx * dx + dy * dy));                // 網点
+                float r = Radius(x, y);
+                return new Color(1f, 1f, 1f, Mathf.Min(Edge(1f - r, 64), Edge(r - 0.86f, 64)));
+            });
+
+            // ▶（左の辺がまっすぐで、右がとがる）
+            triangleSprite = MakeSprite(128, (x, y) =>
+            {
+                float half = 0.9f * (0.9f - x) / 1.7f;     // x=-0.8 で ±0.9、x=0.9 で 0
+                float d = Mathf.Min(x + 0.8f, half - Mathf.Abs(y));
+                return new Color(1f, 1f, 1f, Edge(d, 128));
+            });
+
+            // 上が広く下が狭い台形（ラウンドのタブ）
+            float bottom = TabBottomW / TabTopW;
+            trapezoidSprite = MakeSprite(256, (x, y) =>
+            {
+                float t = (y + 1f) * 0.5f;                  // 下が 0、上が 1
+                float half = Mathf.Lerp(bottom, 1f, t);
+                return new Color(1f, 1f, 1f, Edge(half - Mathf.Abs(x), 256));
+            });
+
+            // メダル（金色、ふちに濃い輪、左上に光）
+            coinSprite = MakeSprite(256, (x, y) =>
+            {
+                float r = Radius(x, y);
+                float a = Edge(1f - r, 256);
+                Color gold = new Color(0.98f, 0.70f, 0.20f);
+                Color dark = new Color(0.78f, 0.45f, 0.08f);
+                Color c = r > 0.86f ? dark : (r > 0.78f ? gold * 1.08f : Color.Lerp(gold, dark, 0.25f + 0.25f * (r / 0.78f)));
+                if (r < 0.78f && Mathf.Abs(x) < 0.12f && Mathf.Abs(y) < 0.42f) c = dark;   // まん中の印
+                float light = Mathf.Clamp01(1f - Radius(x + 0.35f, y - 0.35f) / 0.5f) * 0.35f;
+                c = Color.Lerp(c, Color.white, light);
+                c.a = a;
+                return c;
+            });
+
+            // 地：上が少し明るいスレートに、ゆるい波を2本
+            backgroundSprite = MakeRectSprite(300, 180, (u, v) =>
+            {
+                Color top = new Color32(0x36, 0x39, 0x46, 0xff);
+                Color bottomColor = new Color32(0x27, 0x29, 0x33, 0xff);
+                Color c = Color.Lerp(bottomColor, top, v);
+                float wave1 = 0.42f + 0.10f * Mathf.Sin(u * 5.2f + 0.6f) + 0.04f * Mathf.Sin(u * 11f);
+                float wave2 = 0.28f + 0.08f * Mathf.Sin(u * 4.1f + 2.4f);
+                if (v < wave1) c = Color.Lerp(c, new Color32(0x3d, 0x40, 0x4e, 0xff), 0.55f);
+                if (v < wave2) c = Color.Lerp(c, new Color32(0x30, 0x32, 0x3e, 0xff), 0.6f);
+                return c;
             });
         }
 
@@ -1346,6 +1325,45 @@ namespace MedalPusher
             tex.SetPixels(colors);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        }
+
+        /// <summary>9スライス用の絵（border はふちの幅のピクセル数）。両端が丸い札やバーに使う。</summary>
+        static Sprite MakeSlicedSprite(int size, int border, Func<float, float, Color> pixel)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            var colors = new Color[size * size];
+            for (int j = 0; j < size; j++)
+                for (int i = 0; i < size; i++)
+                {
+                    float x = (i + 0.5f) / size * 2f - 1f;
+                    float y = (j + 0.5f) / size * 2f - 1f;
+                    colors[j * size + i] = pixel(x, y);
+                }
+            tex.SetPixels(colors);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0,
+                SpriteMeshType.FullRect, new Vector4(border, border, border, border));
+        }
+
+        /// <summary>横長などの絵。pixel には左下が (0, 0)、右上が (1, 1) の座標を渡す。</summary>
+        static Sprite MakeRectSprite(int width, int height, Func<float, float, Color> pixel)
+        {
+            var tex = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            var colors = new Color[width * height];
+            for (int j = 0; j < height; j++)
+                for (int i = 0; i < width; i++)
+                    colors[j * width + i] = pixel((i + 0.5f) / width, (j + 0.5f) / height);
+            tex.SetPixels(colors);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
         }
     }
 }

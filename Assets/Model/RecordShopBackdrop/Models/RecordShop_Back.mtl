@@ -1,0 +1,156 @@
+newmtl Floor
+Kd 0.500 0.380 0.280
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl WoodDark
+Kd 0.520 0.350 0.220
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl Wall
+Kd 0.930 0.890 0.820
+Ks 0.100 0.100 0.100
+Ns 59
+d 1.0
+
+newmtl Ceiling
+Kd 0.820 0.780 0.720
+Ks 0.100 0.100 0.100
+Ns 59
+d 1.0
+
+newmtl Wood
+Kd 0.820 0.620 0.400
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Navy
+Kd 0.160 0.200 0.380
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Teal
+Kd 0.180 0.550 0.550
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Black
+Kd 0.120 0.120 0.130
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Cream
+Kd 0.950 0.900 0.780
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Mustard
+Kd 0.880 0.680 0.220
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Olive
+Kd 0.480 0.520 0.240
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Sky
+Kd 0.520 0.740 0.880
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Lilac
+Kd 0.660 0.560 0.820
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Pink
+Kd 0.940 0.550 0.620
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Brick
+Kd 0.720 0.260 0.200
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl J_Orange
+Kd 0.960 0.520 0.180
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl WoodLight
+Kd 0.900 0.740 0.520
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl Black
+Kd 0.070 0.070 0.080
+Ks 0.400 0.400 0.400
+Ns 206
+d 1.0
+
+newmtl Orange
+Kd 1.000 0.480 0.100
+Ks 0.400 0.400 0.400
+Ns 206
+d 1.0
+
+newmtl Pot
+Kd 0.780 0.440 0.280
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl Leaf
+Kd 0.240 0.500 0.240
+Ks 0.300 0.300 0.300
+Ns 157
+d 1.0
+
+newmtl LeafLight
+Kd 0.380 0.640 0.300
+Ks 0.300 0.300 0.300
+Ns 157
+d 1.0
+
+newmtl PotWhite
+Kd 0.940 0.930 0.900
+Ks 0.300 0.300 0.300
+Ns 157
+d 1.0
+
+newmtl Cord
+Kd 0.120 0.110 0.100
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl Mirror
+Kd 0.850 0.860 0.900
+Ks 1.000 1.000 1.000
+Ns 500
+d 1.0
+
+newmtl Bulb
+Kd 1.000 0.860 0.550
+Ks 0.600 0.600 0.600
+Ns 304
+d 1.0
+
