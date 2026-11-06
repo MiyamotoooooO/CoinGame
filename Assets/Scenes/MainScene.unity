@@ -120,6 +120,83 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &73872010
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 73872012}
+  - component: {fileID: 73872011}
+  m_Layer: 0
+  m_Name: GrooveGauge
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &73872011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 73872010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 91fe48d109d68134fa5c93ca7b77d39d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  effectSystem: {fileID: 0}
+  cableStart: {fileID: 375461634}
+  cableStartOffset: {x: -0.07472837, y: -0.04288847, z: 0.09303129}
+  outerRadius: 0.3962434
+  innerRatio: 0.55
+  startAngle: 180
+  endAngle: 0
+  cells: 16
+  cellGap: 0.2
+  housingColor: {r: 0.08235294, g: 0.08235294, b: 0.09411765, a: 1}
+  rimColor: {r: 1, g: 0.47843137, b: 0.101960786, a: 1}
+  emptyColor: {r: 0.16862746, g: 0.16862746, b: 0.19215687, a: 1}
+  fillColor: {r: 1, g: 0.47843137, b: 0.101960786, a: 1}
+  fullColor: {r: 1, g: 0.8235294, b: 0.24705882, a: 1}
+  textColor: {r: 0.9490196, g: 0.9490196, b: 0.93333334, a: 1}
+  plugPosition: {x: 0, y: 1.1}
+  cableRadius: 0.025755819
+  cableSag: 0.35
+  cableSegments: 32
+  cableColor: {r: 0.10980392, g: 0.10980392, b: 0.1254902, a: 1}
+  customCurve: 0
+  startBend: {x: 0, y: -0.3, z: 0}
+  endBend: {x: 0, y: 0.3, z: 0}
+  pulses: 1
+  pulseSeconds: 0.6
+  pulseColor: {r: 1, g: 0.6039216, b: 0.22745098, a: 1}
+  shakeOnGain: 1
+  shakeStrength: 0.035
+  shakeAngle: 2.5
+  shakeSeconds: 0.3
+  buzzWhenFull: 1
+  buzzStrength: 0.25
+  previewFill: 0.6
+--- !u!4 &73872012
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 73872010}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.050594542, y: -0.65482897, z: 0.04401028, w: 0.7527963}
+  m_LocalPosition: {x: -1.578, y: 0.538, z: -0.269}
+  m_LocalScale: {x: 1.33, y: 1.33, z: 1.33}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 7.69, y: -82.038, z: 0}
 --- !u!1001 &118802177
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -376,9 +453,23 @@ MonoBehaviour:
     flipY: 0
     introSpeed: 1
     recordSpinSpeed: 120
+    shopZoomSeconds: 1
     sharpMonitor: 1
-    monitorPixelHeight: 1440
+    monitorPixelHeight: 1021
     overlayLayer: 29
+    effectsInFrontOfMonitor: 1
+    frontEffectsLayer: 28
+  shop:
+    recordPriceScale: 10
+    rerollBasePoints: 30
+    rerollStepPoints: 20
+    limitStep: 5
+    limitBasePoints: 150
+    limitStepPoints: 100
+    limitMax: 60
+    specialExchangeCost: 100
+    specialExchangeAmount: 1
+    warnOnAreaChange: 1
   visuals:
     medalModel: {fileID: 919132149155446097, guid: 182d4a6e3d3cbd8419cd08f55740bd03, type: 3}
     overrideMedalColors: 1
@@ -1788,3 +1879,4 @@ SceneRoots:
   - {fileID: 333357217}
   - {fileID: 459990494}
   - {fileID: 375461634}
+  - {fileID: 73872012}
