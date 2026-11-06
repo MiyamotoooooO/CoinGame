@@ -12,9 +12,11 @@ namespace MedalPusher
     /// ・効果は曲が終わるまで続く（曲が無いレコードは CSV の「効果時間」の秒数）
     /// ・流している途中で別のレコードを流すと、前の効果は終わって切り替わる
     /// ・メダルが穴に落ちるたび、ポイントを「(基本 + 加算) × 倍率」で計算し直し、
-    ///   基本のポイントとの差分だけを足す（MedalPusherGame は変更せずに、MedalDropped の通知を受けて足す）
+    ///   基本のポイントとの差分だけを足す（MedalDropped の通知を受けて、MedalPusherGame.AddPoints で足す）
+    /// ・足したポイントは、ラウンドのポイント（ノルマ）とエリアのポイント（ショップで使える）の両方に入る
     /// ・メダルが落ちるとグルーヴゲージがたまる
-    /// ・ラウンドが変わると、流しているレコードは止まり、ゲージは0に戻る
+    /// ・ラウンドが変わると、流しているレコードは止まる。ゲージは次のラウンド（次のエリア）に引き継ぐ
+    /// ・ゲームをリセットした時（R キー）は、ゲージを0に戻す
     ///
     /// いま動く効果の型：
     ///   AddPerDrop / AddPerSideDrop / AddPerDropTimed / AddPerDropIf（ブルース・アイドル・演歌）/ AddPerDropGrowing /
@@ -85,7 +87,6 @@ namespace MedalPusher
             [Min(0.1f)] public float seconds = 10f;
         }
 
-        System.Reflection.MethodInfo pointsSetter;
         int lastRoundNumber = -1;
         float basePusherSpeed = 1f;
         GameObject sideGates;
@@ -111,16 +112,9 @@ namespace MedalPusher
                 return;
             }
 
-            // MedalPusherGame.Points は外から書き換えられない（private set）ので、リフレクションで書き換える。
-            // MedalPusherGame にポイントを足す入口（AddPoints など）ができたら、そちらに置き換える。
-            pointsSetter = typeof(MedalPusherGame).GetProperty("Points")?.GetSetMethod(true);
-            if (pointsSetter == null)
-            {
-                Debug.LogWarning("RecordEffectSystem: MedalPusherGame.Points を書き換えられないため、ポイントの効果は働きません（ゲージと曲は動きます）。", this);
-            }
-
             game.MedalDropped += OnMedalDropped;
             game.StateChanged += OnStateChanged;
+            game.GameReset += OnGameReset;
             if (game.Pusher != null) basePusherSpeed = game.Pusher.speedMultiplier;
         }
 
@@ -130,6 +124,7 @@ namespace MedalPusher
             {
                 game.MedalDropped -= OnMedalDropped;
                 game.StateChanged -= OnStateChanged;
+                game.GameReset -= OnGameReset;
             }
         }
 
@@ -278,24 +273,36 @@ namespace MedalPusher
             Gauge = Mathf.Min(gaugeMax, Gauge + GaugeGain(type));
         }
 
-        /// <summary>ゲームのポイントを直接足す（マイナスで減らす。0未満にはしない）。</summary>
+        /// <summary>
+        /// ゲームのポイントを足す（マイナスで減らす。ラウンドのポイントは0未満にはしない）。
+        /// MedalPusherGame.AddPoints を通すので、エリアのポイント（ショップで使える）にも入る。
+        /// </summary>
         public void AddPoints(int amount)
         {
-            if (pointsSetter == null || amount == 0 || !IsScoring) return;
-            pointsSetter.Invoke(game, new object[] { Mathf.Max(0, game.Points + amount) });
+            if (amount == 0 || !IsScoring) return;
+            if (amount < 0) amount = Mathf.Max(amount, -game.Points);
+            game.AddPoints(amount);
         }
 
         void OnStateChanged(GameState state)
         {
-            // ラウンドが変わったら、流しているレコードを止め、ゲージを0に戻す
+            // ラウンドが変わったら、流しているレコードを止める（ゲージは引き継ぐ）
             if (game.RoundNumber != lastRoundNumber || state == GameState.Intro || state == GameState.Warmup)
             {
                 lastRoundNumber = game.RoundNumber;
-                Gauge = 0f;
                 Stop();
                 playedThisRound.Clear();
                 pusherStopRemaining = 0f;
             }
+        }
+
+        /// <summary>ゲームをリセットした時（R キー）。ゲージを0に戻す。</summary>
+        void OnGameReset()
+        {
+            Gauge = 0f;
+            Stop();
+            playedThisRound.Clear();
+            pusherStopRemaining = 0f;
         }
 
         bool IsScoring => game != null && (game.State == GameState.Playing || game.State == GameState.Grace);
@@ -377,7 +384,7 @@ namespace MedalPusher
                     case "AddPerDropIf":
                         if (r.key == "Blues")
                         {
-                            int insertsLeft = game.rules.insertLimit - game.InsertedThisRound;
+                            int insertsLeft = game.InsertLimit - game.InsertedThisRound;   // ショップで増やした分も含む
                             if (insertsLeft <= r.value2) add += r.value1;   // 残り投入数が値2以下
                         }
                         else if (r.key == "Idol")

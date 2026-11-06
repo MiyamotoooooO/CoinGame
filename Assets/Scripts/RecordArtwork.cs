@@ -35,6 +35,11 @@ namespace MedalPusher
             { "経済", new Color32(0xC9, 0xA2, 0x27, 0xFF) },
             { "条件", new Color32(0x8E, 0x5B, 0xD9, 0xFF) },
             { "変化", new Color32(0xD9, 0x48, 0x8F, 0xFF) },
+            // 2026/11/05 のリニューアル案の系統（「物理」は上と同じ色）
+            { "定番", new Color32(0xF2, 0x8C, 0x28, 0xFF) },
+            { "盤面", new Color32(0x3A, 0xA7, 0x6D, 0xFF) },
+            { "モニター", new Color32(0x8E, 0x5B, 0xD9, 0xFF) },
+            { "メダル", new Color32(0xD9, 0x48, 0x8F, 0xFF) },
         };
 
         /// <summary>系統の色。知らない系統なら灰色。</summary>

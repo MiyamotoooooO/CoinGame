@@ -15,7 +15,8 @@ namespace MedalPusher
         AddMedals,    // F1
         TogglePanel,  // Tab
         ToggleCamera, // C
-        PausePusher   // P
+        PausePusher,  // P
+        Cancel        // Esc
     }
 
     /// <summary>
@@ -106,6 +107,7 @@ namespace MedalPusher
                 case GameKey.TogglePanel: return k.tabKey.wasPressedThisFrame;
                 case GameKey.ToggleCamera: return k.cKey.wasPressedThisFrame;
                 case GameKey.PausePusher: return k.pKey.wasPressedThisFrame;
+                case GameKey.Cancel: return k.escapeKey.wasPressedThisFrame;
             }
             return false;
 #else
@@ -117,6 +119,7 @@ namespace MedalPusher
                 case GameKey.TogglePanel: return Input.GetKeyDown(KeyCode.Tab);
                 case GameKey.ToggleCamera: return Input.GetKeyDown(KeyCode.C);
                 case GameKey.PausePusher: return Input.GetKeyDown(KeyCode.P);
+                case GameKey.Cancel: return Input.GetKeyDown(KeyCode.Escape);
             }
             return false;
 #endif

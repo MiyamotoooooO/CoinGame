@@ -110,7 +110,7 @@ namespace MedalPusher
             int roundCount = game.CurrentArea.rounds.Length;
             string boss = game.IsBossRound ? " <color=#ff7777>BOSS</color>" : "";
             GUILayout.Label($"エリア {game.AreaIndex + 1}  ラウンド {game.RoundIndex + 1}/{roundCount}{boss}   {state}", labelStyle);
-            GUILayout.Label($"所持メダル: <b>{game.OwnedMedals}</b>", labelStyle);
+            GUILayout.Label($"所持メダル: <b>{game.OwnedMedals}</b>   エリアのポイント: <b>{game.AreaPoints}</b>   特殊: <b>{game.SpecialPoints}</b>", labelStyle);
             GUILayout.Label($"投入: <b>{game.InsertedThisRound}</b> / {game.InsertLimit}", labelStyle);
             if (game.IsBossRound)
                 GUILayout.Label($"ボスHP: <b>{game.BossHp}</b> / {game.CurrentQuota}   （ポイント {game.Points}）", labelStyle);

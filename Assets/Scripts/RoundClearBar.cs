@@ -8,6 +8,9 @@ namespace MedalPusher
     /// ラウンドをクリアした時に、画面の下に出る帯。「ショップへ入る」と「閉じる」のボタンがある。
     /// ・ショップへ入る：カメラがモニターに寄ってショップが開く
     /// ・閉じる：ショップに寄らずに次のラウンド（エリアの最後なら次のエリア）へ進む（Enter キーでも同じ）
+    ///
+    /// 次のエリアに進むとエリアのポイントがなくなる時は、進む前に確認を出す（ShowAreaChangeConfirm）。
+    /// 確認はショップを閉じる時にも使うので、ショップの画面の上にも出る。
     /// </summary>
     public class RoundClearBar : MonoBehaviour
     {
@@ -15,6 +18,17 @@ namespace MedalPusher
         CanvasGroup group;
         Text titleText;
         float alpha;
+
+        // 次のエリアに進む前の確認
+        CanvasGroup confirmGroup;
+        Text confirmText;
+        System.Action confirmAction;
+        float confirmAlpha;
+
+        /// <summary>確認を出しているか（出している間は Enter キーやショップの操作を受け付けない）</summary>
+        public bool IsConfirmOpen { get; private set; }
+        /// <summary>確認を閉じたフレーム（閉じたクリックで、後ろのショップのボタンまで押さないように）</summary>
+        public int ConfirmClosedFrame { get; private set; } = -1;
 
         static readonly Color ShopColor = new Color(0.20f, 0.62f, 0.62f);
         static readonly Color CloseColor = new Color(0.45f, 0.40f, 0.35f);
@@ -46,7 +60,7 @@ namespace MedalPusher
             var canvasGo = new GameObject("RoundClearBar");
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 50; // ドット化した画面（ArcadeCamera）やモニターより上
+            canvas.sortingOrder = 60; // ドット化した画面（ArcadeCamera）やモニター、ショップより上
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
@@ -70,7 +84,73 @@ namespace MedalPusher
 
             titleText = NewText(bar, font, new Vector2(0f, 40f), new Vector2(900f, 60f), "", 40, new Color(1f, 0.78f, 0.25f));
             NewButton(bar, font, new Vector2(-170f, 115f), "ショップへ入る", ShopColor, () => game.OpenShop());
-            NewButton(bar, font, new Vector2(170f, 115f), "閉じる", CloseColor, () => game.ProceedAfterClear());
+            NewButton(bar, font, new Vector2(170f, 115f), "閉じる", CloseColor, () => game.RequestProceed());
+
+            BuildConfirm(canvasGo.transform, font);
+        }
+
+        /// <summary>次のエリアに進む前の確認（画面全体を暗くして、真ん中に出す）。</summary>
+        void BuildConfirm(Transform canvas, Font font)
+        {
+            var root = new GameObject("AreaChangeConfirm", typeof(RectTransform)).GetComponent<RectTransform>();
+            root.SetParent(canvas, false);
+            root.anchorMin = Vector2.zero;
+            root.anchorMax = Vector2.one;
+            root.offsetMin = root.offsetMax = Vector2.zero;
+            var dim = root.gameObject.AddComponent<Image>(); // 後ろのボタンを押せないようにする
+            dim.color = new Color(0f, 0f, 0f, 0.6f);
+            confirmGroup = root.gameObject.AddComponent<CanvasGroup>();
+            confirmGroup.alpha = 0f;
+            confirmGroup.interactable = false;
+            confirmGroup.blocksRaycasts = false;
+            confirmGroup.ignoreParentGroups = true; // ショップの時は帯が消えているが、確認は出す
+
+            var box = new GameObject("Box", typeof(RectTransform)).GetComponent<RectTransform>();
+            box.SetParent(root, false);
+            box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
+            box.sizeDelta = new Vector2(980f, 400f);
+            box.anchoredPosition = Vector2.zero;
+            var boxBg = box.gameObject.AddComponent<Image>();
+            boxBg.color = new Color(0.10f, 0.08f, 0.07f, 0.96f);
+            var outline = box.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 0.30f, 0.20f, 0.9f);
+            outline.effectDistance = new Vector2(4f, -4f);
+
+            // box の中は、下を 0 にした位置で並べる（NewText / NewButton は下の真ん中が基準）
+            NewText(box, font, new Vector2(0f, 330f), new Vector2(900f, 60f), "！ 注意 ！", 44, new Color(1f, 0.40f, 0.30f));
+            confirmText = NewText(box, font, new Vector2(0f, 220f), new Vector2(900f, 130f), "", 32, Color.white);
+            confirmText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            confirmText.lineSpacing = 1.2f;
+            NewButton(box, font, new Vector2(-170f, 70f), "次のエリアへ", new Color(0.75f, 0.28f, 0.22f), OnConfirmYes);
+            NewButton(box, font, new Vector2(170f, 70f), "戻る", CloseColor, HideConfirm);
+        }
+
+        /// <summary>
+        /// 「次のエリアに進むと今のポイントがなくなる」確認を出す。
+        /// 「次のエリアへ」を押すと onConfirm を呼ぶ。「戻る」（Esc キー）なら何もしない。
+        /// </summary>
+        public void ShowAreaChangeConfirm(int points, System.Action onConfirm)
+        {
+            confirmAction = onConfirm;
+            confirmText.text =
+                $"次のエリアに進むと、今のポイント {points} pt はなくなります。\n本当に進みますか？\n" +
+                $"<size=24><color=#9FE0D0>（特殊ポイント {game.SpecialPoints} は次のエリアにも持っていけます）</color></size>";
+            confirmText.supportRichText = true;
+            IsConfirmOpen = true;
+        }
+
+        public void HideConfirm()
+        {
+            if (IsConfirmOpen) ConfirmClosedFrame = Time.frameCount;
+            IsConfirmOpen = false;
+            confirmAction = null;
+        }
+
+        void OnConfirmYes()
+        {
+            var action = confirmAction;
+            HideConfirm();
+            action?.Invoke();
         }
 
         void Update()
@@ -83,6 +163,15 @@ namespace MedalPusher
             group.blocksRaycasts = show;
             if (show)
                 titleText.text = game.IsLastRoundOfArea ? "すごい！ エリアをクリア！" : "すごい！ ラウンドをクリア！";
+
+            // 確認：クリア後の帯かショップの時だけ（それ以外になったら閉じる）
+            if (IsConfirmOpen && game.State != GameState.Cleared && game.State != GameState.Shop) HideConfirm();
+            if (IsConfirmOpen && InputCompat.Down(GameKey.Cancel)) HideConfirm();
+            confirmAlpha = Mathf.MoveTowards(confirmAlpha, IsConfirmOpen ? 1f : 0f, Time.unscaledDeltaTime * 8f);
+            confirmGroup.alpha = confirmAlpha;
+            confirmGroup.interactable = IsConfirmOpen;
+            confirmGroup.blocksRaycasts = IsConfirmOpen;
+            if (IsConfirmOpen) group.interactable = false; // 後ろの帯のボタンは押せない
         }
 
         static Text NewText(RectTransform parent, Font font, Vector2 pos, Vector2 size, string text, int fontSize, Color color)

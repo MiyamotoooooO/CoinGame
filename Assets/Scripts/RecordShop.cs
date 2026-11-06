@@ -8,7 +8,8 @@ namespace MedalPusher
     ///
     /// ・レコードは Resources/RecordData.csv の全レコードから、まだ持っていないものをランダムに6つ並べる
     /// ・買ったレコードは RecordInventory に入る（シーンに無ければここで作る）
-    /// ・支払いは所持メダル（MedalPusherGame.TrySpendMedals）
+    /// ・支払いはエリアのポイント（MedalPusherGame.TrySpendPoints）。値段は CSV の購入価格 × recordPriceScale
+    /// ・エリアのポイント 100pt を、エリアを移っても残る特殊ポイントに交換できる
     /// </summary>
     public class RecordShop : MonoBehaviour
     {
@@ -31,7 +32,11 @@ namespace MedalPusher
         public int LimitLevel { get; private set; }
 
         ShopSettings S => game.shop;
-        public int LimitUpgradeCost => S.limitBaseCost + LimitLevel * S.limitCostStep;
+        public int LimitUpgradeCost => S.limitBasePoints + LimitLevel * S.limitStepPoints;
+        /// <summary>レコードの値段（pt）</summary>
+        public int RecordPrice(RecordData r) => r == null ? 0 : r.buyPrice * Mathf.Max(1, S.recordPriceScale);
+        public int ExchangeCost => S.specialExchangeCost;
+        public int ExchangeAmount => S.specialExchangeAmount;
         public int NextInsertLimit => Mathf.Min(game.InsertLimit + S.limitStep, S.limitMax);
         public bool CanUpgradeLimit => game.InsertLimit < S.limitMax;
 
@@ -64,7 +69,7 @@ namespace MedalPusher
         /// <summary>ショップを開いた時。リロールの値段を戻し、新しく並べる。</summary>
         public void OnShopOpened()
         {
-            RerollCost = S.rerollBaseCost;
+            RerollCost = S.rerollBasePoints;
             Roll();
         }
 
@@ -90,15 +95,15 @@ namespace MedalPusher
             Changed?.Invoke();
         }
 
-        /// <summary>リロール。メダルを払って、並んでいるレコードを入れ替える。</summary>
+        /// <summary>リロール。ポイントを払って、並んでいるレコードを入れ替える。</summary>
         public bool Reroll(out string message)
         {
-            if (!game.TrySpendMedals(RerollCost))
+            if (!game.TrySpendPoints(RerollCost))
             {
-                message = "メダルが足りません";
+                message = "ポイントが足りません";
                 return false;
             }
-            RerollCost += S.rerollCostStep;
+            RerollCost += S.rerollStepPoints;
             Roll();
             message = "レコードを入れ替えました";
             return true;
@@ -118,9 +123,9 @@ namespace MedalPusher
                 message = "もう持っています";
                 return false;
             }
-            if (!game.TrySpendMedals(r.buyPrice))
+            if (!game.TrySpendPoints(RecordPrice(r)))
             {
-                message = "メダルが足りません";
+                message = "ポイントが足りません";
                 return false;
             }
             Inventory.Add(r);
@@ -138,9 +143,9 @@ namespace MedalPusher
                 message = "投入上限はこれ以上増やせません";
                 return false;
             }
-            if (!game.TrySpendMedals(LimitUpgradeCost))
+            if (!game.TrySpendPoints(LimitUpgradeCost))
             {
-                message = "メダルが足りません";
+                message = "ポイントが足りません";
                 return false;
             }
             int before = game.InsertLimit;
@@ -148,6 +153,20 @@ namespace MedalPusher
             LimitLevel++;
             Changed?.Invoke();
             message = $"投入上限が {before} → {game.InsertLimit} になりました";
+            return true;
+        }
+
+        /// <summary>エリアのポイントを特殊ポイントに交換する。</summary>
+        public bool ExchangeSpecial(out string message)
+        {
+            if (!game.TrySpendPoints(ExchangeCost))
+            {
+                message = "ポイントが足りません";
+                return false;
+            }
+            game.AddSpecialPoints(ExchangeAmount);
+            Changed?.Invoke();
+            message = $"特殊ポイントが {game.SpecialPoints} になりました";
             return true;
         }
     }

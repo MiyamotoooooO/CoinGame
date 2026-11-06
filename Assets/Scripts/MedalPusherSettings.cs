@@ -125,25 +125,42 @@ namespace MedalPusher
         public bool medalReceiveShadows = false;
     }
 
-    /// <summary>ショップの設定（値段などは仮）。</summary>
+    /// <summary>
+    /// ショップの設定（値段などは仮）。支払いはエリアのポイント（メダルを落として貯めたポイント）。
+    /// エリアのポイントはラウンドをまたいで貯まり、次のエリアに進むとなくなる。
+    /// </summary>
     [Serializable]
     public class ShopSettings
     {
+        [Header("レコードの値段（ポイント）")]
+        [Tooltip("レコードの値段 = CSV の購入価格 × この倍率（pt）。例: 購入価格 8 → 80pt")]
+        public int recordPriceScale = 10;
+
         [Header("リロール（並んでいるレコードを入れ替える）")]
-        [Tooltip("ショップを開いて最初のリロールの値段（メダル）")]
-        public int rerollBaseCost = 5;
-        [Tooltip("リロールするたびに上がる値段（ショップを開き直すと元に戻る）")]
-        public int rerollCostStep = 2;
+        [Tooltip("ショップを開いて最初のリロールの値段（pt）")]
+        public int rerollBasePoints = 30;
+        [Tooltip("リロールするたびに上がる値段（pt）。ショップを開き直すと元に戻る")]
+        public int rerollStepPoints = 20;
 
         [Header("投入上限アップ")]
         [Tooltip("1回の購入で増える、1ラウンドに投入できる枚数")]
         public int limitStep = 5;
-        [Tooltip("1回目の値段（メダル）")]
-        public int limitBaseCost = 20;
-        [Tooltip("買うたびに上がる値段")]
-        public int limitCostStep = 10;
+        [Tooltip("1回目の値段（pt）")]
+        public int limitBasePoints = 150;
+        [Tooltip("買うたびに上がる値段（pt）")]
+        public int limitStepPoints = 100;
         [Tooltip("投入上限の最大")]
         public int limitMax = 60;
+
+        [Header("特殊ポイント（エリアを移っても残る）")]
+        [Tooltip("特殊ポイントと交換するのに使うポイント（pt）")]
+        public int specialExchangeCost = 100;
+        [Tooltip("1回の交換でもらえる特殊ポイント")]
+        public int specialExchangeAmount = 1;
+
+        [Header("エリア移動の注意")]
+        [Tooltip("ポイントが残ったまま次のエリアに進む時に、確認を出す")]
+        public bool warnOnAreaChange = true;
     }
 
     /// <summary>筐体のモニターに映す内容の設定。</summary>
@@ -176,6 +193,11 @@ namespace MedalPusher
         [Range(0, 2160)] public int monitorPixelHeight = 720;
         [Tooltip("モニターだけを描くためのレイヤー番号。ほかで使っていない番号にする")]
         [Range(8, 31)] public int overlayLayer = 29;
+        [Tooltip("パーティクルのエフェクトも、モニターと一緒に上に重ねて描く（モニターの手前のエフェクトが、モニターに隠れないようにする）。" +
+                 "シーンのパーティクル（レイヤーが Default の物）を、下の番号のレイヤーに自動で移す")]
+        public bool effectsInFrontOfMonitor = true;
+        [Tooltip("上に重ねるパーティクルのレイヤー番号。ほかで使っていない番号にする")]
+        [Range(8, 31)] public int frontEffectsLayer = 28;
     }
 
     public enum BoardSource
