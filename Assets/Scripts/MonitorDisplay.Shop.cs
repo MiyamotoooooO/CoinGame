@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -18,17 +18,21 @@ namespace MedalPusher
     /// </summary>
     public partial class MonitorDisplay
     {
-        static readonly Color ShopBg = new Color(0.05f, 0.16f, 0.18f);
-        static readonly Color ShopPanel = new Color(0.08f, 0.25f, 0.28f);
-        static readonly Color ShopLine = new Color(0.35f, 0.75f, 0.75f);
-        static readonly Color CardHighlight = new Color(0.60f, 0.95f, 0.95f);
-        static readonly Color PointColor = new Color(1f, 0.85f, 0.35f);
-        static readonly Color SpecialColor = new Color(0.62f, 0.88f, 0.82f);
-        static readonly Color BuyColor = new Color(0.86f, 0.80f, 0.62f);      // 参考作品の「購入」ボタン風
-        static readonly Color RerollColor = new Color(0.82f, 0.82f, 0.82f);
-        static readonly Color CloseColor = new Color(0.75f, 0.22f, 0.18f);
-        static readonly Color DisabledColor = new Color(0.35f, 0.38f, 0.40f);
-        static readonly Color DarkText = new Color(0.15f, 0.12f, 0.10f);
+        // 色はモニター本体（MonitorDisplay.cs）に合わせる：黒に近いグレー＋白＋差し色のオレンジ
+        static readonly Color ShopBg = new Color32(0x0c, 0x0c, 0x0e, 0xff);
+        static readonly Color ShopPanel = new Color32(0x15, 0x15, 0x18, 0xff);
+        static readonly Color ShopLine = new Color32(0x3a, 0x3a, 0x42, 0xff);
+        static readonly Color CardHighlight = new Color32(0xff, 0x7a, 0x1a, 0xff);
+        static readonly Color PointColor = new Color32(0xff, 0xd2, 0x3f, 0xff);
+        static readonly Color SpecialColor = new Color32(0x38, 0xc8, 0xff, 0xff);
+        static readonly Color BuyColor = new Color32(0xff, 0x7a, 0x1a, 0xff);
+        static readonly Color RerollColor = new Color32(0xf2, 0xf2, 0xee, 0xff);
+        static readonly Color CloseColor = new Color32(0xff, 0x2e, 0x4d, 0xff);
+        static readonly Color DisabledColor = new Color32(0x3a, 0x3a, 0x42, 0xff);
+        static readonly Color DarkText = new Color32(0x0c, 0x0c, 0x0e, 0xff);
+
+        const float ShopH = 600f;                       // ショップの中身の高さ
+        const float ShopTop = (CanvasH - ShopH) * 0.5f; // ショップの中身の上端（画面の上下のまん中に置く）
 
         const float CardTop = 140f;     // カードの上端
         const float CardW = 164f;
@@ -166,12 +170,13 @@ namespace MedalPusher
 
         void BuildShopPage(RectTransform root)
         {
-            shopRoot = NewRect("Shop", root, 750f, 300f, CanvasW, CanvasH);
-            NewImage("ShopBg", shopRoot, 750f, 300f, CanvasW, CanvasH, ShopBg);
-            NewImage("LineTop", shopRoot, 750f, 8f, CanvasW - 20f, 4f, ShopLine);
-            NewImage("LineBottom", shopRoot, 750f, 592f, CanvasW - 20f, 4f, ShopLine);
-            NewImage("LineLeft", shopRoot, 8f, 300f, 4f, CanvasH - 20f, ShopLine);
-            NewImage("LineRight", shopRoot, 1492f, 300f, 4f, CanvasH - 20f, ShopLine);
+            // ショップの中身は 1500×600 で組んである。画面（1500×900）の上下のまん中に置き、背景は画面いっぱいに敷く
+            shopRoot = NewRect("Shop", root, 750f, ShopTop + ShopH * 0.5f, CanvasW, ShopH);
+            NewImage("ShopBg", shopRoot, 750f, ShopH * 0.5f, CanvasW, CanvasH, ShopBg);
+            NewImage("LineTop", shopRoot, 750f, 8f - ShopTop, CanvasW - 20f, 4f, ShopLine);
+            NewImage("LineBottom", shopRoot, 750f, ShopH + ShopTop - 8f, CanvasW - 20f, 4f, ShopLine);
+            NewImage("LineLeft", shopRoot, 8f, ShopH * 0.5f, 4f, CanvasH - 20f, ShopLine);
+            NewImage("LineRight", shopRoot, 1492f, ShopH * 0.5f, 4f, CanvasH - 20f, ShopLine);
 
             // タイトル（参考作品のように1文字ずつ色を変える）
             string[] letters = { "S", "H", "O", "P" };
@@ -533,7 +538,7 @@ namespace MedalPusher
         }
 
         /// <summary>
-        /// マウスの位置を、モニターの画面の座標（左上が (0, 0)、1500×600）に直す。モニターの外なら false。
+        /// マウスの位置を、ショップの中身の座標（左上が (0, 0)、1500×600）に直す。モニターの外なら false。
         /// メインカメラは ArcadeCamera で RenderTexture に描いていることがあるので、画面の割合（Viewport）から Ray を作る。
         /// </summary>
         bool TryGetCanvasPoint(out Vector2 point)
@@ -554,7 +559,7 @@ namespace MedalPusher
             float v = Mathf.InverseLerp(b.min.y, b.max.y, hit.y);
             if (game.monitor.flipX) u = 1f - u;
             if (game.monitor.flipY) v = 1f - v;
-            point = new Vector2(u * CanvasW, (1f - v) * CanvasH);
+            point = new Vector2(u * CanvasW, (1f - v) * CanvasH - ShopTop); // ショップの中身の座標に直す
             return true;
         }
     }
