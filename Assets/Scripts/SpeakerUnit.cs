@@ -13,8 +13,18 @@ namespace MedalPusher
     ///  ・ウーファー（大きいコーン）が低音で前後に動く。ツイーター（小さい方）は高い音で小さくふるえる
     ///  ・まわりのリングライトと、上のレベルメーターが音の大きさで光る
     ///  ・強い低音が来ると、本体が少しゆれて、音符の光の粒が飛び出す
-    ///  ・レコードを流した瞬間に、ドンとはずんで音符がたくさん飛ぶ
+    ///  ・レコードを流した瞬間に、少しはずんで音符が飛ぶ
     ///   （曲は RecordAudioPlayer の AudioSource から読み取る。ほかの音には反応しない）
+    ///
+    /// レコードの効果を発動している間の演出（自動）：
+    ///  ・発動の瞬間：Q を押すと少し沈み（曲のブレーキ）、ドロップの瞬間に、ドンと大きくはずみ、
+    ///    前に光の輪（衝撃波）が2つ広がり、音符と系統ごとの粒がたくさん飛ぶ（RecordAudioPlayer.Dropped）
+    ///  ・リングライトとメーターが、そのレコードの系統の色になり、本体のゆれも大きくなる
+    ///  ・系統ごとの粒が、ビートに合わせて出る
+    ///      定番・加算 → きらきら / 倍率 → 火花 / 物理 → 衝撃波とけむり / 盤面・フィールド → 泡 /
+    ///      経済 → コイン / モニター・条件 → 星 / メダル・変化 → 虹色
+    ///    レコードごとに変えたい時は Style Overrides にキー（英名）と粒の種類を書く（例：SnowCountry → Snow）
+    ///  ・メダルが穴に落ちるたび、音符と「+30」のような、その1枚のポイントの文字が飛ぶ
     ///
     /// 演出から呼ぶもの（例：SpeakerUnit.Main?.Pulse()）：
     ///  ・Pulse(強さ)：ドンとはずむ
@@ -64,9 +74,61 @@ namespace MedalPusher
         public Color peakColor = new Color32(0xff, 0xd2, 0x3f, 0xff);
         public Color noteColor = new Color32(0xff, 0x9a, 0x3a, 0xff);
 
+        [Header("レコードの効果の発動中")]
+        [Tooltip("リングライトとメーターを、レコードの系統の色にする")]
+        public bool colorWithRecord = true;
+        [Tooltip("発動中の本体のゆれ・ウーファーの動きの倍率")]
+        [Range(1f, 3f)] public float activeBoost = 1.6f;
+        [Tooltip("系統ごとの粒をビートに合わせて出す")]
+        public bool styleParticles = true;
+        [Tooltip("系統ごとの粒の量（ビート1回あたり）")]
+        [Range(1, 30)] public int styleBurst = 8;
+        [Tooltip("メダルが落ちるたび、音符とポイントの文字を出す")]
+        public bool notesOnPoint = true;
+        [Tooltip("発動の瞬間に、前に光の輪を広げる")]
+        public bool shockwaveOnActivate = true;
+        [Tooltip("レコードごとの粒の種類（系統の決まりより優先）")]
+        public StyleOverride[] styleOverrides = new StyleOverride[0];
+
         [Header("テスト")]
         [Tooltip("再生していない時の見た目（音の大きさ 0〜1）")]
         [Range(0f, 1f)] public float previewLevel = 0.4f;
+
+        /// <summary>演出の粒の種類</summary>
+        public enum FxStyle { Auto, Glitter, Sparks, Shock, Bubbles, Coins, Stars, Rainbow, Snow, Fireworks, None }
+
+        /// <summary>レコード1枚の粒の種類の上書き（Inspector で設定する）</summary>
+        [System.Serializable]
+        public class StyleOverride
+        {
+            [Tooltip("レコードのキー（英名）。例：SnowCountry")]
+            public string key;
+            public FxStyle style = FxStyle.Glitter;
+        }
+
+        /// <summary>系統ごとの決まり（レコードの category）</summary>
+        static readonly Dictionary<string, FxStyle> CategoryStyles = new Dictionary<string, FxStyle>
+        {
+            { "加算", FxStyle.Glitter }, { "定番", FxStyle.Glitter },
+            { "倍率", FxStyle.Sparks },
+            { "物理", FxStyle.Shock },
+            { "フィールド", FxStyle.Bubbles }, { "盤面", FxStyle.Bubbles },
+            { "経済", FxStyle.Coins },
+            { "条件", FxStyle.Stars }, { "モニター", FxStyle.Stars },
+            { "変化", FxStyle.Rainbow }, { "メダル", FxStyle.Rainbow },
+        };
+
+        /// <summary>レコードごとの決まり（系統より優先。Inspector の Style Overrides はさらに優先）</summary>
+        static readonly Dictionary<string, FxStyle> KeyStyles = new Dictionary<string, FxStyle>
+        {
+            { "Rock", FxStyle.Sparks }, { "Metal", FxStyle.Sparks }, { "Hardcore", FxStyle.Sparks },
+            { "SnowCountry", FxStyle.Snow }, { "Snow", FxStyle.Snow },
+            { "Fireworks", FxStyle.Fireworks },
+            { "GoldRush", FxStyle.Coins },
+            { "Star", FxStyle.Stars }, { "Moon", FxStyle.Stars },
+            { "Sea", FxStyle.Bubbles },
+            { "Psychedelic", FxStyle.Rainbow },
+        };
 
         // 形（本体の高さを 1 とした大きさ）
         const float W = 0.62f, H = 1f, D = 0.42f;
@@ -79,8 +141,27 @@ namespace MedalPusher
         readonly List<Material> barMats = new List<Material>();
         readonly List<Object> owned = new List<Object>();      // 作ったメッシュ・マテリアル（片づけ用）
         Material ringMat;
-        ParticleSystem notes;
+        ParticleSystem notes, fx;
         AudioSource sfx;
+        readonly List<Transform> shockRings = new List<Transform>();
+        readonly List<Material> shockMats = new List<Material>();
+        readonly List<float> shockTimes = new List<float>();
+        readonly List<Popup> popups = new List<Popup>();
+        MedalPusherGame game;
+        RecordData activeRecord;      // いま発動しているレコード（粒の種類を決め直すのに使う）
+        FxStyle activeStyle = FxStyle.None;
+        Color recordColor;
+        float recordTint;             // 系統の色にどれだけ寄せるか（0〜1）
+        float fxTimer;
+
+        class Popup
+        {
+            public Transform t;
+            public TextMesh text;
+            public float time = -1f;   // 負なら使っていない
+            public Color color;
+            public float drift;
+        }
 
         readonly float[] spectrum = new float[256];
         readonly float[] samples = new float[256];
@@ -96,6 +177,7 @@ namespace MedalPusher
         // ================================================================
 
         bool subscribed;
+        RecordAudioPlayer dropListener;   // ドロップの知らせを受け取っている相手
 
         void OnEnable()
         {
@@ -117,17 +199,88 @@ namespace MedalPusher
             if (effectSystem == null) effectSystem = FindFirstObjectByType<RecordEffectSystem>();
             if (effectSystem == null) return;
             effectSystem.RecordPlayed -= OnRecordPlayed;
-            if (on) effectSystem.RecordPlayed += OnRecordPlayed;
+            effectSystem.RecordLoaded -= OnRecordLoaded;
+            if (game != null) game.MedalDropped -= OnMedalDropped;
+            if (audioPlayer == null) audioPlayer = FindFirstObjectByType<RecordAudioPlayer>();
+            if (dropListener != null) dropListener.Dropped -= OnDropped;
+            dropListener = null;
+            if (on)
+            {
+                effectSystem.RecordPlayed += OnRecordPlayed;
+                effectSystem.RecordLoaded += OnRecordLoaded;
+                if (audioPlayer != null)
+                {
+                    audioPlayer.Dropped += OnDropped;
+                    dropListener = audioPlayer;
+                }
+                game = effectSystem.game != null ? effectSystem.game : FindFirstObjectByType<MedalPusherGame>();
+                if (game != null) game.MedalDropped += OnMedalDropped;
+            }
             subscribed = on;
         }
 
+        Color RecordColor(RecordData record)
+        {
+            if (record != null && RecordArtwork.HasCategoryColor(record.category)) return RecordArtwork.CategoryColor(record.category);
+            return noteColor;
+        }
+
+        /// <summary>レコードを流した（曲だけ）：少しはずむ</summary>
+        void OnRecordLoaded(RecordData record)
+        {
+            Pulse(0.8f);
+            EmitNotes(6, RecordColor(record));
+        }
+
+        /// <summary>
+        /// レコードの効果を発動した。曲のブレーキ中は、少し沈んで光を落とす。
+        /// 大きな演出はドロップの瞬間（OnDropped）。曲の係（RecordAudioPlayer）がいなければ、すぐに出す。
+        /// </summary>
         void OnRecordPlayed(RecordData record)
         {
-            Color c = noteColor;
-            if (record != null && RecordArtwork.HasCategoryColor(record.category)) c = RecordArtwork.CategoryColor(record.category);
-            Pulse(1.5f);
-            EmitNotes(14, c);
-            Flash(c, 0.6f);
+            SetFxStyle(StyleOf(record));
+            if (dropListener == null)
+            {
+                OnDropped(record);
+                return;
+            }
+            Flash(Color.black, Mathf.Max(0.1f, dropListener.brakeSeconds));   // ブレーキ中は光が沈む
+        }
+
+        /// <summary>ドロップの瞬間：大きくはずんで、衝撃波と音符と系統ごとの粒</summary>
+        void OnDropped(RecordData record)
+        {
+            Color c = RecordColor(record);
+            Pulse(2.5f);
+            EmitNotes(28, c);
+            Flash(Color.white, 0.9f);
+            if (shockwaveOnActivate) Shockwave(c);
+            FxStyle style = StyleOf(record);
+            SetFxStyle(style);
+            EmitStyle(style, c, styleBurst * 3);
+        }
+
+        /// <summary>発動中にメダルが穴に落ちた：音符と、その1枚のポイントの文字</summary>
+        void OnMedalDropped(Medal medal, DropZoneType type)
+        {
+            if (!notesOnPoint || type == DropZoneType.Lost || effectSystem == null || !effectSystem.IsActive) return;
+            Color c = RecordColor(effectSystem.Current);
+            EmitNotes(2, c);
+            Pulse(0.6f);
+            int pts = effectSystem.LastDropPoints;
+            if (pts > 0) ShowPopup($"+{pts}", Color.Lerp(c, Color.white, 0.35f));
+        }
+
+        /// <summary>そのレコードの粒の種類（Inspector の上書き → レコードごとの決まり → 系統の決まり）</summary>
+        public FxStyle StyleOf(RecordData record)
+        {
+            if (RecordData.IsNullOrEmpty(record)) return FxStyle.None;
+            if (styleOverrides != null)
+                foreach (var o in styleOverrides)
+                    if (o != null && !string.IsNullOrWhiteSpace(o.key) && o.key.Trim() == record.key && o.style != FxStyle.Auto) return o.style;
+            if (KeyStyles.TryGetValue(record.key, out FxStyle k)) return k;
+            if (!string.IsNullOrEmpty(record.category) && CategoryStyles.TryGetValue(record.category, out FxStyle c)) return c;
+            return FxStyle.Glitter;
         }
 
         void Build()
@@ -232,6 +385,76 @@ namespace MedalPusher
             owned.Add(pMat);
             pr.sharedMaterial = pMat;
 
+            // ---- 系統ごとの粒（発動中） ----
+            var fGo = Child("Fx", visual.transform);
+            fGo.transform.localPosition = new Vector3(0f, WooferY, -0.03f);
+            fGo.transform.localRotation = Quaternion.LookRotation(Vector3.back, Vector3.up);
+            fx = fGo.AddComponent<ParticleSystem>();
+            fx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var fMain = fx.main;
+            fMain.playOnAwake = false;
+            fMain.loop = false;
+            fMain.simulationSpace = ParticleSystemSimulationSpace.World;
+            fMain.scalingMode = ParticleSystemScalingMode.Hierarchy;
+            fMain.maxParticles = 400;
+            var fEmission = fx.emission;
+            fEmission.rateOverTime = 0f;
+            var fShape = fx.shape;
+            fShape.shapeType = ParticleSystemShapeType.Cone;
+            fShape.radius = WooferR * 0.8f;
+            var fCol = fx.colorOverLifetime;
+            fCol.enabled = true;
+            fCol.color = grad;
+            var fSize = fx.sizeOverLifetime;
+            fSize.enabled = true;
+            fSize.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.EaseInOut(0f, 1f, 1f, 0.3f));
+            fGo.GetComponent<ParticleSystemRenderer>().sharedMaterial = pMat;
+            activeStyle = FxStyle.None;
+            SetFxStyle(FxStyle.Glitter);
+
+            // ---- 発動の瞬間の光の輪（衝撃波） ----
+            var ringShader = Shader.Find("Sprites/Default");
+            if (ringShader == null) ringShader = Shader.Find("Unlit/Color");
+            for (int i = 0; i < 2; i++)
+            {
+                var rb = new Builder();
+                rb.RingWithSide(Vector2.zero, WooferR * 0.92f, WooferR, -0.02f, -0.02f, Color.white, 48);
+                var rMat = new Material(ringShader) { name = "SpeakerShock", color = new Color(1f, 1f, 1f, 0f), hideFlags = HideFlags.DontSave };
+                owned.Add(rMat);
+                var ring = MeshObject($"Shock{i + 1}", visual.transform, rb, rMat);
+                var mesh = ring.GetComponent<MeshFilter>().sharedMesh;
+                var white = new Color[mesh.vertexCount];
+                for (int k = 0; k < white.Length; k++) white[k] = Color.white;
+                mesh.colors = white;
+                ring.transform.localPosition = new Vector3(0f, WooferY, -0.01f);
+                ring.SetActive(false);
+                shockRings.Add(ring.transform);
+                shockMats.Add(rMat);
+                shockTimes.Add(-1f);
+            }
+
+            // ---- ポイントの文字（「+30」など） ----
+            if (Application.isPlaying)
+            {
+                var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                for (int i = 0; i < 8; i++)
+                {
+                    var go = Child($"Popup{i + 1}", visual.transform);
+                    var tm = go.AddComponent<TextMesh>();
+                    tm.font = font;
+                    tm.fontSize = 64;
+                    tm.characterSize = 0.015f;
+                    tm.anchor = TextAnchor.MiddleCenter;
+                    tm.alignment = TextAlignment.Center;
+                    tm.fontStyle = FontStyle.Bold;
+                    var mr = go.GetComponent<MeshRenderer>();
+                    if (font != null) mr.sharedMaterial = font.material;
+                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    go.SetActive(false);
+                    popups.Add(new Popup { t = go.transform, text = tm });
+                }
+            }
+
             // ---- 効果音を鳴らす所 ----
             sfx = GetComponent<AudioSource>();
             if (sfx == null && Application.isPlaying)
@@ -246,6 +469,11 @@ namespace MedalPusher
         {
             bars.Clear();
             barMats.Clear();
+            shockRings.Clear();
+            shockMats.Clear();
+            shockTimes.Clear();
+            popups.Clear();
+            fx = null;
             if (visual != null) Kill(visual);
             foreach (var o in owned) Kill(o);
             owned.Clear();
@@ -330,6 +558,145 @@ namespace MedalPusher
             flashTime = flashSeconds;
         }
 
+        /// <summary>前に光の輪（衝撃波）を広げる。</summary>
+        public void Shockwave(Color color)
+        {
+            for (int i = 0; i < shockRings.Count; i++)
+            {
+                shockTimes[i] = -0.12f * i;   // 2つ目は少し遅れて広がる
+                shockMats[i].color = new Color(color.r, color.g, color.b, 0f);
+                shockRings[i].gameObject.SetActive(true);
+            }
+        }
+
+        /// <summary>スピーカーの前に文字を浮かべる（「+30」など）。</summary>
+        public void ShowPopup(string text, Color color)
+        {
+            if (!Application.isPlaying || popups.Count == 0) return;
+            Popup p = popups[0];
+            foreach (var q in popups)
+            {
+                if (q.time < 0f) { p = q; break; }
+                if (q.time > p.time) p = q;   // 全部使っていたら、いちばん古いものを使い回す
+            }
+            p.time = 0f;
+            p.color = color;
+            p.drift = Random.Range(-0.12f, 0.12f);
+            p.text.text = text;
+            p.text.color = color;
+            p.t.gameObject.SetActive(true);
+        }
+
+        /// <summary>系統ごとの粒を count 個出す（style が Auto なら、いま発動しているレコードの種類）。</summary>
+        public void EmitStyle(FxStyle style, Color color, int count)
+        {
+            if (fx == null || !Application.isPlaying || count <= 0) return;
+            if (style == FxStyle.Auto) style = activeStyle;
+            if (style == FxStyle.None) return;
+            if (style != activeStyle) SetFxStyle(style);
+
+            for (int i = 0; i < count; i++)
+            {
+                var p = new ParticleSystem.EmitParams { applyShapeToPosition = true };
+                Color c = color;
+                switch (style)
+                {
+                    case FxStyle.Glitter: c = Color.Lerp(color, Color.white, Random.Range(0.3f, 0.8f)); break;
+                    case FxStyle.Sparks: c = Color.Lerp(new Color(1f, 0.55f, 0.1f), new Color(1f, 0.95f, 0.5f), Random.value); break;
+                    case FxStyle.Shock: c = Color.Lerp(new Color(0.55f, 0.5f, 0.45f), Color.white, Random.value * 0.4f); break;
+                    case FxStyle.Bubbles: c = Color.Lerp(color, new Color(0.7f, 1f, 1f), 0.5f); c.a = 0.75f; break;
+                    case FxStyle.Coins: c = Color.Lerp(new Color(0.95f, 0.72f, 0.2f), new Color(1f, 0.9f, 0.5f), Random.value); break;
+                    case FxStyle.Stars: c = Color.Lerp(color, Color.white, Random.Range(0.2f, 0.6f)); break;
+                    case FxStyle.Rainbow:
+                    case FxStyle.Fireworks: c = Color.HSVToRGB(Random.value, 0.75f, 1f); break;
+                    case FxStyle.Snow: c = new Color(0.92f, 0.97f, 1f); break;
+                }
+                p.startColor = c;
+                if (style == FxStyle.Fireworks)
+                {
+                    // 前の少し上で、ぱっと全方向に開く
+                    p.applyShapeToPosition = false;
+                    p.position = fx.transform.TransformPoint(new Vector3(0f, -0.35f, 0.3f));
+                    p.velocity = Random.onUnitSphere * Random.Range(0.8f, 1.4f) * transform.lossyScale.y;
+                }
+                fx.Emit(p, 1);
+            }
+        }
+
+        /// <summary>粒の種類に合わせて、粒の速さ・重さ・大きさを変える。</summary>
+        void SetFxStyle(FxStyle style)
+        {
+            if (fx == null || style == activeStyle) return;
+            activeStyle = style;
+            var main = fx.main;
+            var shape = fx.shape;
+            shape.angle = 35f;
+            switch (style)
+            {
+                case FxStyle.Glitter:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.5f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.3f, 0.8f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.045f);
+                    main.gravityModifier = 0.05f;
+                    shape.angle = 55f;
+                    break;
+                case FxStyle.Sparks:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.7f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(1.6f, 2.8f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.012f, 0.03f);
+                    main.gravityModifier = 1.2f;
+                    shape.angle = 40f;
+                    break;
+                case FxStyle.Shock:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.4f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.2f, 0.6f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.06f, 0.12f);
+                    main.gravityModifier = -0.05f;
+                    shape.angle = 70f;
+                    break;
+                case FxStyle.Bubbles:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2.2f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.45f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.04f, 0.09f);
+                    main.gravityModifier = -0.25f;
+                    break;
+                case FxStyle.Coins:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.2f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(1.0f, 1.7f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.04f, 0.06f);
+                    main.gravityModifier = 1.4f;
+                    shape.angle = 25f;
+                    break;
+                case FxStyle.Stars:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(1.0f, 1.8f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.25f, 0.6f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.04f, 0.07f);
+                    main.gravityModifier = -0.05f;
+                    shape.angle = 60f;
+                    break;
+                case FxStyle.Rainbow:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.6f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.5f, 1.1f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.06f);
+                    main.gravityModifier = -0.1f;
+                    shape.angle = 50f;
+                    break;
+                case FxStyle.Snow:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(1.8f, 2.8f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.1f, 0.3f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.045f);
+                    main.gravityModifier = 0.06f;
+                    shape.angle = 80f;
+                    break;
+                case FxStyle.Fireworks:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.6f, 1.0f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.5f, 1.0f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.04f);
+                    main.gravityModifier = 0.4f;
+                    break;
+            }
+        }
+
         /// <summary>スピーカーの位置から効果音を鳴らす。</summary>
         public void PlaySound(AudioClip clip, float volume = 1f)
         {
@@ -357,12 +724,27 @@ namespace MedalPusher
                 treble = previewLevel * 0.6f;
             }
 
+            // レコードの効果を発動しているか（発動中は系統の色になり、動きが大きくなる）
+            RecordData active = Application.isPlaying && effectSystem != null ? effectSystem.Current : null;
+            if (active != activeRecord)
+            {
+                activeRecord = active;
+                if (active != null)
+                {
+                    recordColor = RecordColor(active);
+                    SetFxStyle(StyleOf(active));
+                }
+            }
+            bool isActive = active != null;
+            recordTint = Mathf.MoveTowards(recordTint, isActive && colorWithRecord ? 1f : 0f, dt * 2f);
+            float boost = isActive ? activeBoost : 1f;
+
             pulse = Mathf.MoveTowards(pulse, 0f, dt * 4f);
             flashTime = Mathf.Max(0f, flashTime - dt);
-            float kick = Mathf.Clamp01(bass + pulse * 0.8f);
+            float kick = Mathf.Clamp01((bass + pulse * 0.8f) * (isActive ? 1.15f : 1f));
 
             // ウーファーとツイーター
-            woofer.transform.localPosition = new Vector3(0f, WooferY, -kick * wooferExcursion);
+            woofer.transform.localPosition = new Vector3(0f, WooferY, -kick * wooferExcursion * boost);
             float ws = 1f + kick * 0.03f;
             woofer.transform.localScale = new Vector3(ws, ws, 1f);
             float tw = Application.isPlaying ? Mathf.Sin(Time.time * 60f) * treble : 0f;
@@ -373,8 +755,8 @@ namespace MedalPusher
             if (Application.isPlaying && shake > 0f)
             {
                 float t = Time.time * 40f;
-                visual.transform.localPosition = new Vector3(Mathf.PerlinNoise(t, 0.1f) - 0.5f, Mathf.PerlinNoise(0.7f, t) - 0.5f, 0f) * (2f * shakeAmount * shake);
-                visual.transform.localRotation = Quaternion.Euler(0f, 0f, (Mathf.PerlinNoise(t, 3.3f) - 0.5f) * 2f * shake);
+                visual.transform.localPosition = new Vector3(Mathf.PerlinNoise(t, 0.1f) - 0.5f, Mathf.PerlinNoise(0.7f, t) - 0.5f, 0f) * (2f * shakeAmount * shake * boost);
+                visual.transform.localRotation = Quaternion.Euler(0f, 0f, (Mathf.PerlinNoise(t, 3.3f) - 0.5f) * 2f * shake * boost);
             }
             else
             {
@@ -383,7 +765,8 @@ namespace MedalPusher
             }
 
             // 光
-            Color baseCol = flashTime > 0f ? Color.Lerp(lightColor, flashColor, flashTime / flashSeconds) : lightColor;
+            Color idleCol = Color.Lerp(lightColor, recordColor, recordTint);
+            Color baseCol = flashTime > 0f ? Color.Lerp(idleCol, flashColor, flashTime / flashSeconds) : idleCol;
             float glow = Mathf.Clamp01(0.25f + level * 0.9f + pulse * 0.5f);
             ringMat.color = Color.Lerp(baseCol * 0.25f, Color.Lerp(baseCol, Color.white, pulse * 0.3f), glow);
             for (int i = 0; i < bars.Count; i++)
@@ -395,14 +778,75 @@ namespace MedalPusher
                 barMats[i].color = Color.Lerp(c * 0.2f, c, Mathf.Max(on, 0.15f));
             }
 
-            // 強い低音で音符の粒
+            // 強い低音で音符の粒（発動中は、系統ごとの粒も出す。物理は小さな衝撃波も）
             noteCooldown -= dt;
-            if (Application.isPlaying && notesOnBeat && bass > beatThreshold && prevBass <= beatThreshold && noteCooldown <= 0f)
+            float threshold = isActive ? beatThreshold * 0.8f : beatThreshold;
+            if (Application.isPlaying && notesOnBeat && bass > threshold && prevBass <= threshold && noteCooldown <= 0f)
             {
                 EmitNotes(3, baseCol);
                 noteCooldown = 0.15f;
+                if (isActive && styleParticles)
+                {
+                    EmitStyle(activeStyle, recordColor, activeStyle == FxStyle.Fireworks ? styleBurst * 3 : styleBurst);
+                    if (activeStyle == FxStyle.Shock && shockwaveOnActivate) Shockwave(recordColor);
+                }
             }
             prevBass = bass;
+
+            // 曲の無いレコードでも、発動中は少しずつ粒を出す
+            if (Application.isPlaying && isActive && styleParticles && level < 0.02f)
+            {
+                fxTimer -= dt;
+                if (fxTimer <= 0f)
+                {
+                    fxTimer = 0.5f;
+                    EmitStyle(activeStyle, recordColor, Mathf.Max(1, styleBurst / 2));
+                    Pulse(0.5f);
+                }
+            }
+
+            UpdateShockwaves(dt);
+            UpdatePopups(dt);
+        }
+
+        /// <summary>光の輪を広げながら消す。</summary>
+        void UpdateShockwaves(float dt)
+        {
+            for (int i = 0; i < shockRings.Count; i++)
+            {
+                if (!shockRings[i].gameObject.activeSelf) continue;
+                shockTimes[i] += dt;
+                float t = Mathf.Clamp01(shockTimes[i] / 0.6f);
+                float s = 1f + t * 2.6f;
+                shockRings[i].localScale = new Vector3(s, s, 1f);
+                Color c = shockMats[i].color;
+                c.a = shockTimes[i] < 0f ? 0f : (1f - t) * 0.9f;
+                shockMats[i].color = c;
+                if (t >= 1f) shockRings[i].gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>ポイントの文字を上へ浮かべながら消す。</summary>
+        void UpdatePopups(float dt)
+        {
+            foreach (var p in popups)
+            {
+                if (p.time < 0f) continue;
+                p.time += dt;
+                float t = p.time / 0.9f;
+                if (t >= 1f)
+                {
+                    p.time = -1f;
+                    p.t.gameObject.SetActive(false);
+                    continue;
+                }
+                p.t.localPosition = new Vector3(p.drift, H + 0.12f + t * 0.35f, -0.08f);
+                float pop = 1f + 0.4f * Mathf.Max(0f, 1f - t * 5f);
+                p.t.localScale = new Vector3(pop, pop, 1f);
+                Color c = p.color;
+                c.a = t < 0.6f ? 1f : 1f - (t - 0.6f) / 0.4f;
+                p.text.color = c;
+            }
         }
 
         /// <summary>流れている曲の大きさ・低音・高音を読み取る。</summary>

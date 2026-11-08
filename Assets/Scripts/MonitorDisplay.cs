@@ -1012,10 +1012,11 @@ namespace MedalPusher
             float s = 1f + 0.08f * scorePulse * scorePulse;
             scoreText.rectTransform.localScale = new Vector3(s, s, 1f);
 
-            // ▶ はレコードを流している間だけ明るい
+            // ▶ はレコードを流している間はオレンジ、効果の発動中はオレンジで点滅
             var fx = EffectSystem;
-            bool playing = fx != null && !RecordData.IsNullOrEmpty(fx.Current);
-            playIcon.color = playing ? Color.Lerp(Fg, Accent, 0.5f + 0.5f * Mathf.Sin(Time.time * 6f)) : Fg;
+            bool loaded = fx != null && !RecordData.IsNullOrEmpty(fx.Loaded);
+            bool active = fx != null && !RecordData.IsNullOrEmpty(fx.Current);
+            playIcon.color = active ? Color.Lerp(Fg, Accent, 0.5f + 0.5f * Mathf.Sin(Time.time * 6f)) : loaded ? Accent : Fg;
         }
 
         /// <summary>左下の札（所持ポイント・特殊ポイント）と、右下の所持メダル。</summary>
@@ -1037,16 +1038,20 @@ namespace MedalPusher
             medalValue.color = medals <= 5 ? Boss : Fg; // 残りわずか
         }
 
-        /// <summary>レコードの左右のイコライザー。流している間は大きく動き、ふだんは静かに揺れる。</summary>
+        /// <summary>
+        /// レコードの左右のイコライザー。効果の発動中は大きく動き、流しているだけの時は中くらい、
+        /// 何も流していない時は静かに揺れる。
+        /// </summary>
         void UpdateEqualizer()
         {
             var fx = EffectSystem;
             bool playing = fx != null && !RecordData.IsNullOrEmpty(fx.Current);
+            bool loaded = fx != null && !RecordData.IsNullOrEmpty(fx.Loaded);
             float t = Time.time;
             for (int i = 0; i < eqLevels.Length; i++)
             {
                 float wave = Mathf.Abs(Mathf.Sin(t * (2.6f + i * 0.31f) + i * 1.7f)) * (0.55f + 0.45f * Mathf.PerlinNoise(t * 1.8f, i * 0.9f));
-                float target = playing ? 1f + wave * (EqBlocks - 1) : 1f + wave * 1.5f;
+                float target = playing ? 1f + wave * (EqBlocks - 1) : loaded ? 1f + wave * (EqBlocks - 1) * 0.5f : 1f + wave * 1.5f;
                 eqLevels[i] = Mathf.Lerp(eqLevels[i], target, 1f - Mathf.Exp(-12f * Time.deltaTime));
             }
             for (int c = 0; c < EqColumns; c++)

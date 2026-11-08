@@ -564,6 +564,8 @@ MonoBehaviour:
   audioPlayer: {fileID: 0}
   gaugeMax: 100
   gaugePerDrop: 1
+  activateWithKey: 1
+  autoAddBoostPresentation: 1
   durationScale: 1
   fallbackDuration: 30
   durationOverrides: []
@@ -587,8 +589,17 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 2f3046d63de7229409ea2d6db814e9b0, type: 3}
   - {fileID: 8300000, guid: 5550bbe9e0d115747b354c2ef2708f31, type: 3}
   - {fileID: 8300000, guid: 30a2ac5c051b72445912239d4d0777e0, type: 3}
+  calmSuffix: _Calm
   volume: 0.6
   fadeSeconds: 0.8
+  calmLowPassHz: 2600
+  calmHighPassHz: 450
+  calmLevel: 0.45
+  calmReturnSeconds: 1.5
+  brakeOnActivate: 1
+  brakeSeconds: 0.35
+  brakePitch: 0.45
+  dropSeconds: 0.05
   showNowPlaying: 1
 --- !u!114 &222109772
 MonoBehaviour:
@@ -1887,6 +1898,75 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: d20f9ac8a39477b47a81b9e6423ae7e2, type: 3}
   m_PrefabInstance: {fileID: 1057041917}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &2112673449
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2112673451}
+  - component: {fileID: 2112673450}
+  m_Layer: 0
+  m_Name: Speaker
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2112673450
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2112673449}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0ad5f496ecfb6b46bdbf41ea18d1e59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  effectSystem: {fileID: 0}
+  audioPlayer: {fileID: 0}
+  extraSources: []
+  bassGain: 8
+  trebleGain: 20
+  levelGain: 3
+  wooferExcursion: 0.035
+  shakeAmount: 0.008
+  notesOnBeat: 1
+  beatThreshold: 0.6
+  bodyColor: {r: 0.10980392, g: 0.10980392, b: 0.12941177, a: 1}
+  baffleColor: {r: 0.0627451, g: 0.0627451, b: 0.07058824, a: 1}
+  trimColor: {r: 1, g: 0.47843137, b: 0.101960786, a: 1}
+  coneColor: {r: 0.16470589, g: 0.16470589, b: 0.1882353, a: 1}
+  lightColor: {r: 1, g: 0.47843137, b: 0.101960786, a: 1}
+  peakColor: {r: 1, g: 0.8235294, b: 0.24705882, a: 1}
+  noteColor: {r: 1, g: 0.6039216, b: 0.22745098, a: 1}
+  colorWithRecord: 1
+  activeBoost: 1.6
+  styleParticles: 1
+  styleBurst: 8
+  notesOnPoint: 1
+  shockwaveOnActivate: 1
+  styleOverrides: []
+  previewLevel: 0.4
+--- !u!4 &2112673451
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2112673449}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.042732213, y: 0.4692208, z: -0.022739744, w: 0.8817532}
+  m_LocalPosition: {x: 1.7045268, y: 0.7419219, z: -0.255}
+  m_LocalScale: {x: 1.1094815, y: 1.1094815, z: 1.1094815}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1900,3 +1980,4 @@ SceneRoots:
   - {fileID: 459990494}
   - {fileID: 375461634}
   - {fileID: 73872012}
+  - {fileID: 2112673451}

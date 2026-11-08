@@ -7,8 +7,10 @@ namespace MedalPusher
     /// <summary>
     /// モニターの真ん中（ステージ）の差し替え（MonitorDisplay の続き）。
     ///
-    /// ・NOW PLAYING：レコードを再生している間、今のポイントの下に、ジャケット・名前・効果・残り時間の帯を出す
-    ///   （RecordEffectSystem の Current / Remaining / CurrentDuration を見て、自動で出し入れする）
+    /// ・NOW PLAYING：レコードを流している間、今のポイントの下に、ジャケット・名前・効果・残り時間の帯を出す
+    ///   （RecordEffectSystem の Loaded / Current / Remaining / CurrentDuration を見て、自動で出し入れする）
+    ///   流しているだけの時：下の線はグルーヴゲージのたまり具合（発動に必要な量まで）。たまると「Q!」が点滅する
+    ///   効果の発動中：下の線と数字は効果の残り時間
     ///   右の回るレコードのラベルにも、同じジャケットを丸く切り抜いて貼る
     /// ・天気予報：ShowWeather を呼ぶと、画面のまん中（今のポイントのところ）が天気予報に変わる。ClearWeather で戻る
     ///   例）game.Monitor.ShowWeather("SUNNY", "晴れ", "POINT ×1.5", new[] { "晴れ", "くもり", "雨", "雷" });
@@ -300,7 +302,7 @@ namespace MedalPusher
         {
             // ---- NOW PLAYING ----
             var fx = EffectSystem;
-            RecordData cur = fx != null ? fx.Current : null;
+            RecordData cur = fx != null ? fx.Loaded : null;   // 効果を発動していなくても、流していれば出す
             bool playing = !RecordData.IsNullOrEmpty(cur);
             if (playing && cur != npShown) SetNowPlaying(cur);
             if (!playing)
@@ -323,13 +325,29 @@ namespace MedalPusher
 
             npGroup.alpha = Mathf.MoveTowards(npGroup.alpha, playing ? 1f : 0f, Time.deltaTime * 5f);
 
-            if (playing)
+            if (playing && fx.IsActive)
             {
+                // 発動中：効果の残り時間
                 float dur = fx.CurrentDuration;
                 float rem = Mathf.Max(0f, fx.Remaining);
                 npTimeFill.fillAmount = dur > 0f ? Mathf.Clamp01(rem / dur) : 1f;
+                npTimeFill.color = Accent;
                 int sec = Mathf.CeilToInt(rem);
                 npTime.text = dur > 0f ? $"{sec / 60}:{sec % 60:00}" : "--";
+                npTime.color = Fg;
+                npCategory.text = cur.category;
+            }
+            else if (playing)
+            {
+                // 流しているだけ：グルーヴゲージが発動に足りるまでのたまり具合
+                float cost = fx.GetGaugeCost(cur);
+                bool ready = fx.CanActivate(out _);
+                npTimeFill.fillAmount = cost > 0f ? Mathf.Clamp01(fx.Gauge / cost) : 1f;
+                float blink = 0.5f + 0.5f * Mathf.Sin(Time.time * 8f);
+                npTimeFill.color = ready ? Color.Lerp(Accent, Fg, blink * 0.6f) : Mute;
+                npTime.text = ready ? "Q!" : "--";
+                npTime.color = ready ? Color.Lerp(Accent, Fg, blink) : Mute;
+                npCategory.text = ready ? "Q キーで発動" : $"ゲージ {Mathf.FloorToInt(fx.Gauge)}/{cost:0}";
             }
 
             // ---- 天気予報（まん中の今のポイントと入れ替える。上の帯・札・レコードはそのまま） ----

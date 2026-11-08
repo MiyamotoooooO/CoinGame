@@ -16,7 +16,8 @@ namespace MedalPusher
         TogglePanel,  // Tab
         ToggleCamera, // C
         PausePusher,  // P
-        Cancel        // Esc
+        Cancel,       // Esc
+        ActivateRecord // Q（流しているレコードの効果をグルーヴゲージで発動）
     }
 
     /// <summary>
@@ -108,6 +109,7 @@ namespace MedalPusher
                 case GameKey.ToggleCamera: return k.cKey.wasPressedThisFrame;
                 case GameKey.PausePusher: return k.pKey.wasPressedThisFrame;
                 case GameKey.Cancel: return k.escapeKey.wasPressedThisFrame;
+                case GameKey.ActivateRecord: return k.qKey.wasPressedThisFrame;
             }
             return false;
 #else
@@ -120,6 +122,7 @@ namespace MedalPusher
                 case GameKey.ToggleCamera: return Input.GetKeyDown(KeyCode.C);
                 case GameKey.PausePusher: return Input.GetKeyDown(KeyCode.P);
                 case GameKey.Cancel: return Input.GetKeyDown(KeyCode.Escape);
+                case GameKey.ActivateRecord: return Input.GetKeyDown(KeyCode.Q);
             }
             return false;
 #endif

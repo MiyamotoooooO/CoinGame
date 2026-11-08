@@ -6,17 +6,27 @@ namespace MedalPusher
     /// <summary>
     /// 流しているレコードの効果をゲームにつなぐ。MedalPusherGame と同じシーンに置く（どの GameObject でもよい）。
     ///
-    /// しくみ：
-    /// ・レコードは1枚ずつ流す。Play(レコード) で流す（所持一覧の画面から呼ばれる）
-    /// ・流すときに、そのレコードのゲージ消費ぶんのグルーヴゲージを使う。足りなければ流せない
-    /// ・効果は曲が終わるまで続く（曲が無いレコードは CSV の「効果時間」の秒数）
-    /// ・流している途中で別のレコードを流すと、前の効果は終わって切り替わる
+    /// しくみ（2026-11-08 の仕様変更：「流す」と「発動」を分けた）：
+    /// ・レコードは1枚ずつ流す。Play(レコード) で流す（所持一覧の画面から呼ばれる）。ゲージはいらない
+    ///   流しているレコードは Loaded。曲はくり返し流れ続ける（効果が無い間は、少しおとなしい音になる）
+    /// ・効果（と演出）を始めるには Activate() を呼ぶ（Q キー）。そのレコードのゲージ消費ぶんのグルーヴゲージを使う。
+    ///   足りなければ発動できない。発動中のレコードは Current
+    /// ・発動すると、曲は止めずに続きから盛り上がった音に変わる。効果は発動した時から曲1曲ぶんの秒数だけ続く
+    ///   （例：3分の曲なら、発動から3分。曲が無いレコードは CSV の「効果時間」の秒数）
+    ///   効果が終わっても、曲はそのまま流れ続ける（もう一度ゲージを使えば、また発動できる）
+    /// ・流している途中で別のレコードを流すと、発動中の効果は終わって切り替わる
     /// ・メダルが穴に落ちるたび、ポイントを「(基本 + 加算) × 倍率」で計算し直し、
     ///   基本のポイントとの差分だけを足す（MedalDropped の通知を受けて、MedalPusherGame.AddPoints で足す）
     /// ・足したポイントは、ラウンドのポイント（ノルマ）とエリアのポイント（ショップで使える）の両方に入る
     /// ・メダルが落ちるとグルーヴゲージがたまる
-    /// ・ラウンドが変わると、流しているレコードは止まる。ゲージは次のラウンド（次のエリア）に引き継ぐ
-    /// ・ゲームをリセットした時（R キー）は、ゲージを0に戻す
+    /// ・ラウンドが変わると、発動中の効果は終わる（曲は流れたまま）。ゲージは次のラウンド（次のエリア）に引き継ぐ
+    /// ・ゲームをリセットした時（R キー）は、レコードを止めてゲージを0に戻す
+    ///
+    /// ほかのスクリプトが見るもの：
+    ///   Loaded（流しているレコード：曲・ターンテーブル・モニターの NOW PLAYING）
+    ///   Current（発動中のレコード：効果・盤面やモニターの演出）
+    ///   RecordLoaded / RecordPlayed（= 発動した）/ RecordFinished（= 効果が終わった）の通知
+    ///   発動した時の画面の演出は BoostPresentation（無ければ自動で付ける）
     ///
     /// いま動く効果の型：
     ///   AddPerDrop / AddPerSideDrop / AddPerDropTimed / AddPerDropIf（ブルース・アイドル・演歌）/ AddPerDropGrowing /
@@ -39,6 +49,12 @@ namespace MedalPusher
         [Tooltip("メダルが1枚落ちるとたまる量（中央の穴・端の穴のどちらでも）")]
         public float gaugePerDrop = 1f;
 
+        [Header("発動")]
+        [Tooltip("Q キーで、流しているレコードの効果を発動する（オフにすると Activate() を呼んだ時だけ発動）")]
+        public bool activateWithKey = true;
+        [Tooltip("シーンに BoostPresentation（発動した時の画面の演出）が無ければ、再生した時にこの GameObject に自動で付ける")]
+        public bool autoAddBoostPresentation = true;
+
         [Header("効果の長さ")]
         [Tooltip("曲が無いレコードの効果時間にかける倍率（1 = CSV のまま）")]
         [Range(0.1f, 5f)] public float durationScale = 1f;
@@ -48,7 +64,7 @@ namespace MedalPusher
         public DurationOverride[] durationOverrides = new DurationOverride[0];
 
         [Header("テスト用")]
-        [Tooltip("オンにすると、ゲージを使わずに流せる")]
+        [Tooltip("オンにすると、ゲージを使わずに発動できる")]
         public bool freePlay = false;
         [Tooltip("画面の左に、ゲージと流しているレコードを表示する")]
         public bool showDebugPanel = true;
@@ -56,8 +72,14 @@ namespace MedalPusher
         /// <summary>いまのグルーヴゲージ</summary>
         public float Gauge { get; private set; }
 
-        /// <summary>いま流しているレコード（流していなければ null）</summary>
+        /// <summary>いま流しているレコード（曲だけ流れている時も入る。流していなければ null）</summary>
+        public RecordData Loaded { get; private set; }
+
+        /// <summary>いま効果を発動しているレコード（発動していなければ null）。演出はこれを見る</summary>
         public RecordData Current { get; private set; }
+
+        /// <summary>効果を発動しているか</summary>
+        public bool IsActive => Current != null;
 
         /// <summary>流しているレコードの効果の残り秒数</summary>
         public float Remaining { get; private set; }
@@ -65,13 +87,19 @@ namespace MedalPusher
         /// <summary>流しているレコードの効果の長さ（秒）</summary>
         public float CurrentDuration { get; private set; }
 
-        /// <summary>レコードを流した回数。同じレコードを流し直したことを RecordAudioPlayer が知るために使う</summary>
+        /// <summary>レコードを流した回数（曲だけ）。RecordAudioPlayer が曲を切り替えるのに使う</summary>
+        public int LoadCount { get; private set; }
+
+        /// <summary>効果を発動した回数。同じレコードをもう一度発動したことを RecordAudioPlayer が知るために使う</summary>
         public int PlayCount { get; private set; }
 
         /// <summary>直近に落ちたメダル1枚のポイント（確認用）</summary>
         public int LastDropPoints { get; private set; }
 
-        /// <summary>レコードを流したときに呼ばれる（演出用）</summary>
+        /// <summary>レコードを流した（曲だけ）ときに呼ばれる</summary>
+        public event System.Action<RecordData> RecordLoaded;
+
+        /// <summary>レコードの効果を発動したときに呼ばれる（演出用）</summary>
         public event System.Action<RecordData> RecordPlayed;
 
         /// <summary>レコードの効果が終わったとき（曲が終わった・切り替えた・止めた）に呼ばれる</summary>
@@ -91,12 +119,14 @@ namespace MedalPusher
         float basePusherSpeed = 1f;
         GameObject sideGates;
         GUIStyle panelStyle;
+        string activateMessage = "";    // 発動できなかった理由（左の表示に少しだけ出す）
+        float activateMessageTime = -10f;
 
-        // 流しているレコード1枚ぶんの記録（流すたびにリセット）
-        int dropsThisPlay;          // 流し始めてから落ちたメダルの枚数
+        // 発動しているレコード1枚ぶんの記録（発動するたびにリセット）
+        int dropsThisPlay;          // 発動してから落ちたメダルの枚数
         float stackedMult;          // ジャズ・レクイエム・トランスで積み上がった倍率
         float pusherStopRemaining;  // メタルの曲が終わったあと、プッシャーを止めておく残り秒数
-        readonly HashSet<string> playedThisRound = new HashSet<string>();   // このラウンドで流したレコード（オーケストラ用）
+        readonly HashSet<string> playedThisRound = new HashSet<string>();   // このラウンドで発動したレコード（オーケストラ用）
 
         // ================================================================
         // 初期化
@@ -116,6 +146,8 @@ namespace MedalPusher
             game.StateChanged += OnStateChanged;
             game.GameReset += OnGameReset;
             if (game.Pusher != null) basePusherSpeed = game.Pusher.speedMultiplier;
+
+            if (autoAddBoostPresentation && FindFirstObjectByType<BoostPresentation>() == null) gameObject.AddComponent<BoostPresentation>();
         }
 
         void OnDestroy()
@@ -129,11 +161,11 @@ namespace MedalPusher
         }
 
         // ================================================================
-        // 流す・止める
+        // 流す・発動する・止める
         // ================================================================
 
         /// <summary>
-        /// いまそのレコードを流せるか。流せないときは reason に理由が入る（画面に出す用）。
+        /// いまそのレコードを流せるか（曲だけ。ゲージはいらない）。流せないときは reason に理由が入る（画面に出す用）。
         /// </summary>
         public bool CanPlay(RecordData record, out string reason)
         {
@@ -148,7 +180,7 @@ namespace MedalPusher
                 reason = "ラウンドのプレイ中だけ流せます";
                 return false;
             }
-            if (Current != null && Current.key == record.key)
+            if (Loaded != null && Loaded.key == record.key)
             {
                 reason = "いま流しています";
                 return false;
@@ -158,17 +190,11 @@ namespace MedalPusher
                 reason = $"{Current.name} の曲が終わるまで切り替えられません";
                 return false;
             }
-            float cost = GetGaugeCost(record);
-            if (!freePlay && Gauge < cost)
-            {
-                reason = $"ゲージが足りません（あと {Mathf.CeilToInt(cost - Gauge)}）";
-                return false;
-            }
             return true;
         }
 
         /// <summary>
-        /// レコードを流す。ゲージを使い、前に流していたレコードの効果は終わる。流せたら true。
+        /// レコードを流す（曲だけ。ゲージは使わない）。発動中の効果があれば終わる。流せたら true。
         /// </summary>
         public bool Play(RecordData record)
         {
@@ -178,8 +204,60 @@ namespace MedalPusher
                 return false;
             }
 
-            if (!freePlay) Gauge = Mathf.Max(0f, Gauge - GetGaugeCost(record));
             if (Current != null) Finish(false);
+            Loaded = record;
+            LoadCount++;
+            Debug.Log($"{record.name} を流す（曲だけ。Q で発動：ゲージ {GetGaugeCost(record):0}）");
+            RecordLoaded?.Invoke(record);
+            return true;
+        }
+
+        /// <summary>
+        /// 流しているレコードの効果を、いま発動できるか。できないときは reason に理由が入る。
+        /// </summary>
+        public bool CanActivate(out string reason)
+        {
+            reason = "";
+            if (RecordData.IsNullOrEmpty(Loaded) || game == null)
+            {
+                reason = "レコードを流していません（E キーで選ぶ）";
+                return false;
+            }
+            if (!IsScoring)
+            {
+                reason = "ラウンドのプレイ中だけ発動できます";
+                return false;
+            }
+            if (Current != null)
+            {
+                reason = "いま発動しています";
+                return false;
+            }
+            float cost = GetGaugeCost(Loaded);
+            if (!freePlay && Gauge < cost)
+            {
+                reason = $"ゲージが足りません（あと {Mathf.CeilToInt(cost - Gauge)}）";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 流しているレコードの効果を発動する。グルーヴゲージを使う。曲は止めずに続きから流れ、
+        /// 効果は発動した時から曲1曲ぶんの秒数（GetDuration）だけ続く。発動できたら true。
+        /// </summary>
+        public bool Activate()
+        {
+            if (!CanActivate(out string reason))
+            {
+                activateMessage = reason;
+                activateMessageTime = Time.unscaledTime;
+                Debug.Log($"RecordEffectSystem: 発動できません（{reason}）");
+                return false;
+            }
+
+            RecordData record = Loaded;
+            if (!freePlay) Gauge = Mathf.Max(0f, Gauge - GetGaugeCost(record));
 
             Current = record;
             CurrentDuration = GetDuration(record);
@@ -188,23 +266,31 @@ namespace MedalPusher
             dropsThisPlay = 0;
             stackedMult = 0f;
             playedThisRound.Add(record.key);
+            activateMessage = "";
 
             if (!IsImplemented(record))
             {
-                Debug.LogWarning($"RecordEffectSystem: 効果の型「{record.effectType}」（{record.name}）はまだ実装していません。曲は流れますが、効果はありません。");
+                Debug.LogWarning($"RecordEffectSystem: 効果の型「{record.effectType}」（{record.name}）はまだ実装していません。演出は出ますが、効果はありません。");
             }
-            Debug.Log($"{record.name} を流す（ゲージ -{GetGaugeCost(record):0}、{CurrentDuration:0.#}秒）");
+            Debug.Log($"{record.name} を発動（ゲージ -{GetGaugeCost(record):0}、{CurrentDuration:0.#}秒）");
             RecordPlayed?.Invoke(record);
             return true;
         }
 
-        /// <summary>流しているレコードを止める（効果も終わる）</summary>
+        /// <summary>流しているレコードを止める（曲も効果も終わる）</summary>
         public void Stop()
+        {
+            if (Current != null) Finish(false);
+            Loaded = null;
+        }
+
+        /// <summary>発動中の効果だけを終える（曲は流れたまま）</summary>
+        public void StopEffect()
         {
             if (Current != null) Finish(false);
         }
 
-        /// <summary>流しているレコードの効果を終える。naturally は曲が最後まで流れたとき true。</summary>
+        /// <summary>発動中の効果を終える。naturally は曲が最後まで流れたとき true。</summary>
         void Finish(bool naturally)
         {
             RecordData finished = Current;
@@ -221,11 +307,11 @@ namespace MedalPusher
             RecordFinished?.Invoke(finished);
         }
 
-        /// <summary>流すときに使うゲージの量</summary>
+        /// <summary>発動するときに使うゲージの量</summary>
         public float GetGaugeCost(RecordData record) => RecordData.IsNullOrEmpty(record) ? 0f : record.gaugeCost;
 
         /// <summary>
-        /// レコードの効果の長さ（秒）。
+        /// レコードの効果の長さ（秒）。発動した時から、この秒数だけ効果が続く。
         /// レコードごとの上書き → 曲の長さ → CSV の効果時間 × 倍率 → Fallback Duration の順に決める。
         /// </summary>
         public float GetDuration(RecordData record)
@@ -286,17 +372,17 @@ namespace MedalPusher
 
         void OnStateChanged(GameState state)
         {
-            // ラウンドが変わったら、流しているレコードを止める（ゲージは引き継ぐ）
+            // ラウンドが変わったら、発動中の効果を終える（曲は流したまま。ゲージは引き継ぐ）
             if (game.RoundNumber != lastRoundNumber || state == GameState.Intro || state == GameState.Warmup)
             {
                 lastRoundNumber = game.RoundNumber;
-                Stop();
+                StopEffect();
                 playedThisRound.Clear();
                 pusherStopRemaining = 0f;
             }
         }
 
-        /// <summary>ゲームをリセットした時（R キー）。ゲージを0に戻す。</summary>
+        /// <summary>ゲームをリセットした時（R キー）。レコードを止めて、ゲージを0に戻す。</summary>
         void OnGameReset()
         {
             Gauge = 0f;
@@ -310,6 +396,8 @@ namespace MedalPusher
         void Update()
         {
             if (game == null) return;
+
+            if (activateWithKey && InputCompat.Down(GameKey.ActivateRecord)) Activate();
 
             if (Current != null)
             {
@@ -389,7 +477,7 @@ namespace MedalPusher
                         }
                         else if (r.key == "Idol")
                         {
-                            if (dropsThisPlay <= r.value2) add += r.value1;   // 流し始めてから値2枚目まで
+                            if (dropsThisPlay <= r.value2) add += r.value1;   // 発動してから値2枚目まで
                         }
                         else if (r.key == "Enka")
                         {
@@ -523,14 +611,23 @@ namespace MedalPusher
             sb.Append($"<b>グルーヴ</b> {Gauge:0}/{gaugeMax:0}    直近の1枚 {LastDropPoints}pt\n");
             if (Current != null)
             {
-                sb.Append($"<color=#7CFC9A>流している：{Current.name}  残り {Remaining:0}秒</color>");
+                sb.Append($"<color=#7CFC9A>発動中：{Current.name}  残り {Remaining:0}秒</color>");
                 if (!IsImplemented(Current)) sb.Append(" <color=#FF8080>（効果は未実装）</color>");
+            }
+            else if (Loaded != null)
+            {
+                bool ready = CanActivate(out _);
+                string cost = $"ゲージ {GetGaugeCost(Loaded):0}";
+                sb.Append(ready
+                    ? $"流している：{Loaded.name}  <color=#FFD24A>Q で発動（{cost}）</color>"
+                    : $"流している：{Loaded.name}  <color=#AAAAAA>発動に {cost}</color>");
+                if (activateMessage != "" && Time.unscaledTime - activateMessageTime < 2f) sb.Append($"  <color=#FF8080>{activateMessage}</color>");
             }
             else
             {
                 sb.Append("流しているレコードなし（E キーで選ぶ）");
             }
-            GUI.Box(new Rect(10f, Screen.height * 0.45f, 440f, 48f), sb.ToString(), panelStyle);
+            GUI.Box(new Rect(10f, Screen.height * 0.45f, 520f, 48f), sb.ToString(), panelStyle);
         }
     }
 }

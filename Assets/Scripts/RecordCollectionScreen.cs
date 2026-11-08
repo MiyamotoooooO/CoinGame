@@ -14,10 +14,11 @@ namespace MedalPusher
     ///
     /// ・レコード屋の売り場のように、棚にジャケットを並べて見せる（ジャケットの右から盤が少しのぞく）
     /// ・ジャケット画像は RecordArtwork から取る。画像が無いレコードは、系統の色の仮ジャケットになる
-    /// ・マウスを乗せると、ジャケットが少し持ち上がって盤が出てくる。下の欄に詳細（効果・ゲージ消費・効果の長さ）が出る
-    /// ・クリックすると、そのレコードをすぐ流す（ゲージを使う。足りなければ流れない）
-    /// ・流しているレコードは、盤がターンテーブルに載っているので棚には盤が無く、「再生中」の帯が付く
-    /// ・流せないレコード（ゲージ不足など）は暗く表示する
+    /// ・マウスを乗せると、ジャケットが少し持ち上がって盤が出てくる。下の欄に詳細（効果・発動のゲージ・効果の長さ）が出る
+    /// ・クリックすると、そのレコードをすぐ流す（曲だけ。ゲージはいらない）
+    /// ・流しているレコードをもう一度クリックすると、効果を発動する（Q キーと同じ。グルーヴゲージを使う）
+    /// ・流しているレコードは、盤がターンテーブルに載っているので棚には盤が無く、「再生中」（発動中は「発動中」）の帯が付く
+    /// ・流せないレコードは暗く表示する。値札のゲージの数字は、発動に足りない時は赤
     /// ・開いているあいだは、メダルの投入（クリック・キー）を止める（クリックしたときにメダルが出ないように）
     ///
     /// 画面は OnGUI で描いている。本番で uGUI に置き換えるときも、流す処理は PlayRecord を呼べばよい。
@@ -128,7 +129,8 @@ namespace MedalPusher
 
         /// <summary>
         /// レコードを流す（本番の UI からも呼べる）。流せたら true。
-        /// 流せなかったときは、理由を画面に出す。
+        /// いま流しているレコードなら、効果を発動する。
+        /// 流せなかった・発動できなかったときは、理由を画面に出す。
         /// </summary>
         public bool PlayRecord(RecordData record)
         {
@@ -137,6 +139,17 @@ namespace MedalPusher
             {
                 ShowMessage("RecordEffectSystem が見つかりません");
                 return false;
+            }
+            if (IsCurrent(record))
+            {
+                if (!effectSystem.CanActivate(out string why))
+                {
+                    ShowMessage(why);
+                    return false;
+                }
+                effectSystem.Activate();
+                if (closeOnPlay) SetOpen(false);
+                return true;
             }
             if (!effectSystem.CanPlay(record, out string reason))
             {
@@ -154,8 +167,9 @@ namespace MedalPusher
             messageTime = Time.unscaledTime;
         }
 
+        /// <summary>いま流しているレコードか（効果を発動していなくても true）</summary>
         bool IsCurrent(RecordData record) =>
-            effectSystem != null && effectSystem.Current != null && record != null && effectSystem.Current.key == record.key;
+            effectSystem != null && effectSystem.Loaded != null && record != null && effectSystem.Loaded.key == record.key;
 
         RecordData FindOwned(string key)
         {
@@ -321,19 +335,20 @@ namespace MedalPusher
                 {
                     var ribbon = new Rect(jacketRect.x, jacketRect.y, jacket, 24f);   // 上に付ける（仮ジャケットの名前と重ならないように）
                     DrawRect(ribbon, new Color(1f, 0.82f, 0.3f, 0.95f));
-                    GUI.Label(ribbon, "♪ 再生中", ribbonStyle);
+                    GUI.Label(ribbon, effectSystem != null && effectSystem.IsActive ? "★ 発動中" : "♪ 再生中", ribbonStyle);
                 }
                 if (amount > 0.01f) DrawFrame(jacketRect, new Color(1f, 0.85f, 0.35f, eased), 3f);
 
-                // 値札（名前とゲージ消費）
+                // 値札（名前と、発動に使うゲージ。足りない時は赤）
                 float cost = effectSystem != null ? effectSystem.GetGaugeCost(r) : r.gaugeCost;
+                bool enoughGauge = effectSystem == null || effectSystem.freePlay || effectSystem.Gauge >= cost;
                 var tag = new Rect(jacketX, baseY + jacket + boardHeight + 4f, jacket, tagHeight);
                 DrawRect(tag, Color.white);
                 DrawRect(new Rect(tag.x, tag.y, 4f, tag.height), RecordArtwork.CategoryColor(r.category));
-                string costColor = canPlay ? "#333333" : "#C03030";
+                string costColor = enoughGauge ? "#333333" : "#C03030";
                 GUI.Label(new Rect(tag.x + 8f, tag.y, tag.width - 10f, tag.height), $"{r.name}  <color={costColor}><b>G{cost:0}</b></color>", tagStyle);
 
-                // クリックで流す
+                // クリックで流す（流しているレコードなら発動）
                 var hit = new Rect(jacketX - 4f, baseY - 10f, jacket * 1.34f + 8f, jacket + boardHeight + tagHeight + 16f);
                 if (mouseInArea && hit.Contains(e.mousePosition)) newHover = r.key;
                 if (GUI.Button(hit, GUIContent.none, GUIStyle.none))
@@ -374,12 +389,12 @@ namespace MedalPusher
 
             // マウスを乗せているレコード → 流しているレコードの順に出す
             RecordData r = FindOwned(hoveredKey);
-            if (r == null && effectSystem != null) r = effectSystem.Current;
+            if (r == null && effectSystem != null) r = effectSystem.Loaded;
 
             var inner = new Rect(area.x + 12f, area.y + 10f, area.width - 24f, area.height - 20f);
             if (r == null)
             {
-                GUI.Label(inner, "レコードにマウスを乗せると詳しい内容が出ます。クリックで流します（ゲージを使います）。", detailTextStyle);
+                GUI.Label(inner, "レコードにマウスを乗せると詳しい内容が出ます。クリックで流します（ゲージはいりません）。流しているレコードは Q キー（またはもう一度クリック）で効果を発動します（ゲージを使います）。", detailTextStyle);
                 DrawMessage(inner);
                 return;
             }
@@ -400,8 +415,13 @@ namespace MedalPusher
             {
                 float duration = effectSystem.GetDuration(r);
                 string length = effectSystem.HasSong(r) ? $"曲の長さ {duration:0}秒" : $"{duration:0.#}秒（曲なし）";
-                line = $"ゲージ消費 {effectSystem.GetGaugeCost(r):0}　効果の長さ {length}　　";
-                if (IsCurrent(r)) line += $"<color=#FFD24A>いま流しています（残り {effectSystem.Remaining:0}秒）</color>";
+                line = $"発動のゲージ {effectSystem.GetGaugeCost(r):0}　効果の長さ {length}　　";
+                if (IsCurrent(r))
+                {
+                    if (effectSystem.IsActive) line += $"<color=#FFD24A>発動中（残り {effectSystem.Remaining:0}秒）</color>";
+                    else if (effectSystem.CanActivate(out string why)) line += "<color=#FFD24A>流しています　Q キー（またはクリック）で発動</color>";
+                    else line += $"<color=#FFD24A>流しています</color>　<color=#FF9090>{why}</color>";
+                }
                 else if (effectSystem.CanPlay(r, out string reason)) line += "<color=#FFD24A>クリックで流せます</color>";
                 else line += $"<color=#FF9090>{reason}</color>";
                 if (!RecordEffectSystem.IsImplemented(r)) line += "　<color=#FF9090>※効果は未実装</color>";
