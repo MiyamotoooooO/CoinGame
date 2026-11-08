@@ -181,7 +181,12 @@ MonoBehaviour:
   shakeSeconds: 0.3
   buzzWhenFull: 1
   buzzStrength: 0.25
+  showCostArrow: 1
+  arrowSize: 0.16
+  arrowColor: {r: 0.9490196, g: 0.9490196, b: 0.93333334, a: 1}
+  arrowRecordColor: 1
   previewFill: 0.6
+  previewCost: 0.4
 --- !u!4 &73872012
 Transform:
   m_ObjectHideFlags: 0
@@ -1888,6 +1893,61 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 61bfdce8d43681943b20aa7e74534c63, type: 3}
+--- !u!1 &1731062977
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1731062979}
+  - component: {fileID: 1731062978}
+  m_Layer: 0
+  m_Name: SideHoleMarker
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1731062978
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1731062977}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cf51a020cd7bbb2488822f41f3de2e27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  game: {fileID: 222109767}
+  font: {fileID: 0}
+  showCenter: 1
+  showTopLine: 1
+  flashOnDrop: 1
+  barHeight: 0.9
+  offset: {x: 0, y: 0, z: 0}
+  sideColor: {r: 0.8784314, g: 0.22745098, b: 0.22745098, a: 1}
+  sideStripeColor: {r: 0.09411765, g: 0.078431375, b: 0.08627451, a: 1}
+  centerColor: {r: 0.22745098, g: 0.76862746, b: 0.42745098, a: 1}
+  textColor: {r: 0.972549, g: 0.9647059, b: 0.9411765, a: 1}
+--- !u!4 &1731062979
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1731062977}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &2083099744 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 61bfdce8d43681943b20aa7e74534c63, type: 3}
@@ -1949,6 +2009,8 @@ MonoBehaviour:
   styleParticles: 1
   styleBurst: 8
   notesOnPoint: 1
+  recolorBody: 1
+  colorFromJacket: 1
   shockwaveOnActivate: 1
   styleOverrides: []
   previewLevel: 0.4
@@ -1981,3 +2043,4 @@ SceneRoots:
   - {fileID: 375461634}
   - {fileID: 73872012}
   - {fileID: 2112673451}
+  - {fileID: 1731062979}
