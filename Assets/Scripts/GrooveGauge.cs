@@ -18,6 +18,13 @@ namespace MedalPusher
     /// 満タンになるとゲージが黄色に光り、「MAX」が出る（満タンの間は弱くふるえ続ける）。
     /// 見た目はすべてコードで作るので、モデルや画像はいらない（作った物はシーンに保存されない）。
     /// ケーブルの位置は、GrooveGauge を選んだ時にシーンビューに出る点をドラッグして変えられる（GrooveGaugeEditor.cs）。
+    ///
+    /// 必要なゲージの矢印：
+    ///  流しているレコードがある時、扇の外側に、そのレコードの発動に必要なゲージの量の所を指す矢印と数字が出る。
+    ///  目盛りの上にも、その位置に細い線が引かれる。
+    ///  ・まだ足りない時：白い矢印
+    ///  ・足りた時（Q で発動できる）：レコードの色で点滅し、内側へはずむ。数字の下に「Q」
+    ///  ・発動中：暗くなる
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
@@ -86,17 +93,33 @@ namespace MedalPusher
         public bool buzzWhenFull = true;
         [Range(0f, 1f)] public float buzzStrength = 0.25f;
 
+        [Header("必要なゲージの矢印（流しているレコードの発動に必要な量）")]
+        public bool showCostArrow = true;
+        [Tooltip("矢印の大きさ（外側の半径に対する割合）")]
+        [Range(0.05f, 0.5f)] public float arrowSize = 0.16f;
+        [Tooltip("まだ足りない時の矢印の色")]
+        public Color arrowColor = new Color32(0xf2, 0xf2, 0xee, 0xff);
+        [Tooltip("足りた時に、レコードの色（スピーカーと同じ色）で光らせる。オフなら Full Color")]
+        public bool arrowRecordColor = true;
+
         [Header("テスト")]
         [Tooltip("再生していない時の、ゲージのたまり具合（見た目の確認用）")]
         [Range(0f, 1f)] public float previewFill = 0.6f;
+        [Tooltip("再生していない時の、矢印の位置（見た目の確認用。0 で出さない）")]
+        [Range(0f, 1f)] public float previewCost = 0.4f;
 
         const float Margin = 0.07f;       // ケースのふちの太さ（外側の半径に対する割合）
         const float RimWidth = 0.035f;    // オレンジのふちの太さ
 
-        GameObject faceGo, cableGo, plugGo, labelGo, valueGo;
+        GameObject faceGo, cableGo, plugGo, labelGo, valueGo, costGo;
         Mesh faceMesh, cableMesh;
         Material faceMat, cableMat, pulseMat;
-        TextMesh label, value;
+        TextMesh label, value, costText;
+        float costRatio = -1f;      // 矢印の位置（ゲージの上限に対する割合。負なら出さない）
+        float costValue;            // 必要なゲージの量（数字に出す）
+        int costState;              // 0 = 足りない、1 = 足りた（発動できる）、2 = 発動中
+        Color costReadyColor = Color.white;
+        string costKey;
         readonly List<Pulse> pulseList = new List<Pulse>();
         readonly Stack<GameObject> pulsePool = new Stack<GameObject>();
         float shownFill, lastGauge = -1f, flash, shake;
@@ -142,8 +165,10 @@ namespace MedalPusher
 
             label = NewText("Label", 0.5f);
             value = NewText("Value", 1f);
+            costText = NewText("Cost", 0.5f);
             labelGo = label.gameObject;
             valueGo = value.gameObject;
+            costGo = costText.gameObject;
             dirty = true;
         }
 
@@ -157,12 +182,13 @@ namespace MedalPusher
             Kill(cableGo);
             Kill(labelGo);
             Kill(valueGo);
+            Kill(costGo);
             Kill(faceMesh);
             Kill(cableMesh);
             Kill(faceMat);
             Kill(cableMat);
             Kill(pulseMat);
-            faceGo = plugGo = cableGo = labelGo = valueGo = null;
+            faceGo = plugGo = cableGo = labelGo = valueGo = costGo = null;
         }
 
         static void Kill(Object o)
@@ -255,6 +281,7 @@ namespace MedalPusher
                         else Shake();
                     }
                     lastGauge = g;
+                    UpdateCostInfo(max);
                 }
                 shownFill = Mathf.Lerp(shownFill, target, 1f - Mathf.Exp(-8f * Time.deltaTime));
             }
@@ -262,6 +289,10 @@ namespace MedalPusher
             {
                 shownFill = target;
                 full = target >= 0.999f;
+                costRatio = previewCost > 0f ? previewCost : -1f;
+                costValue = previewCost * 100f;
+                costState = target >= previewCost ? 1 : 0;
+                costReadyColor = fullColor;
             }
 
             flash = Mathf.MoveTowards(flash, 0f, Time.deltaTime * 3f);
@@ -302,6 +333,7 @@ namespace MedalPusher
             Move(plugGo, offset, rot, plugGo.transform.localPosition);
             Move(labelGo, offset, rot, labelGo.transform.localPosition);
             Move(valueGo, offset, rot, valueGo.transform.localPosition);
+            Move(costGo, offset, rot, costGo.transform.localPosition);
         }
 
         /// <summary>basePos（ふるえていない時の位置）を、ゲージの中心まわりに rot だけ回して offset だけずらす。</summary>
@@ -349,6 +381,10 @@ namespace MedalPusher
                 AddArc(v, c, tri, rIn, R, s0, s1, 0f, col);
             }
 
+            // 必要なゲージの矢印
+            if (showCostArrow && costRatio >= 0f) AddCostArrow(v, c, tri, R, r, m, rim, a0, a1);
+            else if (costGo != null && costGo.activeSelf) costGo.SetActive(false);
+
             faceMesh.Clear();
             faceMesh.SetVertices(v);
             faceMesh.SetColors(c);
@@ -360,6 +396,94 @@ namespace MedalPusher
             plugGo.transform.localPosition = plug;
             plugGo.transform.localRotation = Quaternion.identity;
             plugGo.transform.localScale = new Vector3(cableRadius * 4f, cableRadius * 3f, cableRadius * 3f);
+        }
+
+        /// <summary>
+        /// 流しているレコードの、発動に必要なゲージの量を調べる（矢印の位置と色）。
+        /// </summary>
+        void UpdateCostInfo(float max)
+        {
+            RecordData r = effectSystem.Loaded;
+            if (RecordData.IsNullOrEmpty(r))
+            {
+                costRatio = -1f;
+                costKey = null;
+                return;
+            }
+            costValue = effectSystem.GetGaugeCost(r);
+            costRatio = Mathf.Clamp01(costValue / max);
+            costState = effectSystem.IsActive ? 2 : effectSystem.CanActivate(out _) ? 1 : 0;
+            if (costKey != r.key)
+            {
+                costKey = r.key;
+                var speaker = SpeakerUnit.Main;
+                costReadyColor = arrowRecordColor && speaker != null ? speaker.PaletteOf(r)[0]
+                               : arrowRecordColor && RecordArtwork.HasCategoryColor(r.category) ? RecordArtwork.CategoryColor(r.category)
+                               : fullColor;
+            }
+        }
+
+        /// <summary>扇の外側から、必要なゲージの量の所を指す矢印（と、目盛りの上の細い線）を足す。</summary>
+        void AddCostArrow(List<Vector3> v, List<Color> c, List<int> tri, float R, float r, float m, float rim, float a0, float a1)
+        {
+            float a = Mathf.Lerp(a0, a1, costRatio);
+            var dir = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
+            var side = new Vector3(-dir.y, dir.x, 0f);
+
+            float blink = 0.5f + 0.5f * Mathf.Sin(Time.time * 8f);
+            Color col = costState == 1 ? Color.Lerp(costReadyColor, Color.white, blink * 0.5f)
+                      : costState == 2 ? Color.Lerp(arrowColor, housingColor, 0.6f)
+                      : arrowColor;
+            float bounce = costState == 1 ? Mathf.Abs(Mathf.Sin(Time.time * 6f)) * R * 0.05f : 0f;   // 足りた時は内側へはずむ
+
+            float size = R * arrowSize;
+            float tipR = R + m + rim + R * 0.02f + bounce;
+            Vector3 tip = dir * tipR;
+            Vector3 baseC = dir * (tipR + size);
+            Vector3 left = baseC + side * size * 0.6f, right = baseC - side * size * 0.6f;
+            Vector3 tail = dir * (tipR + size * 1.55f);
+
+            // 黒いふち（少し大きい形を後ろに）→ 矢印の頭 → 軸
+            float o = size * 0.16f;
+            AddTri(v, c, tri, tip - dir * o * 1.4f, left + (side - dir * 0.2f) * o * 1.6f, right - (side + dir * 0.2f) * o * 1.6f, -0.001f, housingColor);
+            AddQuad(v, c, tri, baseC + side * (size * 0.2f + o), baseC - side * (size * 0.2f + o), tail - side * (size * 0.2f + o) + dir * o, tail + side * (size * 0.2f + o) + dir * o, -0.001f, housingColor);
+            AddTri(v, c, tri, tip, left, right, -0.002f, col);
+            AddQuad(v, c, tri, baseC + side * size * 0.2f, baseC - side * size * 0.2f, tail - side * size * 0.2f, tail + side * size * 0.2f, -0.002f, col);
+
+            // 目盛りの上の細い線（ここまでたまれば発動できる）
+            float w = Mathf.Max(0.0005f, R * 0.012f);
+            Vector3 i0 = dir * (r * 0.9f), i1 = dir * R;
+            Color line = col;
+            line.a = 0.9f;
+            AddQuad(v, c, tri, i0 + side * w, i0 - side * w, i1 - side * w, i1 + side * w, -0.0015f, line);
+
+            // 数字（矢印の外）と、足りた時の「Q」
+            costText.text = costState == 1 ? $"{Mathf.CeilToInt(costValue)}\nQ" : $"{Mathf.CeilToInt(costValue)}";
+            costText.color = col;
+            costText.transform.localPosition = dir * (tipR + size * 1.55f + R * 0.1f) + new Vector3(0f, 0f, -0.002f);
+            costText.transform.localScale = Vector3.one * R * 0.012f * 0.6f;
+            costGo.SetActive(true);
+        }
+
+        static void AddTri(List<Vector3> v, List<Color> c, List<int> tri, Vector3 p0, Vector3 p1, Vector3 p2, float z, Color col)
+        {
+            int b = v.Count;
+            v.Add(new Vector3(p0.x, p0.y, z));
+            v.Add(new Vector3(p1.x, p1.y, z));
+            v.Add(new Vector3(p2.x, p2.y, z));
+            c.Add(col); c.Add(col); c.Add(col);
+            tri.AddRange(new[] { b, b + 1, b + 2 });
+        }
+
+        static void AddQuad(List<Vector3> v, List<Color> c, List<int> tri, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float z, Color col)
+        {
+            int b = v.Count;
+            v.Add(new Vector3(p0.x, p0.y, z));
+            v.Add(new Vector3(p1.x, p1.y, z));
+            v.Add(new Vector3(p2.x, p2.y, z));
+            v.Add(new Vector3(p3.x, p3.y, z));
+            c.Add(col); c.Add(col); c.Add(col); c.Add(col);
+            tri.AddRange(new[] { b, b + 1, b + 2, b, b + 2, b + 3 });
         }
 
         Color Glow(Color c, bool full) => full ? Color.Lerp(c, fullColor, 0.5f + 0.5f * Mathf.Sin(Time.time * 6f)) : Color.Lerp(c, Color.white, flash * 0.6f);

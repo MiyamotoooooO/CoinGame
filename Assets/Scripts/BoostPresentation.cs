@@ -98,7 +98,8 @@ namespace MedalPusher
         RecordAudioPlayer dropListener;
         bool subscribed;
         RecordData boostRecord;      // 強化しているレコード
-        Color boostColor = Color.white;
+        Color boostColor = Color.white;    // レコードの色（いちばん目立つ色）
+        Color boostColor2 = Color.white;   // レコードの色（2番目の色）
         float braking;               // ブレーキ中の暗さ（0〜1）
         float brakeLeft;             // ブレーキの残り秒数
         float cutTime = -1f;         // カットインを出してからの秒数（負なら出していない）
@@ -274,7 +275,7 @@ namespace MedalPusher
         void OnRecordPlayed(RecordData record)
         {
             boostRecord = record;
-            boostColor = RecordArtwork.HasCategoryColor(record.category) ? RecordArtwork.CategoryColor(record.category) : new Color(1f, 0.54f, 0.12f);
+            SetColors(record);
             PlaceLight();
             if (dropListener == null)
             {
@@ -303,7 +304,26 @@ namespace MedalPusher
         void OnRecordPlayedColorOnly(RecordData record)
         {
             boostRecord = record;
+            SetColors(record);
+        }
+
+        /// <summary>
+        /// 演出の色をレコードの色にする。スピーカー（SpeakerUnit）と同じ色を使う
+        /// （ジャケットの絵から取り出した、いちばん目立つ色と2番目の色）。スピーカーが無ければ系統の色。
+        /// </summary>
+        void SetColors(RecordData record)
+        {
+            var speaker = SpeakerUnit.Main;
+            if (speaker != null)
+            {
+                Color[] pal = speaker.PaletteOf(record);
+                boostColor = pal[0];
+                boostColor2 = pal[1];
+                return;
+            }
             boostColor = RecordArtwork.HasCategoryColor(record.category) ? RecordArtwork.CategoryColor(record.category) : new Color(1f, 0.54f, 0.12f);
+            Color.RGBToHSV(boostColor, out float h, out float sat, out _);
+            boostColor2 = Color.HSVToRGB(Mathf.Repeat(h + 0.12f, 1f), sat * 0.7f, 1f);
         }
 
         /// <summary>効果が終わった</summary>
@@ -346,9 +366,11 @@ namespace MedalPusher
             if (active && warnSeconds > 0f && effectSystem.Remaining < warnSeconds)
                 warn = 0.35f + 0.65f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 18f));
             float edgeA = edgeGlow ? edgeGlowStrength * glow * warn * (0.55f + 0.45f * beat) + braking * 0.25f : 0f;
-            foreach (var e in edges)
+            for (int i = 0; i < edges.Count; i++)
             {
-                Color c = boostColor;
+                var e = edges[i];
+                // 左右はいちばん目立つ色、上下は2番目の色（拍に合わせて1番目の色に寄る）
+                Color c = i < 2 ? boostColor : Color.Lerp(boostColor2, boostColor, beat * 0.5f);
                 c.a = edgeA;
                 e.color = c;
                 var rt = e.rectTransform;
@@ -362,7 +384,8 @@ namespace MedalPusher
             if (lightComp != null)
             {
                 float li = boardLight ? boardLightIntensity * glow * warn * (0.45f + 0.75f * beat) : 0f;
-                lightComp.color = boostColor;
+                // 盤面のライト：いちばん目立つ色。強い拍の時だけ2番目の色に寄る
+                lightComp.color = Color.Lerp(boostColor, boostColor2, Mathf.Clamp01(beat - 0.5f));
                 lightComp.intensity = li;
                 lightComp.enabled = li > 0.01f;
             }
@@ -407,7 +430,8 @@ namespace MedalPusher
             cutTime = 0f;
             cutRoot.gameObject.SetActive(true);
             band.color = boostColor;
-            bandShade.color = new Color(0f, 0f, 0f, 0.22f);
+            bandShade.color = new Color(boostColor2.r * 0.5f, boostColor2.g * 0.5f, boostColor2.b * 0.5f, 0.35f);   // 帯の下半分は2番目の色で影
+            foreach (var line in speedLines) line.GetComponent<Image>().color = new Color(boostColor2.r, boostColor2.g, boostColor2.b, 0.7f);
             titleText.text = cutInTitle;
             titleText.font = UiFont;
             subText.font = UiFont;

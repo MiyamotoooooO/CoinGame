@@ -19,12 +19,23 @@ namespace MedalPusher
     /// レコードの効果を発動している間の演出（自動）：
     ///  ・発動の瞬間：Q を押すと少し沈み（曲のブレーキ）、ドロップの瞬間に、ドンと大きくはずみ、
     ///    前に光の輪（衝撃波）が2つ広がり、音符と系統ごとの粒がたくさん飛ぶ（RecordAudioPlayer.Dropped）
-    ///  ・リングライトとメーターが、そのレコードの系統の色になり、本体のゆれも大きくなる
+    ///  ・スピーカーの色が、そのレコードの色になる（ジャケットの絵から、いちばん目立つ色と2番目の色を取り出す。
+    ///    ジャケットが無ければ系統の色）。ふち・本体・コーン・リングライト・メーターの色が変わり、本体のゆれも大きくなる
     ///  ・系統ごとの粒が、ビートに合わせて出る
     ///      定番・加算 → きらきら / 倍率 → 火花 / 物理 → 衝撃波とけむり / 盤面・フィールド → 泡 /
     ///      経済 → コイン / モニター・条件 → 星 / メダル・変化 → 虹色
     ///    レコードごとに変えたい時は Style Overrides にキー（英名）と粒の種類を書く（例：SnowCountry → Snow）
-    ///  ・メダルが穴に落ちるたび、音符と「+30」のような、その1枚のポイントの文字が飛ぶ
+    ///  ・メダルが穴に落ちるたび、レコードの種類（粒の種類）ごとにちがう演出と「+30」のような文字が出る
+    ///      きらきら → 光の粒がはじけ、文字はふわっと上がる
+    ///      火花     → 火花が飛び、ウーファーが強くはね、文字はふるえる
+    ///      衝撃波   → 小さな光の輪が広がり、文字はドンと大きく出て縮む
+    ///      泡       → 泡がのぼり、文字はゆらゆら上がる
+    ///      コイン   → コインが飛び出し、文字ははねる
+    ///      星       → 星がまたたき、ライトが2番目の色に光り、文字は2色でまたたく
+    ///      虹色     → 虹色の粒が出て、文字の色が虹色に変わり続ける
+    ///      雪       → 雪が舞い、文字はふわっと上がる
+    ///      花火     → 小さな花火が開き、文字はドンと出る
+    ///    中央の穴の時は、端の穴より大きく出る
     ///
     /// 演出から呼ぶもの（例：SpeakerUnit.Main?.Pulse()）：
     ///  ・Pulse(強さ)：ドンとはずむ
@@ -83,8 +94,12 @@ namespace MedalPusher
         public bool styleParticles = true;
         [Tooltip("系統ごとの粒の量（ビート1回あたり）")]
         [Range(1, 30)] public int styleBurst = 8;
-        [Tooltip("メダルが落ちるたび、音符とポイントの文字を出す")]
+        [Tooltip("メダルが落ちるたび、レコードの種類ごとの演出とポイントの文字を出す")]
         public bool notesOnPoint = true;
+        [Tooltip("本体・ふち・コーンの色も、レコードの色に変える（オフならリングライトとメーターだけ）")]
+        public bool recolorBody = true;
+        [Tooltip("ジャケットの絵から色を取り出す（オフなら系統の色だけ使う）")]
+        public bool colorFromJacket = true;
         [Tooltip("発動の瞬間に、前に光の輪を広げる")]
         public bool shockwaveOnActivate = true;
         [Tooltip("レコードごとの粒の種類（系統の決まりより優先）")]
@@ -150,17 +165,34 @@ namespace MedalPusher
         MedalPusherGame game;
         RecordData activeRecord;      // いま発動しているレコード（粒の種類を決め直すのに使う）
         FxStyle activeStyle = FxStyle.None;
-        Color recordColor;
-        float recordTint;             // 系統の色にどれだけ寄せるか（0〜1）
+        Color recordColor, recordColor2;   // レコードの色（いちばん目立つ色・2番目の色）
+        float recordTint;             // レコードの色にどれだけ寄せるか（0〜1）
+        float appliedBodyTint = -1f;  // 本体の色を最後に変えた時の recordTint
         float fxTimer;
+        RecordArtwork artwork;
+        readonly Dictionary<string, Color[]> paletteCache = new Dictionary<string, Color[]>();
+        readonly List<BodyMat> bodyMats = new List<BodyMat>();
+        readonly List<float> shockSizes = new List<float>();
+
+        /// <summary>ポイントの文字の動き方</summary>
+        enum PopMotion { Float, Shake, Slam, Sway, Bounce, Twinkle, Rainbow }
 
         class Popup
         {
             public Transform t;
             public TextMesh text;
             public float time = -1f;   // 負なら使っていない
-            public Color color;
+            public Color color, color2;
             public float drift;
+            public PopMotion motion;
+        }
+
+        /// <summary>本体の色を変えるマテリアル（role：1 ふち / 2 箱 / 3 前の板 / 4 コーン）</summary>
+        struct BodyMat
+        {
+            public Material mat;
+            public Color baseColor;
+            public int role;
         }
 
         readonly float[] spectrum = new float[256];
@@ -219,10 +251,91 @@ namespace MedalPusher
             subscribed = on;
         }
 
-        Color RecordColor(RecordData record)
+        Color RecordColor(RecordData record) => PaletteOf(record)[0];
+
+        /// <summary>
+        /// レコードの色（[0] いちばん目立つ色、[1] 2番目の色）。
+        /// ジャケットの絵があれば、そこから鮮やかな色を2つ取り出す。無い時・白黒の絵の時は系統の色から作る。
+        /// </summary>
+        public Color[] PaletteOf(RecordData record)
         {
-            if (record != null && RecordArtwork.HasCategoryColor(record.category)) return RecordArtwork.CategoryColor(record.category);
-            return noteColor;
+            if (RecordData.IsNullOrEmpty(record)) return new[] { noteColor, peakColor };
+            if (paletteCache.TryGetValue(record.key, out Color[] cached)) return cached;
+
+            Color cat = RecordArtwork.HasCategoryColor(record.category) ? RecordArtwork.CategoryColor(record.category) : noteColor;
+            Color[] pal = null;
+            if (colorFromJacket && Application.isPlaying)
+            {
+                if (artwork == null) artwork = FindFirstObjectByType<RecordArtwork>();
+                Texture2D tex = artwork != null ? artwork.GetJacket(record) : null;
+                if (tex != null) pal = ExtractPalette(tex);
+            }
+            if (pal == null)
+            {
+                Color.RGBToHSV(cat, out float h, out float sat, out float v);
+                pal = new[] { Vivid(cat), Color.HSVToRGB(Mathf.Repeat(h + 0.12f, 1f), Mathf.Clamp01(sat * 0.7f), 1f) };
+            }
+            paletteCache[record.key] = pal;
+            return pal;
+        }
+
+        /// <summary>絵を 16×16 に縮めて、色あい（12区分）ごとに鮮やかさで重みを付けて数え、多い色を2つ選ぶ。</summary>
+        static Color[] ExtractPalette(Texture2D tex)
+        {
+            const int N = 16;
+            var rt = RenderTexture.GetTemporary(N, N, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            var prev = RenderTexture.active;
+            Graphics.Blit(tex, rt);   // 読み取り禁止の画像でも読めるように、一度描いてから読む
+            RenderTexture.active = rt;
+            var small = new Texture2D(N, N, TextureFormat.RGBA32, false);
+            small.ReadPixels(new Rect(0, 0, N, N), 0, 0);
+            small.Apply();
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+            Color[] px = small.GetPixels();
+            Destroy(small);
+
+            const int Bins = 12;
+            var weight = new float[Bins];
+            var sum = new Vector3[Bins];
+            foreach (Color p in px)
+            {
+                Color.RGBToHSV(p, out float h, out float sat, out float v);
+                if (sat < 0.2f || v < 0.2f) continue;   // 白・黒・灰色は数えない
+                float w = sat * sat * v;
+                int bin = Mathf.Clamp((int)(h * Bins), 0, Bins - 1);
+                weight[bin] += w;
+                sum[bin] += new Vector3(p.r, p.g, p.b) * w;
+            }
+            int b1 = 0;
+            for (int i = 1; i < Bins; i++) if (weight[i] > weight[b1]) b1 = i;
+            if (weight[b1] < 0.5f) return null;   // ほとんど白黒の絵
+
+            int b2 = -1;
+            for (int i = 0; i < Bins; i++)
+            {
+                int dist = Mathf.Min(Mathf.Abs(i - b1), Bins - Mathf.Abs(i - b1));
+                if (dist < 2 || weight[i] < weight[b1] * 0.12f) continue;
+                if (b2 < 0 || weight[i] > weight[b2]) b2 = i;
+            }
+            Color c1 = Vivid(ToColor(sum[b1] / weight[b1]));
+            Color c2;
+            if (b2 >= 0) c2 = Vivid(ToColor(sum[b2] / weight[b2]));
+            else
+            {
+                Color.RGBToHSV(c1, out float h, out float sat, out _);
+                c2 = Color.HSVToRGB(Mathf.Repeat(h + 0.12f, 1f), sat * 0.7f, 1f);
+            }
+            return new[] { c1, c2 };
+        }
+
+        static Color ToColor(Vector3 v) => new Color(v.x, v.y, v.z, 1f);
+
+        /// <summary>光らせても映えるように、鮮やかさと明るさを少し上げる</summary>
+        static Color Vivid(Color c)
+        {
+            Color.RGBToHSV(c, out float h, out float sat, out float v);
+            return Color.HSVToRGB(h, Mathf.Max(sat, 0.55f), Mathf.Max(v, 0.9f));
         }
 
         /// <summary>レコードを流した（曲だけ）：少しはずむ</summary>
@@ -260,15 +373,79 @@ namespace MedalPusher
             EmitStyle(style, c, styleBurst * 3);
         }
 
-        /// <summary>発動中にメダルが穴に落ちた：音符と、その1枚のポイントの文字</summary>
+        /// <summary>発動中にメダルが穴に落ちた：レコードの種類ごとの演出と、その1枚のポイントの文字</summary>
         void OnMedalDropped(Medal medal, DropZoneType type)
         {
             if (!notesOnPoint || type == DropZoneType.Lost || effectSystem == null || !effectSystem.IsActive) return;
-            Color c = RecordColor(effectSystem.Current);
-            EmitNotes(2, c);
-            Pulse(0.6f);
+            Color[] pal = PaletteOf(effectSystem.Current);
+            Color c1 = pal[0], c2 = pal[1];
+            float big = type == DropZoneType.Center ? 1f : 0.6f;   // 中央の穴は大きく
+            int n(int count) => Mathf.Max(1, Mathf.RoundToInt(count * big));
             int pts = effectSystem.LastDropPoints;
-            if (pts > 0) ShowPopup($"+{pts}", Color.Lerp(c, Color.white, 0.35f));
+            string text = pts > 0 ? $"+{pts}" : "";
+            Color light = Color.Lerp(c1, Color.white, 0.35f);
+
+            switch (activeStyle)
+            {
+                case FxStyle.Glitter:     // きらきら
+                    EmitStyle(FxStyle.Glitter, c1, n(8));
+                    EmitNotes(n(2), c2);
+                    Pulse(0.6f * big);
+                    ShowPopup(text, light, PopMotion.Float, c2);
+                    break;
+                case FxStyle.Sparks:      // 火花
+                    EmitStyle(FxStyle.Sparks, c1, n(14));
+                    Pulse(1.1f * big);
+                    Flash(c2, 0.12f);
+                    ShowPopup(text, light, PopMotion.Shake, c2);
+                    break;
+                case FxStyle.Shock:       // 衝撃波
+                    Shockwave(c1, 0.35f + 0.25f * big);
+                    EmitStyle(FxStyle.Shock, c2, n(5));
+                    Pulse(1.3f * big);
+                    ShowPopup(text, light, PopMotion.Slam, c2);
+                    break;
+                case FxStyle.Bubbles:     // 泡
+                    EmitStyle(FxStyle.Bubbles, c1, n(7));
+                    EmitStyle(FxStyle.Bubbles, c2, n(3));
+                    Pulse(0.4f * big);
+                    ShowPopup(text, light, PopMotion.Sway, c2);
+                    break;
+                case FxStyle.Coins:       // コイン
+                    EmitStyle(FxStyle.Coins, c1, n(10));
+                    Pulse(0.8f * big);
+                    ShowPopup(text, Color.Lerp(c1, new Color(1f, 0.85f, 0.3f), 0.5f), PopMotion.Bounce, c2);
+                    break;
+                case FxStyle.Stars:       // 星
+                    EmitStyle(FxStyle.Stars, c1, n(6));
+                    EmitStyle(FxStyle.Stars, c2, n(3));
+                    Flash(c2, 0.25f);
+                    Pulse(0.5f * big);
+                    ShowPopup(text, light, PopMotion.Twinkle, c2);
+                    break;
+                case FxStyle.Rainbow:     // 虹色
+                    EmitStyle(FxStyle.Rainbow, c1, n(9));
+                    Pulse(0.7f * big);
+                    ShowPopup(text, light, PopMotion.Rainbow, c2);
+                    break;
+                case FxStyle.Snow:        // 雪
+                    EmitStyle(FxStyle.Snow, c1, n(8));
+                    EmitNotes(n(1), c2);
+                    Pulse(0.4f * big);
+                    ShowPopup(text, Color.Lerp(c1, Color.white, 0.6f), PopMotion.Float, c2);
+                    break;
+                case FxStyle.Fireworks:   // 花火
+                    EmitStyle(FxStyle.Fireworks, c1, n(18));
+                    Pulse(1.0f * big);
+                    Flash(c2, 0.15f);
+                    ShowPopup(text, light, PopMotion.Slam, c2);
+                    break;
+                default:
+                    EmitNotes(n(2), c1);
+                    Pulse(0.6f * big);
+                    ShowPopup(text, light, PopMotion.Float, c2);
+                    break;
+            }
         }
 
         /// <summary>そのレコードの粒の種類（Inspector の上書き → レコードごとの決まり → 系統の決まり）</summary>
@@ -431,6 +608,7 @@ namespace MedalPusher
                 shockRings.Add(ring.transform);
                 shockMats.Add(rMat);
                 shockTimes.Add(-1f);
+                shockSizes.Add(1f);
             }
 
             // ---- ポイントの文字（「+30」など） ----
@@ -472,7 +650,10 @@ namespace MedalPusher
             shockRings.Clear();
             shockMats.Clear();
             shockTimes.Clear();
+            shockSizes.Clear();
             popups.Clear();
+            bodyMats.Clear();
+            appliedBodyTint = -1f;
             fx = null;
             if (visual != null) Kill(visual);
             foreach (var o in owned) Kill(o);
@@ -512,10 +693,49 @@ namespace MedalPusher
             else
             {
                 var mats = new Material[b.colors.Count];
-                for (int i = 0; i < mats.Length; i++) mats[i] = LitMaterial(b.colors[i]);
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    mats[i] = LitMaterial(b.colors[i]);
+                    int role = RoleOf(b.colors[i]);
+                    if (role > 0) bodyMats.Add(new BodyMat { mat = mats[i], baseColor = b.colors[i], role = role });
+                }
                 r.sharedMaterials = mats;
             }
             return go;
+        }
+
+        /// <summary>色から、本体のどの部分か調べる（レコードの色に変える部分だけ 1〜4。ほかは 0）</summary>
+        int RoleOf(Color c)
+        {
+            if (Same(c, trimColor)) return 1;
+            if (Same(c, bodyColor)) return 2;
+            if (Same(c, baffleColor)) return 3;
+            if (Same(c, coneColor)) return 4;
+            return 0;
+        }
+
+        static bool Same(Color a, Color b) => Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b) < 0.01f;
+
+        /// <summary>本体・ふち・コーンの色を、レコードの色に寄せる（recordTint：0 = 元の色、1 = レコードの色）</summary>
+        void ApplyBodyColors()
+        {
+            float tint = recolorBody ? recordTint : 0f;
+            if (Mathf.Abs(tint - appliedBodyTint) < 0.002f) return;
+            appliedBodyTint = tint;
+            foreach (var m in bodyMats)
+            {
+                if (m.mat == null) continue;
+                Color target;
+                switch (m.role)
+                {
+                    case 1: target = recordColor; break;                                                     // ふち：レコードの色
+                    case 2: target = Color.Lerp(m.baseColor, recordColor * 0.45f, 0.45f); break;             // 箱：暗いレコードの色
+                    case 3: target = Color.Lerp(m.baseColor, recordColor2 * 0.3f, 0.3f); break;              // 前の板：ほんのり2番目の色
+                    default: target = Color.Lerp(m.baseColor, recordColor2 * 0.6f, 0.5f); break;             // コーン：2番目の色
+                }
+                target.a = 1f;
+                m.mat.color = Color.Lerp(m.baseColor, target, tint);
+            }
         }
 
         Material LitMaterial(Color c)
@@ -558,21 +778,24 @@ namespace MedalPusher
             flashTime = flashSeconds;
         }
 
-        /// <summary>前に光の輪（衝撃波）を広げる。</summary>
-        public void Shockwave(Color color)
+        /// <summary>前に光の輪（衝撃波）を広げる。size は広がる大きさの倍率（1 でいつもの大きさ）。</summary>
+        public void Shockwave(Color color, float size = 1f)
         {
             for (int i = 0; i < shockRings.Count; i++)
             {
-                shockTimes[i] = -0.12f * i;   // 2つ目は少し遅れて広がる
+                shockTimes[i] = -0.12f * i * size;   // 2つ目は少し遅れて広がる
+                shockSizes[i] = size;
                 shockMats[i].color = new Color(color.r, color.g, color.b, 0f);
                 shockRings[i].gameObject.SetActive(true);
             }
         }
 
         /// <summary>スピーカーの前に文字を浮かべる（「+30」など）。</summary>
-        public void ShowPopup(string text, Color color)
+        public void ShowPopup(string text, Color color) => ShowPopup(text, color, PopMotion.Float, color);
+
+        void ShowPopup(string text, Color color, PopMotion motion, Color color2)
         {
-            if (!Application.isPlaying || popups.Count == 0) return;
+            if (!Application.isPlaying || popups.Count == 0 || string.IsNullOrEmpty(text)) return;
             Popup p = popups[0];
             foreach (var q in popups)
             {
@@ -581,6 +804,8 @@ namespace MedalPusher
             }
             p.time = 0f;
             p.color = color;
+            p.color2 = color2;
+            p.motion = motion;
             p.drift = Random.Range(-0.12f, 0.12f);
             p.text.text = text;
             p.text.color = color;
@@ -731,7 +956,10 @@ namespace MedalPusher
                 activeRecord = active;
                 if (active != null)
                 {
-                    recordColor = RecordColor(active);
+                    Color[] pal = PaletteOf(active);
+                    recordColor = pal[0];
+                    recordColor2 = pal[1];
+                    appliedBodyTint = -1f;   // 色が変わったので、本体の色を塗り直す
                     SetFxStyle(StyleOf(active));
                 }
             }
@@ -774,7 +1002,7 @@ namespace MedalPusher
                 float on = Mathf.Clamp01(level * MeterBars * 1.1f - i);
                 float h = Mathf.Lerp(0.02f, 0.11f, on);
                 bars[i].transform.localScale = new Vector3((W - 0.16f) / MeterBars * 0.7f, h, 0.05f);
-                Color c = i >= MeterBars - 2 ? peakColor : baseCol;
+                Color c = i >= MeterBars - 2 ? Color.Lerp(peakColor, recordColor2, recordTint) : baseCol;
                 barMats[i].color = Color.Lerp(c * 0.2f, c, Mathf.Max(on, 0.15f));
             }
 
@@ -805,6 +1033,7 @@ namespace MedalPusher
                 }
             }
 
+            ApplyBodyColors();
             UpdateShockwaves(dt);
             UpdatePopups(dt);
         }
@@ -817,7 +1046,7 @@ namespace MedalPusher
                 if (!shockRings[i].gameObject.activeSelf) continue;
                 shockTimes[i] += dt;
                 float t = Mathf.Clamp01(shockTimes[i] / 0.6f);
-                float s = 1f + t * 2.6f;
+                float s = 1f + t * 2.6f * shockSizes[i];
                 shockRings[i].localScale = new Vector3(s, s, 1f);
                 Color c = shockMats[i].color;
                 c.a = shockTimes[i] < 0f ? 0f : (1f - t) * 0.9f;
@@ -833,17 +1062,44 @@ namespace MedalPusher
             {
                 if (p.time < 0f) continue;
                 p.time += dt;
-                float t = p.time / 0.9f;
+                float life = p.motion == PopMotion.Slam ? 0.75f : p.motion == PopMotion.Sway ? 1.2f : 0.9f;
+                float t = p.time / life;
                 if (t >= 1f)
                 {
                     p.time = -1f;
                     p.t.gameObject.SetActive(false);
                     continue;
                 }
-                p.t.localPosition = new Vector3(p.drift, H + 0.12f + t * 0.35f, -0.08f);
+                Vector3 pos = new Vector3(p.drift, H + 0.12f + t * 0.35f, -0.08f);
                 float pop = 1f + 0.4f * Mathf.Max(0f, 1f - t * 5f);
-                p.t.localScale = new Vector3(pop, pop, 1f);
                 Color c = p.color;
+                switch (p.motion)
+                {
+                    case PopMotion.Shake:     // ふるえる
+                        pos.x += Mathf.Sin(p.time * 90f) * 0.025f * (1f - t);
+                        pop = 1f + 0.6f * Mathf.Max(0f, 1f - t * 4f);
+                        break;
+                    case PopMotion.Slam:      // ドンと大きく出て縮む
+                        pop = Mathf.Lerp(2.2f, 1f, 1f - (1f - Mathf.Clamp01(t * 5f)) * (1f - Mathf.Clamp01(t * 5f)));
+                        pos.y = H + 0.18f + t * 0.12f;
+                        break;
+                    case PopMotion.Sway:      // ゆらゆら
+                        pos.x += Mathf.Sin(p.time * 6f) * 0.06f;
+                        pos.y = H + 0.1f + t * 0.3f;
+                        break;
+                    case PopMotion.Bounce:    // はねる
+                        pos.y = H + 0.12f + Mathf.Abs(Mathf.Sin(t * Mathf.PI * 2.5f)) * 0.2f * (1f - t) + t * 0.08f;
+                        break;
+                    case PopMotion.Twinkle:   // 2色でまたたく
+                        pop += 0.2f * Mathf.Sin(p.time * 25f) * (1f - t);
+                        c = Color.Lerp(p.color, p.color2, 0.5f + 0.5f * Mathf.Sin(p.time * 20f));
+                        break;
+                    case PopMotion.Rainbow:   // 虹色に変わり続ける
+                        c = Color.HSVToRGB(Mathf.Repeat(p.time * 1.5f + p.drift * 3f, 1f), 0.65f, 1f);
+                        break;
+                }
+                p.t.localPosition = pos;
+                p.t.localScale = new Vector3(pop, pop, 1f);
                 c.a = t < 0.6f ? 1f : 1f - (t - 0.6f) / 0.4f;
                 p.text.color = c;
             }
