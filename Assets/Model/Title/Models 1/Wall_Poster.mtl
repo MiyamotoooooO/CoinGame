@@ -1,0 +1,54 @@
+newmtl Wall
+Kd 0.130 0.110 0.220
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl WallPanel
+Kd 0.170 0.140 0.280
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl Trim
+Kd 0.060 0.060 0.080
+Ks 0.400 0.400 0.400
+Ns 206
+d 1.0
+
+newmtl NeonCyan
+Kd 0.210 0.840 1.000
+Ks 0.600 0.600 0.600
+Ns 304
+d 1.0
+
+newmtl NeonPink
+Kd 1.000 0.240 0.550
+Ks 0.600 0.600 0.600
+Ns 304
+d 1.0
+
+newmtl PosterA
+Kd 0.980 0.480 0.100
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl PosterB
+Kd 0.480 0.250 0.890
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl PosterInk
+Kd 0.100 0.080 0.200
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
+newmtl PosterC
+Kd 0.210 0.840 1.000
+Ks 0.200 0.200 0.200
+Ns 108
+d 1.0
+
