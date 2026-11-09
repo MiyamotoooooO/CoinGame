@@ -360,6 +360,15 @@ namespace MedalPusher
         }
 
         /// <summary>
+        /// グルーヴゲージを足す（マイナスで減らす。0〜gaugeMax に収める）。
+        /// レコードごとのスクリプト（FolkRecord など）の報酬「ゲージ+10」などで使う。
+        /// </summary>
+        public void AddGauge(float amount)
+        {
+            Gauge = Mathf.Clamp(Gauge + amount, 0f, gaugeMax);
+        }
+
+        /// <summary>
         /// ゲームのポイントを足す（マイナスで減らす。ラウンドのポイントは0未満にはしない）。
         /// MedalPusherGame.AddPoints を通すので、エリアのポイント（ショップで使える）にも入る。
         /// </summary>
@@ -432,6 +441,8 @@ namespace MedalPusher
                 case "MultEveryN":
                 case "PusherSpeed":
                 case "GaugeModifier":
+                // Scripted：効果はレコードごとのスクリプト（FolkRecord など）が受け持つ。ここでは何もしない
+                case "Scripted":
                     return true;
                 case "AddPerDropIf":
                     return record.key == "Blues" || record.key == "Idol" || record.key == "Enka";

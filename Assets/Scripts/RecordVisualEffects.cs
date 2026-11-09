@@ -238,7 +238,8 @@ namespace MedalPusher
             Vector3 p = medal != null ? medal.transform.position : Vector3.zero;
 
             if (type == DropZoneType.Center && IsPlaying(pops.recordKey)) PopsDrop(p, effects.Current);
-            if (type == DropZoneType.Side && IsPlaying(folk.recordKey)) FolkDrop(p);
+            // フォークは FolkRecord（楽譜すごろく）が受け持つので、FolkRecord がある時は前の仮の演出を出さない
+            if (type == DropZoneType.Side && IsPlaying(folk.recordKey) && FolkRecord.Instance == null) FolkDrop(p);
         }
 
         void Update()
@@ -393,7 +394,7 @@ namespace MedalPusher
 
         void UpdateFolk()
         {
-            bool on = IsPlaying(folk.recordKey);
+            bool on = IsPlaying(folk.recordKey) && FolkRecord.Instance == null;
             folkWeight = Mathf.MoveTowards(folkWeight, on ? 1f : 0f, Time.deltaTime * 4f);
             if (folkWeight > 0f) EnsureFolkRims();
 
