@@ -130,7 +130,12 @@ namespace MedalPusher
         Font font;          // 日本語用
         Font displayFont;   // 英字・数字用
         Sprite whiteSprite, circleSprite, ringSprite, recordSprite, stripeSprite;
-        Sprite pillSprite, pillRingSprite, triangleSprite, trapezoidSprite, coinSprite, backgroundSprite;
+        Sprite pillSprite, pillRingSprite, triangleSprite, trapezoidSprite, coinSprite, pointCoinSprite, backgroundSprite;
+
+        /// <summary>ポイントの印（緑のメダル）。画面の右上の表示（PointsHud）やショップで使う</summary>
+        public Sprite PointCoinSprite => pointCoinSprite;
+        /// <summary>メダルの印（金色のメダル）。画面の左上の表示（PointsHud）で使う</summary>
+        public Sprite MedalCoinSprite => coinSprite;
 
         // 上の帯
         RectTransform topRoot, tabRoot, lineLeft, lineRight, smallRecord;
@@ -152,6 +157,8 @@ namespace MedalPusher
 
         // 左下の札
         RectTransform pillsRoot;
+        RectTransform medalsBox;      // 所持メダルと仕切りの線の入れ物（プレイ中にまとめて大きくする）
+        RectTransform topLeftRt, iconsRt;
         readonly List<CanvasGroup> pillGroups = new List<CanvasGroup>();
         readonly List<RectTransform> pillRoots = new List<RectTransform>();
         Text pointsValue, specialValue;
@@ -480,6 +487,11 @@ namespace MedalPusher
             spread = half / s - half;
             foreach (var item in spreadItems)
                 item.rt.anchoredPosition = new Vector2(item.baseX + item.side * spread, item.rt.anchoredPosition.y);
+            ApplyPlayBoost();
+            if (pillsRoot != null && pillsRoot.gameObject.activeSelf != game.monitor.showPointPills)
+                pillsRoot.gameObject.SetActive(game.monitor.showPointPills); // ふだんは画面の右上（PointsHud）に出すので、モニターには出さない
+            if (medalsBox != null && medalsBox.gameObject.activeSelf != game.monitor.showMedalsOnMonitor)
+                medalsBox.gameObject.SetActive(game.monitor.showMedalsOnMonitor); // ふだんは画面の左上（PointsHud）に出すので、モニターには出さない
             SetTopLines(lineT);
 
             // 画面の上の端から、縮めた上の帯の下までを、上の帯の色で塗る
@@ -487,6 +499,58 @@ namespace MedalPusher
             topBarFull.rectTransform.sizeDelta = new Vector2(CanvasW, h);
             topBarFull.rectTransform.anchoredPosition = new Vector2(CanvasW * 0.5f, -h * 0.5f);
             topBarFull.color = WithAlpha(TopBarColor, topGroup != null ? topGroup.alpha : 1f);
+        }
+
+        // ---- プレイ中だけ、小さくて見えにくい物を大きくする ----
+
+        const float PillsLeft = 80f, PillsBottom = 854f;    // 左下の札の、左下の角
+        const float MedalsRight = 1470f, MedalsBottom = 875f; // 右下の所持メダルの、右下の角
+
+        /// <summary>
+        /// プレイ中（カメラが引いて、モニターが小さく見える時）は、左下の札・右下の所持メダル・上の帯を大きくする。
+        /// 倍率は設定の playPillScale・playMedalScale・playTopScale。カメラが寄っている時（layoutBlend 0）は元の大きさ。
+        /// 札とメダルは画面の角を動かさずに、内側へ大きくする。
+        /// </summary>
+        void ApplyPlayBoost()
+        {
+            var m = game.monitor;
+            float b = Mathf.Clamp01(layoutBlend);
+            float kp = Mathf.Lerp(1f, Mathf.Max(1f, m.playPillScale), b);
+            float km = Mathf.Lerp(1f, Mathf.Max(1f, m.playMedalScale), b);
+            float kt = Mathf.Lerp(1f, Mathf.Max(1f, m.playTopScale), b);
+
+            if (pillsRoot != null) ScaleAbout(pillsRoot, kp, PillsLeft, PillsBottom, -spread);
+            if (medalsBox != null) ScaleAbout(medalsBox, km, MedalsRight, MedalsBottom, spread);
+
+            // 上の帯：左は左の端、右は右の端を動かさずに大きくする（上下は帯のまん中のまま）
+            if (topLeftRt != null)
+            {
+                topLeftRt.localScale = new Vector3(kt, kt, 1f);
+                var p = topLeftRt.anchoredPosition;
+                topLeftRt.anchoredPosition = new Vector2(p.x + (kt - 1f) * topLeftRt.sizeDelta.x * 0.5f, p.y);
+            }
+            if (iconsRt != null)
+            {
+                iconsRt.localScale = new Vector3(kt, kt, 1f);
+                var p = iconsRt.anchoredPosition;
+                iconsRt.anchoredPosition = new Vector2(p.x - (kt - 1f) * iconsRt.sizeDelta.x * 0.5f, p.y);
+            }
+            // タブ：上のふちを動かさずに大きくする。始まりの演出でタブが下りてくる間（layoutBlend 0）はさわらない
+            if (tabRoot != null)
+            {
+                tabRoot.localScale = new Vector3(kt, kt, 1f);
+                if (layoutBlend > 0.0001f)
+                    tabRoot.anchoredPosition = new Vector2(CanvasW * 0.5f, -(TabTop + TabH * 0.5f) - (kt - 1f) * (TabH + 6f) * 0.5f);
+            }
+        }
+
+        /// <summary>
+        /// 中身の左上に置いた入れ物（大きさ 0）を、点 (ax, ay) を動かさずに k 倍にする。dx は左右に広げた量。
+        /// </summary>
+        static void ScaleAbout(RectTransform rt, float k, float ax, float ay, float dx)
+        {
+            rt.localScale = new Vector3(k, k, 1f);
+            rt.anchoredPosition = new Vector2(dx + (1f - k) * ax, -(1f - k) * ay);
         }
 
         // ---- 上の帯 ----
@@ -509,6 +573,7 @@ namespace MedalPusher
             // 左：レコードのマークとラウンド名
             var left = NewRect("TopLeft", topRoot, 300f, TopH * 0.5f, 560f, TopH);
             Spread(left, -1f);
+            topLeftRt = left;
             topLeftGroup = left.gameObject.AddComponent<CanvasGroup>();
             smallRecord = NewImage("RecordIcon", left, 70f, TopH * 0.5f, 60f, 60f, Color.white, recordSprite).rectTransform;
             roundNameText = Label("RoundName", left, 118f, TopH * 0.5f, 430f, 50f, "", 36, Fg, TextAnchor.MiddleLeft, font, FontStyle.Bold);
@@ -516,6 +581,7 @@ namespace MedalPusher
             // 右：再生ボタン風の飾り（▶ は、レコードを流している間だけ明るい）
             var icons = NewRect("Icons", topRoot, 1330f, TopH * 0.5f, 300f, TopH);
             Spread(icons, 1f);
+            iconsRt = icons;
             iconsGroup = icons.gameObject.AddComponent<CanvasGroup>();
             playIcon = NewImage("Play", icons, 60f, TopH * 0.5f, 40f, 44f, Fg, triangleSprite);
             NewImage("PauseL", icons, 142f, TopH * 0.5f, 12f, 40f, Fg, pillSprite).type = Image.Type.Sliced;
@@ -618,9 +684,11 @@ namespace MedalPusher
 
         void BuildMedals(RectTransform root)
         {
-            Spread(NewImage("MedalDivider", root, 1185f, 765f, 3f, 220f, Line).rectTransform, 1f);
-            medalRoot = NewRect("Medals", root, 1330f, 765f, 280f, 220f);
-            Spread(medalRoot, 1f);
+            // 仕切りの線と所持メダルを、大きさ 0 の入れ物（中身の左上）に入れて、まとめて右へ広げる・大きくする
+            medalsBox = NewRect("MedalsBox", root, 0f, 0f, 0f, 0f);
+            Spread(medalsBox, 1f);
+            NewImage("MedalDivider", medalsBox, 1185f, 765f, 3f, 220f, Line);
+            medalRoot = NewRect("Medals", medalsBox, 1330f, 765f, 280f, 220f);
             medalGroup = medalRoot.gameObject.AddComponent<CanvasGroup>();
             Label("Label", medalRoot, 140f, 30f, 280f, 34f, "所持メダル", 26, Fg, TextAnchor.MiddleCenter, font, FontStyle.Bold);
             NewImage("Coin", medalRoot, 62f, 125f, 84f, 84f, Color.white, coinSprite);
@@ -1254,6 +1322,28 @@ namespace MedalPusher
                 Color dark = new Color(0.78f, 0.45f, 0.08f);
                 Color c = r > 0.86f ? dark : (r > 0.78f ? gold * 1.08f : Color.Lerp(gold, dark, 0.25f + 0.25f * (r / 0.78f)));
                 if (r < 0.78f && Mathf.Abs(x) < 0.12f && Mathf.Abs(y) < 0.42f) c = dark;   // まん中の印
+                float light = Mathf.Clamp01(1f - Radius(x + 0.35f, y - 0.35f) / 0.5f) * 0.35f;
+                c = Color.Lerp(c, Color.white, light);
+                c.a = a;
+                return c;
+            });
+
+            // ポイントの印（緑のメダル。まん中に P の形の印）
+            pointCoinSprite = MakeSprite(256, (x, y) =>
+            {
+                float r = Radius(x, y);
+                float a = Edge(1f - r, 256);
+                Color green = new Color(0.36f, 0.88f, 0.48f);
+                Color dark = new Color(0.10f, 0.52f, 0.24f);
+                Color c = r > 0.86f ? dark : (r > 0.78f ? green * 1.08f : Color.Lerp(green, dark, 0.25f + 0.25f * (r / 0.78f)));
+                if (r < 0.78f)
+                {
+                    // P：縦の棒と、右上の輪
+                    bool stem = x > -0.30f && x < -0.12f && Mathf.Abs(y) < 0.46f;
+                    float br = Radius(x + 0.02f, y - 0.18f);
+                    bool bowl = br < 0.30f && br > 0.13f && x > -0.14f;
+                    if (stem || bowl) c = dark;
+                }
                 float light = Mathf.Clamp01(1f - Radius(x + 0.35f, y - 0.35f) / 0.5f) * 0.35f;
                 c = Color.Lerp(c, Color.white, light);
                 c.a = a;
