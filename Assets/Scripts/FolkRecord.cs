@@ -161,7 +161,16 @@ namespace MedalPusher
         const float StaffGap = 24f;       // 線の間
         const float SquareStep = 72f;     // マスの間
         const float PieceX = 170f;        // コマを置く横の位置（楽譜の窓の中）
-        const float ViewX = 20f, ViewW = 760f;
+        const float ViewTop = 64f;        // 楽譜の窓の上（中身の座標）
+        const float ViewH = 200f;         // 楽譜の窓の高さ（大きくする前）
+        const float ViewScale = 1.35f;    // 楽譜の窓を大きく見せる倍率
+        const float ViewLeft = 24f;       // 楽譜の窓の左（中身の座標）
+        const float StringsTitleY = 368f; // 「弦」の見出し
+        const float BoxY = 422f;          // 弦の箱の上下の中心
+        const float BoxH = 70f;
+        const float BoxGap = 10f;
+        const float StatusY = 540f;       // 一番下の案内
+        float bodyW = 800f;               // 中身の横の幅（画面を出した時に決まる）
         static readonly Color ScreenBg = new Color32(0x23, 0x25, 0x2f, 0xff);
         static readonly Color Orange = new Color32(0xff, 0x7a, 0x1a, 0xff);
         static readonly Color Lime = new Color32(0x9c, 0xf0, 0x5a, 0xff);
@@ -364,14 +373,14 @@ namespace MedalPusher
                     break;
             }
             PlaySound(rewardSound, ref madeReward, () => MakeChord(new[] { 523.25f, 659.25f, 783.99f }, 1.0f));
-            Pop(reward.type == FolkRewardType.DoubleNext ? "次の1枚 ×2" : reward.Label, RewardColor(reward.type), new Vector2(PieceX + ViewX, 60f));
+            Pop(reward.type == FolkRewardType.DoubleNext ? "次の1枚 ×2" : reward.Label, RewardColor(reward.type), new Vector2(ViewLeft + PieceX * ViewScale, ViewTop + 40f));
         }
 
         void Complete()
         {
             completeTimer = completeSeconds;
             PlaySound(completeSound, ref madeComplete, MakeStrum);
-            Pop("1曲完成！", Orange, new Vector2(MonitorDisplay.RecordBodyW * 0.5f, 150f));
+            Pop("1曲完成！", Orange, new Vector2(bodyW * 0.5f, ViewTop + ViewH * ViewScale * 0.5f));
             for (int i = 0; i < stringShake.Length; i++) stringShake[i] = 1f;
             songNumber++;
             songLength = Mathf.Min(maxSquares, songLength + growPerSong);
@@ -539,16 +548,18 @@ namespace MedalPusher
             if (monitor == null) return;
             screen = monitor.ShowRecordScreen(recordKey, "FOLK", "弾き語りの楽譜すごろく");
             if (screen == null) return;
-            float W = MonitorDisplay.RecordBodyW, H = MonitorDisplay.RecordBodyH;
+            float W = bodyW = monitor.RecordBodyW;
 
-            songText = monitor.ScreenLabel(screen, "Song", 24f, 30f, 300f, 30f, "", 20, Ink, TextAnchor.MiddleLeft);
-            progressText = monitor.ScreenLabel(screen, "Progress", W - 24f, 30f, 300f, 30f, "", 22, Ink, TextAnchor.MiddleRight, true);
+            songText = monitor.ScreenLabel(screen, "Song", 24f, 28f, 500f, 36f, "", 26, Ink, TextAnchor.MiddleLeft);
+            progressText = monitor.ScreenLabel(screen, "Progress", W - 24f, 28f, 300f, 40f, "", 34, Ink, TextAnchor.MiddleRight, true);
 
-            // 楽譜の窓（五線と、流れていく音符）
-            var view = monitor.ScreenImage(screen, "StaffView", ViewX + ViewW * 0.5f, 160f, ViewW, 200f, ScreenBg);
+            // 楽譜の窓（五線と、流れていく音符）。中身の幅いっぱいに、ViewScale 倍で大きく見せる
+            float viewW = (W - 48f) / ViewScale;
+            var view = monitor.ScreenImage(screen, "StaffView", W * 0.5f, ViewTop + ViewH * ViewScale * 0.5f, viewW, ViewH, ScreenBg);
+            view.rectTransform.localScale = new Vector3(ViewScale, ViewScale, 1f);
             view.gameObject.AddComponent<RectMask2D>();
             for (int i = 0; i < 5; i++)
-                monitor.ScreenImage(view.rectTransform, $"Line{i + 1}", ViewW * 0.5f, StaffTop - 60f + i * StaffGap, ViewW, 2f, new Color(1f, 1f, 1f, 0.3f));
+                monitor.ScreenImage(view.rectTransform, $"Line{i + 1}", viewW * 0.5f, StaffTop - 60f + i * StaffGap, viewW, 2f, new Color(1f, 1f, 1f, 0.3f));
             sheet = monitor.ScreenGroup(view.rectTransform, "Sheet", 0f, 0f, 0f, 0f);
             BuildSheet();
 
@@ -564,22 +575,22 @@ namespace MedalPusher
                 monitor.ScreenLabel(piece, "Mark", 22f, 22f, 44f, 44f, "♪", 28, Color.white);
             }
 
-            // 下：6本の弦（盤面と同じ並び）と、狙いの弦
-            monitor.ScreenLabel(screen, "StringsTitle", 24f, 286f, 200f, 26f, "弦（盤面の手前のふち）", 16, Mute, TextAnchor.MiddleLeft);
+            // その下：6本の弦（盤面と同じ並び）と、狙いの弦。中身の幅いっぱいに並べる
+            monitor.ScreenLabel(screen, "StringsTitle", 24f, StringsTitleY, 400f, 30f, "弦（盤面の手前のふち）", 20, Mute, TextAnchor.MiddleLeft);
             boxes.Clear();
             boxLabels.Clear();
-            float bw = 62f, gap = 6f;
             for (int i = 0; i < StringCount; i++)
             {
-                float cx = 24f + bw * 0.5f + i * (bw + gap);
-                boxes.Add(monitor.ScreenImage(screen, $"Box{i + 1}", cx, 330f, bw, 50f, new Color(1f, 1f, 1f, 0.12f), MonitorDisplay.ScreenShape.Pill));
-                boxLabels.Add(monitor.ScreenLabel(screen, $"BoxLabel{i + 1}", cx, 330f, bw, 50f, "", 14, Ink));
+                var c = StringBoxCenter(i);
+                float bw = BoxWidth();
+                boxes.Add(monitor.ScreenImage(screen, $"Box{i + 1}", c.x, c.y, bw, BoxH, new Color(1f, 1f, 1f, 0.12f), MonitorDisplay.ScreenShape.Pill));
+                boxLabels.Add(monitor.ScreenLabel(screen, $"BoxLabel{i + 1}", c.x, c.y, bw, BoxH, "", 22, Ink));
             }
 
-            // 右下：今の状態（ルールの案内・1曲完成の残り秒数）と、次の1枚 ×2 の札
-            statusText = monitor.ScreenLabel(screen, "Status", W - 24f, 312f, 330f, 40f, "", 18, Ink, TextAnchor.MiddleRight);
-            doubleBadge = monitor.ScreenImage(screen, "Double", W - 24f - 80f, 352f, 160f, 30f, Orange, MonitorDisplay.ScreenShape.Pill);
-            monitor.ScreenLabel(doubleBadge.rectTransform, "Text", 80f, 15f, 160f, 30f, "次の1枚 ×2", 16, Color.white);
+            // 一番下：今の状態（ルールの案内・1曲完成の残り秒数）と、次の1枚 ×2 の札
+            statusText = monitor.ScreenLabel(screen, "Status", 24f, StatusY, W - 300f, 60f, "", 22, Ink, TextAnchor.MiddleLeft);
+            doubleBadge = monitor.ScreenImage(screen, "Double", W - 24f - 110f, StatusY, 220f, 44f, Orange, MonitorDisplay.ScreenShape.Pill);
+            monitor.ScreenLabel(doubleBadge.rectTransform, "Text", 110f, 22f, 220f, 44f, "次の1枚 ×2", 22, Color.white);
         }
 
         /// <summary>楽譜の音符（マス）を作り直す。</summary>
@@ -622,9 +633,12 @@ namespace MedalPusher
         /// <summary>弦の箱の中心（モニターの中身の座標。ポップの位置に使う）。</summary>
         Vector2 StringBoxCenter(int s)
         {
-            float bw = 62f, gap = 6f;
-            return new Vector2(24f + bw * 0.5f + s * (bw + gap), 330f);
+            float bw = BoxWidth();
+            return new Vector2(24f + bw * 0.5f + s * (bw + BoxGap), BoxY);
         }
+
+        /// <summary>弦の箱の横の幅（中身の幅いっぱいに6つ並べる）。</summary>
+        float BoxWidth() => (bodyW - 48f - BoxGap * (StringCount - 1)) / StringCount;
 
         void UpdateScreen()
         {

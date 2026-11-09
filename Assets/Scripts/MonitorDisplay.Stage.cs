@@ -353,7 +353,7 @@ namespace MedalPusher
             // ---- 天気予報（まん中の今のポイントと入れ替える。上の帯・札・レコードはそのまま） ----
             weatherAnim = Mathf.MoveTowards(weatherAnim, weatherOn ? 1f : 0f, Time.deltaTime * 4f);
             weatherGroup.alpha = weatherAnim;
-            normalLayerGroup.alpha = Mathf.Min(1f - weatherAnim, 1f - recordScreenAnim); // レコード用の画面の時も隠す
+            normalLayerGroup.alpha = 1f - weatherAnim; // レコード用の画面の時は、隠さずに空いている所へ動かす（MonitorDisplay.RecordScreen.cs）
             bool weatherVisible = weatherAnim > 0.001f;
             if (weatherLayer.gameObject.activeSelf != weatherVisible) weatherLayer.gameObject.SetActive(weatherVisible);
         }

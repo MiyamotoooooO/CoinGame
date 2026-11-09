@@ -237,7 +237,8 @@ namespace MedalPusher
             if (!IsScoring || effects.Current == null) return;
             Vector3 p = medal != null ? medal.transform.position : Vector3.zero;
 
-            if (type == DropZoneType.Center && IsPlaying(pops.recordKey)) PopsDrop(p, effects.Current);
+            // ポップスは PopsRecord（コール&レスポンス・ライブ）が受け持つので、PopsRecord がある時は前の仮の演出を出さない
+            if (type == DropZoneType.Center && IsPlaying(pops.recordKey) && PopsRecord.Instance == null) PopsDrop(p, effects.Current);
             // フォークは FolkRecord（楽譜すごろく）が受け持つので、FolkRecord がある時は前の仮の演出を出さない
             if (type == DropZoneType.Side && IsPlaying(folk.recordKey) && FolkRecord.Instance == null) FolkDrop(p);
         }
@@ -535,7 +536,8 @@ namespace MedalPusher
 
             // モニターのカウントダウン（残り投入数が値2以下の時）
             bool showCountdown = false;
-            if (on && IsScoring && game.Monitor != null)
+            // BluesRecord（ソロ）がある時は、カウントダウンを BluesRecord の画面に出すので、ここでは出さない（照明はそのまま）
+            if (on && IsScoring && game.Monitor != null && BluesRecord.Instance == null)
             {
                 int left = Mathf.Max(0, game.InsertLimit - game.InsertedThisRound);
                 int from = r.value2 > 0f ? Mathf.RoundToInt(r.value2) : 5;
