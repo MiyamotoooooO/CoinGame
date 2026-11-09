@@ -8,6 +8,8 @@ namespace MedalPusher
     ///
     /// ・いま流しているレコード（RecordAudioPlayer.CurrentRecord）に合わせて、レコードを回し、アームを下ろす
     /// ・流すレコードが替わると、アームを上げる → レコードの見た目を替える → アームを下ろす、の順に動く
+    /// ・再生中は、針（アーム）が曲の進みに合わせて少しずつ内側へ進み、レコードの1回転ごとに小さく揺れる
+    ///   曲を流しているだけの時（E キー）と、効果を発動している時（Q キー）で、別の値を使う（効果の時は大きく揺れる）
     /// ・レコードの見た目：ラベルに画像を貼る
     ///     Label Textures にそのレコードの画像があればそれ、無ければジャケット画像（RecordArtwork）、
     ///     どちらも無ければ系統の色で塗る
@@ -46,6 +48,20 @@ namespace MedalPusher
         [Tooltip("アームが動く秒数")]
         [Range(0.05f, 3f)] public float armMoveSeconds = 0.8f;
 
+        [Header("再生中の針の動き（曲を流しているだけの時）")]
+        [Tooltip("曲の始めから終わりまでに、針が内側へ進む角度（度）。0 で進まない")]
+        [Range(0f, 30f)] public float armTravel = 0f;
+        [Tooltip("レコードの1回転ごとに針が揺れる大きさ（度）。0 で揺れない")]
+        [Range(0f, 5f)] public float armWobble = 0.6f;
+
+        [Header("再生中の針の動き（効果を発動している時）")]
+        [Tooltip("効果の発動中に、針が内側へ進む角度（度）")]
+        [Range(0f, 30f)] public float effectArmTravel = 0f;
+        [Tooltip("効果の発動中に、針が揺れる大きさ（度）")]
+        [Range(0f, 5f)] public float effectArmWobble = 3.16f;
+        [Tooltip("曲の長さが分からない時（効果の無いレコードなど）に、内側へ進み切るまでの秒数")]
+        public float armTravelFallbackSeconds = 60f;
+
         [Header("見た目（ラベル）")]
         [Tooltip("ラベル専用の画像。ファイル名をレコードのキー（英名）にする（Pops.png など）。無いレコードはジャケット画像を使う")]
         public Texture2D[] labelTextures = new Texture2D[0];
@@ -70,6 +86,9 @@ namespace MedalPusher
         float spinAngle;
         float spinSpeed;              // いまの回る速さ（度/秒）
         float armAngle;
+        float armPlayOffset;          // 再生中の針の動き（armAngle に足す）
+        float playSeconds;            // 今のレコードを流し始めてからの秒数（曲の長さが分からない時用）
+        RecordEffectSystem effects;
         readonly List<Material> labelMaterials = new List<Material>();
         readonly Dictionary<string, Texture2D> textureByKey = new Dictionary<string, Texture2D>();
         readonly Dictionary<Material, Color> defaultLabelColors = new Dictionary<Material, Color>();
@@ -138,6 +157,7 @@ namespace MedalPusher
                 bool stopped = Mathf.Abs(spinSpeed) < 1f;
                 if (armUp && (stopped || Displayed == null))
                 {
+                    playSeconds = 0f;
                     Displayed = wanted;
                     ApplyAppearance(Displayed);
                     RecordChanged?.Invoke(Displayed);
@@ -157,6 +177,7 @@ namespace MedalPusher
             // アーム
             float armSpeed = Mathf.Abs(armPlayAngle - armRestAngle) / Mathf.Max(0.05f, armMoveSeconds);
             armAngle = Mathf.MoveTowards(armAngle, targetArm, armSpeed * Time.deltaTime);
+            UpdatePlayOffset(!changing && Displayed != null && Mathf.Approximately(armAngle, armPlayAngle));
             ApplyArm();
 
             // 回転
@@ -171,7 +192,37 @@ namespace MedalPusher
         void ApplyArm()
         {
             if (tonearm == null) return;
-            tonearm.localEulerAngles = new Vector3(armBaseEuler.x, armAngle, armBaseEuler.z);
+            tonearm.localEulerAngles = new Vector3(armBaseEuler.x, armAngle + armPlayOffset, armBaseEuler.z);
+        }
+
+        /// <summary>
+        /// 再生中の針の動き：曲の進みに合わせて内側へ少しずつ進み（armTravel）、
+        /// レコードの1回転ごとに小さく揺れる（armWobble）。針が下りている時だけ動き、それ以外はすっと 0 に戻る。
+        /// </summary>
+        void UpdatePlayOffset(bool playing)
+        {
+            float target = 0f;
+            if (playing)
+            {
+                playSeconds += Time.deltaTime;
+
+                // 効果を発動しているか（Q キー）。発動中なら、曲の進みはその残り時間から
+                if (effects == null) effects = FindFirstObjectByType<RecordEffectSystem>();
+                bool effectActive = effects != null && effects.Current != null && SameRecord(effects.Current, Displayed);
+                float progress;
+                if (effectActive && effects.CurrentDuration > 0f)
+                    progress = 1f - effects.Remaining / effects.CurrentDuration;
+                else
+                    progress = playSeconds / Mathf.Max(1f, armTravelFallbackSeconds);
+
+                float travel = effectActive ? effectArmTravel : armTravel;
+                float wobbleSize = effectActive ? effectArmWobble : armWobble;
+                float inward = Mathf.Sign(armPlayAngle - armRestAngle); // 休む位置から遠ざかる向き＝内側
+                float wobble = Mathf.Sin(spinAngle * Mathf.Deg2Rad) * wobbleSize;  // 1回転に1回
+                target = inward * travel * Mathf.Clamp01(progress) + wobble;
+            }
+            // 急に跳ばないよう、なめらかに近づける
+            armPlayOffset = Mathf.Lerp(armPlayOffset, target, 1f - Mathf.Exp(-8f * Time.deltaTime));
         }
 
         static bool SameRecord(RecordData a, RecordData b)

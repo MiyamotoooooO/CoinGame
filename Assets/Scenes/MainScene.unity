@@ -958,6 +958,9 @@ MonoBehaviour:
   armRestAngle: 0
   armPlayAngle: 40
   armMoveSeconds: 0.8
+  armTravel: 0
+  armWobble: 0.6
+  armTravelFallbackSeconds: 60
   labelTextures: []
   useJacketForLabel: 1
   colorByCategory: 1

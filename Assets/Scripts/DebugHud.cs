@@ -4,10 +4,16 @@ namespace MedalPusher
 {
     /// <summary>
     /// 試作用の画面表示（IMGUI）。左上: 状況と負荷、右: 物理の調整パネル（Tabで開閉）。
+    /// F2 キーで、デバッグ用の表示（左上の状況・右の調整パネル・下の操作の案内、
+    /// RecordEffectSystem と RecordAudioPlayer の確認用の表示）をまとめて消す・出す（Visible）。
+    /// 画面まん中の大きな文字（CLEAR! など）は消さない。
     /// UIパッケージに依存しないよう OnGUI で描いている。本番UIを作る時に差し替える前提。
     /// </summary>
     public class DebugHud : MonoBehaviour
     {
+        /// <summary>デバッグ用の表示を出すか（F2 キーで切り替え）。ほかの確認用の表示もこれを見る</summary>
+        public static bool Visible = true;
+
         MedalPusherGame game;
         bool showPanel = true;
         Vector2 scroll;
@@ -31,6 +37,7 @@ namespace MedalPusher
         public bool IsPointerOverPanel(Vector2 screenPos)
         {
             var p = new Vector2(screenPos.x, Screen.height - screenPos.y);
+            if (!Visible) return false;
             return statsRect.Contains(p) || (showPanel && panelRect.Contains(p));
         }
 
@@ -49,6 +56,7 @@ namespace MedalPusher
             }
 
             if (InputCompat.Down(GameKey.TogglePanel)) showPanel = !showPanel;
+            if (InputCompat.Down(GameKey.ToggleDebug)) Visible = !Visible;
         }
 
         void EnsureStyles()
@@ -66,6 +74,13 @@ namespace MedalPusher
         {
             if (game == null) return;
             EnsureStyles();
+
+            // F2 でデバッグ用の表示を消している時は、まん中の大きな文字だけ出す
+            if (!Visible)
+            {
+                if (game.State != GameState.Intro && game.State != GameState.Shop) DrawCenterMessage();
+                return;
+            }
 
             // 演出中は画面をすっきりさせ、スキップの案内だけ出す
             if (game.State == GameState.Intro)
@@ -154,7 +169,7 @@ namespace MedalPusher
         {
             const string help =
                 "左クリック/A/←: 左から発射   右クリック/D/→: 右から発射   Space: 左右交互（長押しで連続）   R: リセット   Enter: 次へ\n" +
-                "F1: メダル+50（負荷テスト）   P: プッシャー停止   C: カメラ切替   Tab: 調整パネル";
+                "F1: メダル+50（負荷テスト）   P: プッシャー停止   C: カメラ切替   Tab: 調整パネル   F2: デバッグ表示を消す";
             GUI.Label(new Rect(10, Screen.height - 46, Screen.width - 20, 44), help, smallStyle);
         }
 

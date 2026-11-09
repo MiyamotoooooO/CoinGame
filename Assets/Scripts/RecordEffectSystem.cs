@@ -600,7 +600,7 @@ namespace MedalPusher
 
         void OnGUI()
         {
-            if (!showDebugPanel || game == null) return;
+            if (!showDebugPanel || game == null || !DebugHud.Visible) return;   // F2 で消せる
             if (panelStyle == null)
             {
                 panelStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.UpperLeft, fontSize = 14, richText = true };
