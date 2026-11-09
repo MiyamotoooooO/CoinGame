@@ -1,0 +1,12 @@
+newmtl CardboardDark
+Kd 0.720 0.550 0.320
+Ks 0.100 0.100 0.100
+Ns 59
+d 1.0
+
+newmtl Cardboard
+Kd 0.850 0.680 0.420
+Ks 0.100 0.100 0.100
+Ns 59
+d 1.0
+
