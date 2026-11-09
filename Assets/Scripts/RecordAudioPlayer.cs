@@ -301,7 +301,7 @@ namespace MedalPusher
 
         void OnGUI()
         {
-            if (!showNowPlaying) return;
+            if (!showNowPlaying || !DebugHud.Visible) return;   // F2 で消せる
             if (labelStyle == null)
             {
                 labelStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.MiddleLeft, fontSize = 14 };
