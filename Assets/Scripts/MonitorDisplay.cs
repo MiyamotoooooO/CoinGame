@@ -453,6 +453,7 @@ namespace MedalPusher
             BuildScore(c);
             BuildNowPlaying(normalLayer); // MonitorDisplay.Stage.cs（天気予報の時は一緒に隠す）
             BuildWeather(c);              // MonitorDisplay.Stage.cs
+            BuildRecordScreen(c);         // レコード用の画面（MonitorDisplay.RecordScreen.cs）
             BuildPills(c);
             BuildMedals(c);
             BuildTopBar(c);
@@ -972,6 +973,7 @@ namespace MedalPusher
             UpdateEqualizer();
             UpdateStatus();
             UpdateStage();   // MonitorDisplay.Stage.cs
+            UpdateRecordScreen(); // MonitorDisplay.RecordScreen.cs
             UpdateEffects(); // MonitorDisplay.Effects.cs
             UpdateShop();    // MonitorDisplay.Shop.cs
         }
