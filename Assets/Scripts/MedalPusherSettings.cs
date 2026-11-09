@@ -212,6 +212,16 @@ namespace MedalPusher
         [Tooltip("プレイ中のカメラでモニターの上が切れる分（画面の座標 0〜900 の、上からの量）。" +
                  "中身はこれより下に収まるように縮めて下に寄せる。0 で画面いっぱい")]
         [Range(0f, 450f)] public float contentTop = 260f;
+        [Tooltip("プレイ中（カメラが引いている時）だけ、左下の所持ポイント・特殊ポイントを大きくする倍率。左下の角を動かさずに大きくする")]
+        [Range(1f, 2f)] public float playPillScale = 1.4f;
+        [Tooltip("プレイ中だけ、右下の所持メダルを大きくする倍率。右下の角を動かさずに大きくする")]
+        [Range(1f, 2f)] public float playMedalScale = 1.4f;
+        [Tooltip("プレイ中だけ、上の帯のラウンド名・右の飾り・まん中のタブを大きくする倍率")]
+        [Range(1f, 1.6f)] public float playTopScale = 1.2f;
+        [Tooltip("モニターの左下に、所持ポイント・特殊ポイントの札を出す（オフなら出さない。画面の右上の表示 PointsHud を使う）")]
+        public bool showPointPills = false;
+        [Tooltip("モニターの右下に、所持メダルを出す（オフなら出さない。画面の左上の表示 PointsHud を使う）")]
+        public bool showMedalsOnMonitor = false;
         [Tooltip("映像が左右反転して見える時にオン")]
         public bool flipX;
         [Tooltip("映像が上下反転して見える時にオン")]

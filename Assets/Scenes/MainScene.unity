@@ -469,7 +469,7 @@ MonoBehaviour:
     screenObjectName: MonitorScreen
     mascot: {fileID: 0}
     resolutionWidth: 1500
-    contentTop: 260
+    contentTop: 165
     flipX: 0
     flipY: 0
     introSpeed: 1

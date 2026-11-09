@@ -30,7 +30,7 @@ namespace MedalPusher
         static readonly Color CardBottom = new Color32(0x2a, 0x5c, 0xc2, 0xff);
         static readonly Color CardStrip = new Color32(0xec, 0xee, 0xf3, 0xff);
         static readonly Color CardEmpty = new Color32(0x3a, 0x3d, 0x47, 0xff);
-        static readonly Color PointColor = new Color32(0xff, 0xd2, 0x3f, 0xff);
+        static readonly Color PointColor = new Color32(0x5c, 0xe0, 0x7a, 0xff);   // ポイントは緑（画面の右上の表示と同じ）
         static readonly Color SpecialColor = new Color32(0x38, 0xc8, 0xff, 0xff);
         static readonly Color BackColor = new Color32(0xff, 0x45, 0x45, 0xff);
         static readonly Color ShortColor = new Color32(0xff, 0x70, 0x70, 0xff); // ポイント不足
@@ -241,7 +241,7 @@ namespace MedalPusher
             bg.type = Image.Type.Sliced;
             if (coin)
             {
-                NewImage("Icon", bg.rectTransform, w - 38f, h * 0.5f, 44f, 44f, Color.white, coinSprite);
+                NewImage("Icon", bg.rectTransform, w - 38f, h * 0.5f, 44f, 44f, Color.white, pointCoinSprite);
             }
             else
             {
@@ -337,7 +337,7 @@ namespace MedalPusher
 
             // 値段の段（y 220〜256）
             NewImage("PriceBg", c.root, mid, 238f, w, 36f, ShopDark);
-            c.priceIcon = NewImage("PriceIcon", c.root, 28f, 238f, 24f, 24f, Color.white, coinSprite);
+            c.priceIcon = NewImage("PriceIcon", c.root, 28f, 238f, 24f, 24f, Color.white, pointCoinSprite);
             c.price = Label("Price", c.root, w - 14f, 238f, w - 50f, 32f, "", 22, Fg, TextAnchor.MiddleRight, displayFont, FontStyle.Bold);
 
             if (index < RecordShop.OfferCount) c.onClick = () => OnBuy(index);
