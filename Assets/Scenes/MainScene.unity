@@ -372,7 +372,7 @@ MonoBehaviour:
     holeTopY: -0.28560004
     holeBottomY: -0.55692
     holeDepth: 0.30702004
-    cameraPosition: {x: 0, y: 1.4786942, z: -2.282658}
+    cameraPosition: {x: 0, y: 1.5936942, z: -2.651658}
     cameraRotation: {x: 17.25, y: 0, z: 0}
     cameraFieldOfView: 64
     cameraLensDistortion: 0.3
@@ -440,12 +440,27 @@ MonoBehaviour:
       thumbnail: {fileID: 0}
       placeholderColor: {r: 0.2, g: 0.45, b: 0.5, a: 1}
     - title: "\u30E9\u30A6\u30F3\u30C92\uFF08\u4EEE\uFF09"
-      quota: 200
+      quota: 180
       isBoss: 0
       thumbnail: {fileID: 0}
       placeholderColor: {r: 0.25, g: 0.5, b: 0.3, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C93\uFF08\u4EEE\uFF09"
+      quota: 220
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.45, g: 0.5, b: 0.25, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C94\uFF08\u4EEE\uFF09"
+      quota: 260
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.55, g: 0.42, b: 0.2, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C95\uFF08\u4EEE\uFF09"
+      quota: 310
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.5, g: 0.3, b: 0.45, a: 1}
     - title: "\u30DC\u30B9\uFF08\u4EEE\uFF09"
-      quota: 300
+      quota: 450
       isBoss: 1
       thumbnail: {fileID: 0}
       placeholderColor: {r: 0.6, g: 0.15, b: 0.15, a: 1}
@@ -960,6 +975,8 @@ MonoBehaviour:
   armMoveSeconds: 0.8
   armTravel: 0
   armWobble: 0.6
+  effectArmTravel: 0
+  effectArmWobble: 3.16
   armTravelFallbackSeconds: 60
   labelTextures: []
   useJacketForLabel: 1
