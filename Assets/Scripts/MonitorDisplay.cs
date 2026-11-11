@@ -466,6 +466,7 @@ namespace MedalPusher
             BuildTopBar(c);
             BuildStatus(c);
             BuildEffectLayer(c);          // レコードの演出の文字（MonitorDisplay.Effects.cs）
+            BuildBoss(c);                 // ボス戦の表示（MonitorDisplay.Boss.cs）。いちばん上に出す
             ApplyContentLayout();
 
             BuildShopPage(root);    // ショップの画面（MonitorDisplay.Shop.cs）。普段は隠しておく
@@ -1043,6 +1044,7 @@ namespace MedalPusher
             UpdateStage();   // MonitorDisplay.Stage.cs
             UpdateRecordScreen(); // MonitorDisplay.RecordScreen.cs
             UpdateEffects(); // MonitorDisplay.Effects.cs
+            UpdateBoss();    // MonitorDisplay.Boss.cs
             UpdateShop();    // MonitorDisplay.Shop.cs
         }
 
