@@ -7,13 +7,13 @@ public class TitleManager : MonoBehaviour
 
     public void ContinueGame()
     {
-        SceneManager.LoadScene("MainScene");
+        SceneManager.LoadScene("TestScene");
     }
 
     public void newGame()
     {
         saveManager.DeleteSave();
 
-        SceneManager.LoadScene("MainScene");
+        SceneManager.LoadScene("TestScene");
     }
 }
