@@ -110,6 +110,9 @@ namespace MedalPusher
             Canvas canvas = canvasGo.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100;
+            MovieDotFilter dot = root.AddComponent<MovieDotFilter>();   // ゲームと同じドットのフィルターをかける
+            dot.targetCanvas = canvas;
+            dot.screenMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/ArcadeFX/ArcadeScreen.mat");
             CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(W, H);

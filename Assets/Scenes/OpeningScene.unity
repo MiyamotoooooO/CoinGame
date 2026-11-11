@@ -6024,6 +6024,7 @@ GameObject:
   - component: {fileID: 1572250304}
   - component: {fileID: 1572250303}
   - component: {fileID: 1572250302}
+  - component: {fileID: 1572250306}
   m_Layer: 0
   m_Name: OpeningMovie
   m_TagString: Untagged
@@ -6317,6 +6318,7 @@ MonoBehaviour:
   logoTime: 1
   logoSlamSeconds: 0.25
   roundTextTime: 2.6
+  showRoundText: 0
   flashStrength: 0.85
   shakeStrength: 18
   cutDipSeconds: 0.18
@@ -7068,6 +7070,23 @@ Transform:
   - {fileID: 1520570804}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1572250306
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1572250301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88b1b75ca711e6d438fe1e9d54432b5f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetCanvas: {fileID: 1520570806}
+  effectEnabled: 1
+  useGameCameraSettings: 0
+  pixelHeight: 400
+  screenMaterial: {fileID: 2100000, guid: e76ff0255bfd4292b4eece38ffc4ba92, type: 2}
 --- !u!1 &1590357903
 GameObject:
   m_ObjectHideFlags: 0

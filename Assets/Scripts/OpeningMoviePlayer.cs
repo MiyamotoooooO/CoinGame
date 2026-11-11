@@ -55,6 +55,10 @@ namespace MedalPusher
         public float bgmDropTime = 0f;
         [Tooltip("曲のテンポ（BPM）。キャラが跳ねるリズムに使う")]
         public float bpm = 120f;
+        [Tooltip("オンにすると、曲・効果音の欄が空の時に、Resources の audioFolder から自動で読みこむ（bgm・type_blip・se_01〜。効果音は予定表の上から順番）")]
+        public bool autoLoadAudio = true;
+        [Tooltip("自動で読みこむ場所（Resources フォルダの中）")]
+        public string audioFolder = "OpeningAudio";
 
         [Header("■ 効果音")]
         [Tooltip("効果音の予定表。clip に音を入れるだけで、その秒数に鳴る。memo は何の音かのメモ")]
@@ -101,6 +105,8 @@ namespace MedalPusher
         public float logoSlamSeconds = 0.25f;
         [Tooltip("Cut10 が始まってから何秒後に、下の文字が点滅し始めるか")]
         public float roundTextTime = 2.6f;
+        [Tooltip("Cut10 の最後に「AREA 1　ROUND 1」の文字を出す（オフにすると出さない）")]
+        public bool showRoundText = false;
         [Range(0f, 1f), Tooltip("画面がピカッと白く光る強さ（0 で光らない）")]
         public float flashStrength = 0.85f;
         [Tooltip("画面が揺れる強さ（ピクセル）")]
@@ -162,6 +168,7 @@ namespace MedalPusher
 
         private void Awake()
         {
+            LoadAutoAudio();
             foreach (OpeningCutView cut in cuts)
             {
                 if (cut == null) continue;
@@ -177,6 +184,27 @@ namespace MedalPusher
         private void Start()
         {
             if (autoPlay) Play();
+        }
+
+        /// <summary>
+        /// 曲・効果音の欄が空なら、Resources から自動で読みこむ。
+        /// 自分で入れた音がある欄は、そちらを使う。
+        /// </summary>
+        private void LoadAutoAudio()
+        {
+            if (!autoLoadAudio) return;
+            if (bgmClip == null)
+            {
+                bgmClip = Resources.Load<AudioClip>(audioFolder + "/bgm");
+                // 自動で読んだ曲は、16秒目からが「ドン！」の後の盛り上がる部分
+                if (bgmClip != null && bgmDropTime <= 0f) bgmDropTime = 16f;
+            }
+            if (typeBlipClip == null) typeBlipClip = Resources.Load<AudioClip>(audioFolder + "/type_blip");
+            for (int i = 0; i < soundCues.Count; i++)
+            {
+                OpeningSoundCue cue = soundCues[i];
+                if (cue != null && cue.clip == null) cue.clip = Resources.Load<AudioClip>($"{audioFolder}/se_{i + 1:00}");
+            }
         }
 
         /// <summary>ムービーを最初（または startFromSeconds）から再生する</summary>
@@ -796,12 +824,12 @@ namespace MedalPusher
                 SetColor(logo, 1f, lt < logoTime ? 0f : Smooth(e / 0.3f));
             }
 
-            // 下の文字：点滅する
+            // 下の文字：点滅する（showRoundText がオフの時は出さない）
             OpeningLayerView roundText = c.Find("round_text");
             if (roundText != null)
             {
                 float a = 0f;
-                if (lt >= roundTextTime) a = Mathf.Repeat((lt - roundTextTime) * 1.4f, 1f) < 0.72f ? 1f : 0.25f;
+                if (showRoundText && lt >= roundTextTime) a = Mathf.Repeat((lt - roundTextTime) * 1.4f, 1f) < 0.72f ? 1f : 0.25f;
                 SetColor(roundText, 1f, a);
             }
         }
