@@ -108,6 +108,7 @@ namespace MedalPusher
 
         // ゲージ
         Image gaugeFill, gaugeMarker, statusBg;
+        RectTransform muteMark;   // 発動できない時（ボスのミュートブロックなど）に、ゲージの上に出す × と「発動不可」
         Text statusText, gaugeText;
 
         // 所持レコード
@@ -327,6 +328,19 @@ namespace MedalPusher
             gaugeFill.fillMethod = Image.FillMethod.Horizontal;
             gaugeFill.fillOrigin = (int)Image.OriginHorizontal.Left;
             gaugeMarker = NewImage("CostMarker", bar.rectTransform, new Vector2(0f, -12f), new Vector2(4f, 32f), Color.white);
+
+            // 発動できない時の目印：ゲージを暗くして、角から角へ赤い ×、まん中に「× 発動不可」の札
+            muteMark = NewRect("Mute", bar.rectTransform, new Vector2(SlotSize * 0.5f, -12f), new Vector2(SlotSize, 24f));
+            NewImage("Shade", muteMark, new Vector2(SlotSize * 0.5f, -12f), new Vector2(SlotSize, 24f), new Color(0f, 0f, 0f, 0.55f));
+            float slash = Mathf.Atan2(24f, SlotSize) * Mathf.Rad2Deg;
+            for (int i = 0; i < 2; i++)
+            {
+                var line = NewImage($"Slash{i}", muteMark, new Vector2(SlotSize * 0.5f, -12f), new Vector2(SlotSize * 1.02f, 4f), NgColor);
+                line.rectTransform.localRotation = Quaternion.Euler(0f, 0f, i == 0 ? slash : -slash);
+            }
+            var badge = NewImage("Badge", muteMark, new Vector2(SlotSize * 0.5f, -12f), new Vector2(150f, 28f), NgColor);
+            NewText("Text", badge.rectTransform, new Vector2(75f, -14f), new Vector2(150f, 28f), "× 発動不可", 17, Color.white).fontStyle = FontStyle.Bold;
+            muteMark.gameObject.SetActive(false);
 
             statusBg = NewImage("Status", panel, new Vector2(cx, -(top + 92f)), new Vector2(SlotSize, 50f), OkColor);
             statusText = NewText("StatusText", statusBg.rectTransform, new Vector2(SlotSize * 0.5f, -25f), new Vector2(SlotSize - 16f, 46f), "", 20, Color.white);
@@ -657,6 +671,10 @@ namespace MedalPusher
             float max = Mathf.Max(1f, effectSystem.gaugeMax);
             float gauge = effectSystem.Gauge;
             gaugeFill.fillAmount = Mathf.Clamp01(gauge / max);
+            // 発動できない間は、ゲージに × を出す（札は少しはずむ）
+            bool muted = effectSystem.IsActivateLocked;
+            if (muteMark.gameObject.activeSelf != muted) muteMark.gameObject.SetActive(muted);
+            if (muted) muteMark.localScale = Vector3.one * (1f + 0.04f * Mathf.Sin(Time.unscaledTime * 8f));
 
             var loaded = effectSystem.Loaded;
             if (loaded == null)
@@ -674,6 +692,8 @@ namespace MedalPusher
 
             if (effectSystem.IsActive)
                 SetStatus($"★ 発動中　残り {effectSystem.Remaining:0}秒", ActiveColor);
+            else if (effectSystem.IsActivateLocked)
+                SetStatus(effectSystem.ActivateLockReason, NgColor);   // ボスのミュートブロックなど（曲は流れたまま）
             else if (!RecordEffectSystem.IsImplemented(loaded))
                 SetStatus("この効果はまだありません", new Color(0.55f, 0.53f, 0.58f));
             else if (effectSystem.CanActivate(out string why))

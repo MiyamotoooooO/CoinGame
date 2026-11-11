@@ -72,6 +72,33 @@ namespace MedalPusher
         /// <summary>いまのグルーヴゲージ</summary>
         public float Gauge { get; private set; }
 
+        // ---- 発動（強化状態）をできなくする（ボスのミュートブロックなど）。曲を流すことはできる ----
+        readonly Dictionary<object, string> activateLocks = new Dictionary<object, string>();
+
+        /// <summary>いま発動（Q キーの強化状態）ができないか。曲を流すこと・発動中の効果はそのまま</summary>
+        public bool IsActivateLocked => activateLocks.Count > 0;
+
+        /// <summary>発動できない理由（画面に出す用）。発動できる時は空</summary>
+        public string ActivateLockReason
+        {
+            get
+            {
+                foreach (var r in activateLocks.Values) return r;
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 発動をできなくする・元に戻す。owner は止めている物（同じ owner で外す）。reason は画面に出す理由。
+        /// いくつもの物が止めている時は、全部が外すまで発動できない。
+        /// </summary>
+        public void SetActivateLock(object owner, bool locked, string reason = "")
+        {
+            if (owner == null) return;
+            if (locked) activateLocks[owner] = string.IsNullOrEmpty(reason) ? "いまは発動できません" : reason;
+            else activateLocks.Remove(owner);
+        }
+
         /// <summary>いま流しているレコード（曲だけ流れている時も入る。流していなければ null）</summary>
         public RecordData Loaded { get; private set; }
 
@@ -226,6 +253,11 @@ namespace MedalPusher
             if (!IsScoring)
             {
                 reason = "ラウンドのプレイ中だけ発動できます";
+                return false;
+            }
+            if (IsActivateLocked)
+            {
+                reason = ActivateLockReason;
                 return false;
             }
             if (Current != null)

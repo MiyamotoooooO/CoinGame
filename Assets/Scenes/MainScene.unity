@@ -436,7 +436,7 @@ MonoBehaviour:
     rounds:
     - title: "\u30E9\u30A6\u30F3\u30C91\uFF08\u4EEE\uFF09"
       quota: 150
-      isBoss: 0
+      isBoss: 1
       thumbnail: {fileID: 0}
       placeholderColor: {r: 0.2, g: 0.45, b: 0.5, a: 1}
     - title: "\u30E9\u30A6\u30F3\u30C92\uFF08\u4EEE\uFF09"
@@ -470,6 +470,11 @@ MonoBehaviour:
     mascot: {fileID: 0}
     resolutionWidth: 1500
     contentTop: 165
+    playPillScale: 1.4
+    playMedalScale: 1.4
+    playTopScale: 1.2
+    showPointPills: 0
+    showMedalsOnMonitor: 0
     flipX: 0
     flipY: 0
     introSpeed: 1
