@@ -47,7 +47,7 @@ public class OpeningMovieManager : MonoBehaviour
     [Tooltip("常時回転の速度（度/秒）")]
     [SerializeField] private float alwaysRotateSpeed = 90f;
 
-    [Tooltip("フェードイン1秒後に現在の角度からZ軸が0へ徐々に戻るUIオブジェクト")]
+    [Tooltip("スタート直後から現在の角度からZ軸が0へ徐々に戻るUIオブジェクト")]
     [SerializeField] private RectTransform zAngleToZeroUI;
     [Tooltip("Z軸が0になるまでの時間（秒）")]
     [SerializeField] private float zAngleRotateDuration = 1.2f;
@@ -66,12 +66,12 @@ public class OpeningMovieManager : MonoBehaviour
     [SerializeField] private AudioClip bgmClip;
 
     [Header("■ Object3 & Object4（UFO・CD竜巻・右から灰色化）設定")]
-    [Tooltip("UFOのオブジェクト（最初はぐらぐら揺れ、その後3秒間動き回る）")]
+    [Tooltip("UFOのオブジェクト（町の奥から飛来し、飛び回った後に元の位置へ収まる）")]
     [SerializeField] private Transform ufoObject;
-    [Tooltip("UFOの通常のぐらぐら揺れる幅")]
-    [SerializeField] private float ufoIdleWobbleAmount = 8f;
-    [Tooltip("UFOが3秒間動き回る際のX軸・Z軸の最大移動幅（UIの場合はXを中心に移動）")]
-    [SerializeField] private Vector3 ufoMoveRange = new Vector3(250f, 25f, 150f);
+    [Tooltip("UFOが飛来する際に開始する奥のオフセット位置（ローカル座標基準の相対位置、例: (0, 300, -500)など）")]
+    [SerializeField] private Vector3 ufoFarAwaySpawnOffset = new Vector3(0f, 250f, -600f);
+    [Tooltip("UFOが3秒間飛び回る際の移動範囲の広さ")]
+    [SerializeField] private Vector3 ufoFlyRange = new Vector3(300f, 60f, 200f);
 
     [Tooltip("竜巻のように上空へ上がっていく複数種類のCDのUIオブジェクト（Prefabまたは元オブジェクト）")]
     [SerializeField] private List<RectTransform> cdUIPrefabs = new List<RectTransform>();
@@ -84,9 +84,9 @@ public class OpeningMovieManager : MonoBehaviour
     [Tooltip("CDが竜巻状に発生する総時間（画面が灰色になりきるまでの時間）")]
     [SerializeField] private float grayscaleAndTornadoDuration = 4.5f;
 
-    [Header("■ グレースケール除外設定")]
-    [Tooltip("画面が灰色になっても絶対に灰色にならないようにするUIオブジェクト群")]
-    [SerializeField] private List<GameObject> neverGrayscaleUIObjects = new List<GameObject>();
+    [Header("■ グレースケール除外・最前面表示設定（配列）")]
+    [Tooltip("灰色の時に絶対にLayerを手前にして灰色にならないようにするオブジェクト配列")]
+    [SerializeField] private GameObject[] neverGrayscaleUIObjects = new GameObject[0];
 
     [Header("■ Object5 のテキスト設定")]
     [Tooltip("Object5で1文字ずつ表示するテキスト（Text または TextMeshProUGUI がついたオブジェクト）")]
@@ -167,13 +167,13 @@ public class OpeningMovieManager : MonoBehaviour
 
     // 常時回転・状態フラグ
     private bool isMovieRunning = false;
-    private bool isUfoIdleWobbling = false;
     private bool isSlowRotating8 = false;
     private bool isSlowRotating10 = false;
     private bool isTornadoSpawning = false;
 
     private Vector3 ufoInitialLocalPos;
     private Quaternion ufoInitialLocalRot;
+    private Transform activeCdContainer;
 
     private void Awake()
     {
@@ -225,16 +225,6 @@ public class OpeningMovieManager : MonoBehaviour
             alwaysRotatingUI.Rotate(0f, 0f, -alwaysRotateSpeed * Time.deltaTime);
         }
 
-        // 2. UFOの待機中ぐらぐら揺れ演出
-        if (isUfoIdleWobbling && ufoObject != null && ufoObject.gameObject.activeInHierarchy)
-        {
-            float offsetX = Mathf.Sin(Time.time * 4.5f) * ufoIdleWobbleAmount;
-            float offsetY = Mathf.Cos(Time.time * 3.2f) * (ufoIdleWobbleAmount * 0.4f);
-            float tiltZ = Mathf.Sin(Time.time * 5.0f) * 3.5f;
-            ufoObject.localPosition = ufoInitialLocalPos + new Vector3(offsetX, offsetY, 0f);
-            ufoObject.localRotation = ufoInitialLocalRot * Quaternion.Euler(0f, 0f, tiltZ);
-        }
-
         // 3. Object8のゆっくり360度回転
         if (isSlowRotating8 && slowRotateObject8 != null && slowRotateObject8.gameObject.activeInHierarchy)
         {
@@ -245,6 +235,15 @@ public class OpeningMovieManager : MonoBehaviour
         if (isSlowRotating10 && slowRotateUI10 != null && slowRotateUI10.gameObject.activeInHierarchy)
         {
             slowRotateUI10.Rotate(0f, 0f, -slowRotateSpeed10 * Time.deltaTime);
+        }
+    }
+
+    private void LateUpdate()
+    {
+        // 灰色（グレースケール）が有効な間は、後からアクティブになったオブジェクトも含めて確実にグレースケールより手前のLayerに維持する
+        if (isGrayscaleActive)
+        {
+            EnsureNeverGrayscaleObjectsInFront();
         }
     }
 
@@ -273,20 +272,13 @@ public class OpeningMovieManager : MonoBehaviour
     private IEnumerator PlayFullMovieRoutine()
     {
         // =========================================================================
-        // 【1】スタートボタン押下 ➔ かっこいいフェードアウト ➔ Object1表示 ➔ 1.5秒後フェードイン
+        // 【1】スタートボタン押下 ➔ フェードなしでいきなりObject1が表示された状態からスタート
         // =========================================================================
-        yield return StartCoroutine(CoolFadeOut(coolFadeDuration));
-
         if (startScreenRoot != null) startScreenRoot.SetActive(false);
         if (object1 != null) object1.SetActive(true);
         if (kiraanUI != null) kiraanUI.gameObject.SetActive(false);
 
-        yield return new WaitForSeconds(1.5f);
-        yield return StartCoroutine(CoolFadeIn(coolFadeDuration));
-
-        // フェードインし終わってから1秒後に別のUIのZ軸角度を現在角度から0へ徐々に戻す
-        yield return new WaitForSeconds(1.0f);
-
+        // すぐにZ軸の角度を現在角度から0へ徐々に戻す
         if (zAngleToZeroUI != null)
         {
             Quaternion startRot = zAngleToZeroUI.localRotation;
@@ -305,14 +297,14 @@ public class OpeningMovieManager : MonoBehaviour
             zAngleToZeroUI.localRotation = endRot;
         }
 
-        // 角度が0になったらBGMを再生開始（Object1が非表示になっても流れ続けるよう独立再生）
-        PlayPersistentBGM();
-
-        // 角度が0になったら別のUIオブジェクトを「キラーン」というエフェクトで表示し、少ししてからフェードアウトで非表示
+        // 角度が0になったらすぐに「キラーン」のエフェクトUIを表示する
         if (kiraanUI != null)
         {
             yield return StartCoroutine(PlayKiraanEffectAndFadeOut(kiraanUI, kiraanHoldDuration, kiraanFadeOutDuration));
         }
+
+        // 角度が0になりキラーン演出が終わったらBGMを再生開始（Object1が非表示になっても流れ続けるよう独立再生）
+        PlayPersistentBGM();
 
         // キラーンUIが非表示になってから1.5秒後にかっこいい感じでフェードアウト
         yield return new WaitForSeconds(1.5f);
@@ -334,7 +326,7 @@ public class OpeningMovieManager : MonoBehaviour
         yield return StartCoroutine(CoolFadeOutWithBGMFade(coolFadeDuration));
 
         // =========================================================================
-        // 【3】Object2非表示 ＆ Object3表示（UFO登場・CD竜巻・右から灰色化）
+        // 【3】Object2非表示 ＆ Object3表示（UFO飛来・CD竜巻・右から灰色化）
         // =========================================================================
         if (object2 != null) object2.SetActive(false);
         if (object4 != null) object4.SetActive(false); // 最初は非表示の状態から始まる
@@ -344,35 +336,31 @@ public class OpeningMovieManager : MonoBehaviour
         {
             ufoInitialLocalPos = ufoObject.localPosition;
             ufoInitialLocalRot = ufoObject.localRotation;
-            isUfoIdleWobbling = true; // 最初はぐらぐら少しだけ動いている状態
+            // ★フェードインする前に、あらかじめUFOの位置を奥の出現位置（ufoFarAwaySpawnOffset）にセットしておく
+            ufoObject.localPosition = ufoInitialLocalPos + ufoFarAwaySpawnOffset;
         }
 
         // フェードアウトしてから1.5秒後にかっこいい感じでフェードイン
         yield return new WaitForSeconds(1.5f);
         yield return StartCoroutine(CoolFadeIn(coolFadeDuration));
 
-        // フェードインし終わってから1秒後にUFOがあらゆる場所に3秒間動き回る（Y軸は少しだけ、主にX軸とZ軸が変動）
-        yield return new WaitForSeconds(1.0f);
-        isUfoIdleWobbling = false;
-
+        // フェードインし終わってから、UFOが町の奥から飛来してあらゆるところを飛び回り、最後に元の位置へピタッと着地する演出
         if (ufoObject != null)
         {
-            yield return StartCoroutine(MoveUfoAroundRoutine(3.0f));
+            yield return StartCoroutine(FlyUfoFromFarAwayAndArriveRoutine(3.0f));
         }
         else
         {
             yield return new WaitForSeconds(3.0f);
         }
 
-        // 3秒たったらUFOが元の位置に戻って、最初非表示だったオブジェクト（Object4）が表示される
-        isUfoIdleWobbling = true;
+        // UFOが元の位置に着地したら、最初非表示だったオブジェクト（Object4）が表示される
         if (object4 != null)
         {
             object4.SetActive(true);
         }
 
-        // UFOとObject4がCDよりも手前のレイヤーになるよう設定し、CDの竜巻吸引と右からの灰色化を同時開始
-        EnsureUfoAndObjectInFront();
+        // レコード（CD）をその他のオブジェクトより手前にし、UFOだけをレコードよりさらに手前に配置して竜巻吸引と右からの灰色化を同時開始
         isTornadoSpawning = true;
         Coroutine tornadoCoroutine = StartCoroutine(SpawnTornadoCDsRoutine());
 
@@ -384,7 +372,6 @@ public class OpeningMovieManager : MonoBehaviour
         yield return new WaitForSeconds(1.0f);
         yield return StartCoroutine(CoolFadeOut(coolFadeDuration));
 
-        isUfoIdleWobbling = false;
         if (tornadoCoroutine != null) StopCoroutine(tornadoCoroutine);
 
         // =========================================================================
@@ -692,54 +679,49 @@ public class OpeningMovieManager : MonoBehaviour
     }
 
     /// <summary>
-    /// UFOが3秒間あらゆる場所に動き回り（Y軸は少しだけ、主にX軸とZ軸が変動）、最後に元の位置へ戻る
+    /// UFOが町の奥の方から飛来し、あらゆるところを飛び回ったあと、最後に元の位置へピタッと着地する演出
     /// </summary>
-    private IEnumerator MoveUfoAroundRoutine(float duration)
+    private IEnumerator FlyUfoFromFarAwayAndArriveRoutine(float duration)
     {
-        float moveTime = Mathf.Max(0.5f, duration - 0.45f);
-        float returnTime = duration - moveTime;
+        Vector3 farSpawnPos = ufoInitialLocalPos + ufoFarAwaySpawnOffset;
+        ufoObject.localPosition = farSpawnPos;
 
-        int waypointsCount = 5;
-        float stepDuration = moveTime / waypointsCount;
+        // 飛来フェーズ（全体時間の約70%）
+        float flyTime = duration * 0.7f;
+        float arriveTime = duration - flyTime;
 
-        for (int i = 0; i < waypointsCount; i++)
+        float elapsed = 0f;
+        while (elapsed < flyTime)
         {
-            Vector3 startPos = ufoObject.localPosition;
-            Quaternion startRot = ufoObject.localRotation;
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / flyTime);
+            float smoothT = Mathf.SmoothStep(0f, 1f, t);
 
-            // X軸とZ軸を大きく変動させ、Y軸はわずかに変動させる
-            float randX = UnityEngine.Random.Range(-ufoMoveRange.x, ufoMoveRange.x);
-            float randY = UnityEngine.Random.Range(-ufoMoveRange.y, ufoMoveRange.y);
-            float randZ = UnityEngine.Random.Range(-ufoMoveRange.z, ufoMoveRange.z);
+            // 奥から手前へ迫りつつ、ダイナミックにあらゆる場所を旋回・通過する軌道
+            Vector3 basePos = Vector3.Lerp(farSpawnPos, ufoInitialLocalPos, smoothT);
+            float swingX = Mathf.Sin(t * Mathf.PI * 3f) * ufoFlyRange.x * (1f - smoothT);
+            float swingY = Mathf.Cos(t * Mathf.PI * 2.5f) * ufoFlyRange.y * (1f - smoothT);
+            float swingZ = Mathf.Sin(t * Mathf.PI * 2f) * ufoFlyRange.z * (1f - smoothT);
 
-            Vector3 targetPos = ufoInitialLocalPos + new Vector3(randX, randY, randZ);
-            Quaternion targetRot = ufoInitialLocalRot * Quaternion.Euler(
-                UnityEngine.Random.Range(-8f, 8f),
-                0f,
-                Mathf.Clamp(-randX * 0.08f, -18f, 18f)
-            );
+            ufoObject.localPosition = basePos + new Vector3(swingX, swingY, swingZ);
+            ufoObject.localRotation = ufoInitialLocalRot * Quaternion.Euler(swingY * 0.15f, swingX * 0.1f, -swingX * 0.08f);
 
-            float elapsed = 0f;
-            while (elapsed < stepDuration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / stepDuration));
-                ufoObject.localPosition = Vector3.Lerp(startPos, targetPos, t);
-                ufoObject.localRotation = Quaternion.Slerp(startRot, targetRot, t);
-                yield return null;
-            }
+            yield return null;
         }
 
-        // 元の位置へスムーズに戻る
+        // 着地・整列フェーズ（残り30%の時間で元の位置・角度へ綺麗に収まる）
         Vector3 lastPos = ufoObject.localPosition;
         Quaternion lastRot = ufoObject.localRotation;
-        float retElapsed = 0f;
-        while (retElapsed < returnTime)
+        float arriveElapsed = 0f;
+        while (arriveElapsed < arriveTime)
         {
-            retElapsed += Time.deltaTime;
-            float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(retElapsed / returnTime));
-            ufoObject.localPosition = Vector3.Lerp(lastPos, ufoInitialLocalPos, t);
-            ufoObject.localRotation = Quaternion.Slerp(lastRot, ufoInitialLocalRot, t);
+            arriveElapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(arriveElapsed / arriveTime);
+            float smoothT = Mathf.SmoothStep(0f, 1f, t);
+
+            ufoObject.localPosition = Vector3.Lerp(lastPos, ufoInitialLocalPos, smoothT);
+            ufoObject.localRotation = Quaternion.Slerp(lastRot, ufoInitialLocalRot, smoothT);
+
             yield return null;
         }
 
@@ -757,18 +739,21 @@ public class OpeningMovieManager : MonoBehaviour
             yield break;
         }
 
-        // CDを生成する専用コンテナを作成し、UFOやObject4よりも必ず背面のレイヤー（奥側）に配置する
-        Transform parentTransform = ufoObject != null && ufoObject.parent != null ? ufoObject.parent : transform;
+        // CDを生成する専用コンテナを作成
+        Transform parentTransform = ufoObject != null && ufoObject.parent != null ? ufoObject.parent : (object3 != null ? object3.transform : transform);
         GameObject cdContainer = new GameObject("CD_Tornado_Container", typeof(RectTransform));
         cdContainer.transform.SetParent(parentTransform, false);
-        cdContainer.transform.SetAsFirstSibling(); // 一番背面へ配置
+        activeCdContainer = cdContainer.transform;
 
-        EnsureUfoAndObjectInFront();
+        // その他のオブジェクトよりもレコード（CD）が手前に来て、UFOだけがレコードよりさらに手前に来るよう設定
+        EnsureLayerOrderForTornado();
 
         while (isTornadoSpawning)
         {
-            if (cdSpawnPos1 != null) SpawnSingleTornadoCD(cdSpawnPos1.position, cdContainer.transform);
-            if (cdSpawnPos2 != null) SpawnSingleTornadoCD(cdSpawnPos2.position, cdContainer.transform);
+            EnsureLayerOrderForTornado();
+
+            if (cdSpawnPos1 != null) SpawnSingleTornadoCD(cdSpawnPos1.position, activeCdContainer);
+            if (cdSpawnPos2 != null) SpawnSingleTornadoCD(cdSpawnPos2.position, activeCdContainer);
 
             yield return new WaitForSeconds(0.08f);
         }
@@ -831,12 +816,21 @@ public class OpeningMovieManager : MonoBehaviour
     }
 
     /// <summary>
-    /// UFOとObject4をCDよりも手前のレイヤー（描画順）に保つ
+    /// 描画順を「その他のオブジェクト(奥) ＜ レコード群(手前) ＜ UFO(最前面)」に保つ
     /// </summary>
-    private void EnsureUfoAndObjectInFront()
+    private void EnsureLayerOrderForTornado()
     {
-        if (ufoObject != null) ufoObject.SetAsLastSibling();
-        if (object4 != null) object4.transform.SetAsLastSibling();
+        // 1. まずレコード（CD）のコンテナを他のオブジェクト（Object4等）よりも手前に配置
+        if (activeCdContainer != null)
+        {
+            activeCdContainer.SetAsLastSibling();
+        }
+
+        // 2. UFOだけをレコードよりもさらに手前（最前面）に配置
+        if (ufoObject != null)
+        {
+            ufoObject.SetAsLastSibling();
+        }
     }
 
     /// <summary>
@@ -1085,25 +1079,42 @@ public class OpeningMovieManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 絶対に灰色にならないUIオブジェクト群をグレースケールエフェクトよりも前面のSortingOrderに配置する
+    /// 灰色の時に絶対に手前に表示するオブジェクト配列をグレースケールエフェクトよりも前面のSortingOrderに配置する
     /// </summary>
     private void EnsureNeverGrayscaleObjectsInFront()
     {
         if (neverGrayscaleUIObjects == null) return;
 
-        for (int i = 0; i < neverGrayscaleUIObjects.Count; i++)
+        for (int i = 0; i < neverGrayscaleUIObjects.Length; i++)
         {
-            GameObject uiObj = neverGrayscaleUIObjects[i];
-            if (uiObj == null) continue;
+            GameObject targetObj = neverGrayscaleUIObjects[i];
+            if (targetObj == null || !targetObj.activeInHierarchy) continue;
 
-            Canvas c = uiObj.GetComponent<Canvas>();
-            if (c == null) c = uiObj.AddComponent<Canvas>();
-            c.overrideSorting = true;
-            c.sortingOrder = 29500; // グレースケール(29000)より手前、暗転フェード(30000)より奥
-
-            if (uiObj.GetComponent<GraphicRaycaster>() == null)
+            // UI要素（RectTransform等）の場合、Canvasを使ってSortingOrderを29500（グレースケール29000より手前、フェード30000より奥）に固定
+            if (targetObj.GetComponent<RectTransform>() != null)
             {
-                uiObj.AddComponent<GraphicRaycaster>();
+                Canvas c = targetObj.GetComponent<Canvas>();
+                if (c == null) c = targetObj.AddComponent<Canvas>();
+                if (!c.overrideSorting || c.sortingOrder != 29500)
+                {
+                    c.overrideSorting = true;
+                    c.sortingOrder = 29500;
+                }
+
+                if (targetObj.GetComponent<GraphicRaycaster>() == null)
+                {
+                    targetObj.AddComponent<GraphicRaycaster>();
+                }
+            }
+
+            // SpriteRenderer等のRendererが含まれる場合もSortingOrderを29500にして手前に出す
+            Renderer[] renderers = targetObj.GetComponentsInChildren<Renderer>(true);
+            for (int r = 0; r < renderers.Length; r++)
+            {
+                if (renderers[r] != null && renderers[r].sortingOrder < 29500)
+                {
+                    renderers[r].sortingOrder = 29500;
+                }
             }
         }
     }
@@ -1128,23 +1139,26 @@ public class OpeningMovieManager : MonoBehaviour
     }
 
     /// <summary>
-    /// シネマティックフェードおよび右からの斜めグレースケールワイプ用のUIを自動構築する
+    /// シネマティックフェードおよび右からの斜めグレースケールワイプ用のUIを画面全体（フルスクリーン）で自動構築する
     /// </summary>
     private void CreateMovieOverlayUI()
     {
-        // 1. グレースケールワイプ用Canvas（SortingOrder: 29000）
-        grayscaleOverlayRoot = new GameObject("MovieGrayscaleOverlayCanvas", typeof(Canvas), typeof(CanvasScaler));
-        grayscaleOverlayRoot.transform.SetParent(transform, false);
+        // 1. グレースケールワイプ用Canvas（親Canvasのサイズ制限を受けないようルート階層に独立生成）
+        grayscaleOverlayRoot = new GameObject("MovieGrayscaleOverlayCanvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        grayscaleOverlayRoot.transform.SetParent(null);
         Canvas grayCanvas = grayscaleOverlayRoot.GetComponent<Canvas>();
         grayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        grayCanvas.overrideSorting = true;
         grayCanvas.sortingOrder = 29000;
+
+        CanvasScaler grayScaler = grayscaleOverlayRoot.GetComponent<CanvasScaler>();
+        grayScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        grayScaler.referenceResolution = new Vector2(1920f, 1080f);
+        grayScaler.matchWidthOrHeight = 0.5f;
 
         GameObject grayPanel = new GameObject("RightToLeftGrayscaleWipe", typeof(RectTransform), typeof(RawImage));
         grayPanel.transform.SetParent(grayscaleOverlayRoot.transform, false);
-        RectTransform grayRect = grayPanel.GetComponent<RectTransform>();
-        grayRect.anchorMin = Vector2.zero;
-        grayRect.anchorMax = Vector2.one;
-        grayRect.sizeDelta = Vector2.zero;
+        StretchRectTransformFullScreen(grayPanel.GetComponent<RectTransform>());
 
         RawImage grayRawImg = grayPanel.GetComponent<RawImage>();
         grayRawImg.raycastTarget = false;
@@ -1156,24 +1170,27 @@ public class OpeningMovieManager : MonoBehaviour
         StartCoroutine(UpdateGrayscaleWipeVisualRoutine(grayRawImg));
         grayscaleOverlayRoot.SetActive(false);
 
-        // 2. かっこいいフェード用Canvas（SortingOrder: 30000）
-        GameObject canvasObj = new GameObject("MovieCoolFadeCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        canvasObj.transform.SetParent(transform, false);
+        // 2. かっこいいフェード用Canvas（親Canvasのサイズ制限を受けないようルート階層に独立生成）
+        GameObject canvasObj = new GameObject("MovieCoolFadeCanvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        canvasObj.transform.SetParent(null);
         movieOverlayCanvas = canvasObj.GetComponent<Canvas>();
         movieOverlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        movieOverlayCanvas.overrideSorting = true;
         movieOverlayCanvas.sortingOrder = 30000;
+
+        CanvasScaler fadeScaler = canvasObj.GetComponent<CanvasScaler>();
+        fadeScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        fadeScaler.referenceResolution = new Vector2(1920f, 1080f);
+        fadeScaler.matchWidthOrHeight = 0.5f;
 
         // 上下シネマティック黒帯（レターボックス）
         topLetterbox = CreateBar(canvasObj.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f));
         bottomLetterbox = CreateBar(canvasObj.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f));
 
-        // 全面フェードパネル
+        // 全面フェードパネル（画面の端から端まで完全に覆うようストレッチ設定）
         GameObject fadePanel = new GameObject("FadePanel", typeof(RectTransform), typeof(Image), typeof(CanvasGroup));
         fadePanel.transform.SetParent(canvasObj.transform, false);
-        RectTransform fadeRect = fadePanel.GetComponent<RectTransform>();
-        fadeRect.anchorMin = Vector2.zero;
-        fadeRect.anchorMax = Vector2.one;
-        fadeRect.sizeDelta = Vector2.zero;
+        StretchRectTransformFullScreen(fadePanel.GetComponent<RectTransform>());
 
         Image fadeImg = fadePanel.GetComponent<Image>();
         fadeImg.color = Color.black;
@@ -1181,6 +1198,19 @@ public class OpeningMovieManager : MonoBehaviour
         fadeCanvasGroup = fadePanel.GetComponent<CanvasGroup>();
         fadeCanvasGroup.alpha = 0f;
         fadeCanvasGroup.blocksRaycasts = false;
+    }
+
+    private void StretchRectTransformFullScreen(RectTransform rt)
+    {
+        if (rt == null) return;
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = Vector2.zero;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        rt.localScale = Vector3.one;
     }
 
     private RectTransform CreateBar(Transform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot)
@@ -1191,7 +1221,9 @@ public class OpeningMovieManager : MonoBehaviour
         rt.anchorMin = anchorMin;
         rt.anchorMax = anchorMax;
         rt.pivot = pivot;
+        rt.anchoredPosition = Vector2.zero;
         rt.sizeDelta = Vector2.zero;
+        rt.localScale = Vector3.one;
         Image img = bar.GetComponent<Image>();
         img.color = Color.black;
         img.raycastTarget = false;
@@ -1252,6 +1284,18 @@ public class OpeningMovieManager : MonoBehaviour
                 wipeTex.Apply();
             }
             yield return null;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (grayscaleOverlayRoot != null)
+        {
+            Destroy(grayscaleOverlayRoot);
+        }
+        if (movieOverlayCanvas != null)
+        {
+            Destroy(movieOverlayCanvas.gameObject);
         }
     }
 }

@@ -1,0 +1,617 @@
+{
+ "width": 1920,
+ "height": 1080,
+ "totalSeconds": 60,
+ "cuts": [
+  {
+   "cut": 1,
+   "start": 0,
+   "end": 4,
+   "description": "真っ暗な中、レコードに針が落ちる。「198X年 ネオン通り」",
+   "layers": [
+    {
+     "order": 1,
+     "name": "bg",
+     "file": "Cut01/01_01_bg.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "record",
+     "file": "Cut01/01_02_record.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "tonearm",
+     "file": "Cut01/01_03_tonearm.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "spark",
+     "file": "Cut01/01_04_spark.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "title_text",
+     "file": "Cut01/01_05_title_text.png",
+     "gray": false
+    }
+   ],
+   "captions": [],
+   "sounds": [
+    "針が落ちる「プツッ」",
+    "オープニング曲スタート"
+   ]
+  },
+  {
+   "cut": 2,
+   "start": 4,
+   "end": 10,
+   "description": "ネオンがきらめく夜の街。ゲームセンターとレコード屋の前で、ネオンが踊っている",
+   "layers": [
+    {
+     "order": 1,
+     "name": "sky",
+     "file": "Cut02/02_01_sky.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "city_far",
+     "file": "Cut02/02_02_city_far.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "city_near",
+     "file": "Cut02/02_03_city_near.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "floor",
+     "file": "Cut02/02_04_floor.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "shops",
+     "file": "Cut02/02_05_shops.png",
+     "gray": false
+    },
+    {
+     "order": 6,
+     "name": "notes",
+     "file": "Cut02/02_06_notes.png",
+     "gray": false
+    },
+    {
+     "order": 7,
+     "name": "neon",
+     "file": "Cut02/02_07_neon.png",
+     "gray": false
+    }
+   ],
+   "captions": [],
+   "sounds": [
+    "曲（明るくにぎやか）",
+    "街のざわめき"
+   ]
+  },
+  {
+   "cut": 3,
+   "start": 10,
+   "end": 15,
+   "description": "空に、レコード盤の形の黒い飛行船「MUTE CORP.」が現れる",
+   "layers": [
+    {
+     "order": 1,
+     "name": "sky",
+     "file": "Cut03/03_01_sky.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "city_far",
+     "file": "Cut03/03_02_city_far.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "city_near",
+     "file": "Cut03/03_03_city_near.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "floor",
+     "file": "Cut03/03_04_floor.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "shops",
+     "file": "Cut03/03_05_shops.png",
+     "gray": false
+    },
+    {
+     "order": 6,
+     "name": "darken",
+     "file": "Cut03/03_06_darken.png",
+     "gray": false
+    },
+    {
+     "order": 7,
+     "name": "searchlights",
+     "file": "Cut03/03_07_searchlights.png",
+     "gray": false
+    },
+    {
+     "order": 8,
+     "name": "airship",
+     "file": "Cut03/03_08_airship.png",
+     "gray": false
+    },
+    {
+     "order": 9,
+     "name": "notes",
+     "file": "Cut03/03_09_notes.png",
+     "gray": false
+    }
+   ],
+   "captions": [],
+   "sounds": [
+    "低いうなり",
+    "曲の音程が下がり始める"
+   ]
+  },
+  {
+   "cut": 4,
+   "start": 15,
+   "end": 21,
+   "description": "レコードが吸い上げられ、街の色が灰色に消えていく（曲はブレーキで止まり無音へ）",
+   "layers": [
+    {
+     "order": 1,
+     "name": "sky",
+     "file": "Cut04/04_01_sky.png",
+     "gray": false
+    },
+    {
+     "order": 1,
+     "name": "sky_gray",
+     "file": "Cut04/04_01_sky_gray.png",
+     "gray": true
+    },
+    {
+     "order": 2,
+     "name": "city_far",
+     "file": "Cut04/04_02_city_far.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "city_far_gray",
+     "file": "Cut04/04_02_city_far_gray.png",
+     "gray": true
+    },
+    {
+     "order": 3,
+     "name": "city_near",
+     "file": "Cut04/04_03_city_near.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "city_near_gray",
+     "file": "Cut04/04_03_city_near_gray.png",
+     "gray": true
+    },
+    {
+     "order": 4,
+     "name": "floor",
+     "file": "Cut04/04_04_floor.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "floor_gray",
+     "file": "Cut04/04_04_floor_gray.png",
+     "gray": true
+    },
+    {
+     "order": 5,
+     "name": "shops",
+     "file": "Cut04/04_05_shops.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "shops_gray",
+     "file": "Cut04/04_05_shops_gray.png",
+     "gray": true
+    },
+    {
+     "order": 6,
+     "name": "beam",
+     "file": "Cut04/04_06_beam.png",
+     "gray": false
+    },
+    {
+     "order": 6,
+     "name": "beam_gray",
+     "file": "Cut04/04_06_beam_gray.png",
+     "gray": true
+    },
+    {
+     "order": 7,
+     "name": "flying_records",
+     "file": "Cut04/04_07_flying_records.png",
+     "gray": false
+    },
+    {
+     "order": 7,
+     "name": "flying_records_gray",
+     "file": "Cut04/04_07_flying_records_gray.png",
+     "gray": true
+    },
+    {
+     "order": 8,
+     "name": "airship",
+     "file": "Cut04/04_08_airship.png",
+     "gray": false
+    },
+    {
+     "order": 8,
+     "name": "airship_gray",
+     "file": "Cut04/04_08_airship_gray.png",
+     "gray": true
+    }
+   ],
+   "captions": [],
+   "sounds": [
+    "曲にブレーキ→無音"
+   ]
+  },
+  {
+   "cut": 5,
+   "start": 21,
+   "end": 26,
+   "description": "タワーの巨大モニターに、仮面の社長ミスター・ミュートのシルエット",
+   "layers": [
+    {
+     "order": 1,
+     "name": "sky",
+     "file": "Cut05/05_01_sky.png",
+     "gray": true
+    },
+    {
+     "order": 2,
+     "name": "city",
+     "file": "Cut05/05_02_city.png",
+     "gray": true
+    },
+    {
+     "order": 3,
+     "name": "tower",
+     "file": "Cut05/05_03_tower.png",
+     "gray": true
+    },
+    {
+     "order": 4,
+     "name": "mr_mute",
+     "file": "Cut05/05_04_mr_mute.png",
+     "gray": true
+    },
+    {
+     "order": 5,
+     "name": "caption",
+     "file": "Cut05/05_05_caption.png",
+     "gray": true
+    }
+   ],
+   "captions": [
+    {
+     "speaker": "ミスター・ミュート",
+     "text": "この街に、音楽はいらない。"
+    }
+   ],
+   "sounds": [
+    "文字が出る小さな電子音"
+   ]
+  },
+  {
+   "cut": 6,
+   "start": 26,
+   "end": 32,
+   "description": "灰色のレコード屋。コバンが最後の金のメダルを差し出す（メダルだけ色が残る）",
+   "layers": [
+    {
+     "order": 1,
+     "name": "shop",
+     "file": "Cut06/06_01_shop.png",
+     "gray": true
+    },
+    {
+     "order": 2,
+     "name": "koban",
+     "file": "Cut06/06_02_koban.png",
+     "gray": true
+    },
+    {
+     "order": 3,
+     "name": "medal",
+     "file": "Cut06/06_03_medal.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "caption",
+     "file": "Cut06/06_04_caption.png",
+     "gray": true
+    }
+   ],
+   "captions": [
+    {
+     "speaker": "コバン",
+     "text": "地下の“あいつ”なら、まだ……"
+    }
+   ],
+   "sounds": [
+    "風",
+    "猫の鈴「チリン」"
+   ]
+  },
+  {
+   "cut": 7,
+   "start": 32,
+   "end": 38,
+   "description": "ゲームセンターの地下。筐体の布が落ち、頭の止まったヴィニーが見える",
+   "layers": [
+    {
+     "order": 1,
+     "name": "room",
+     "file": "Cut07/07_01_room.png",
+     "gray": true
+    },
+    {
+     "order": 2,
+     "name": "lamp",
+     "file": "Cut07/07_02_lamp.png",
+     "gray": true
+    },
+    {
+     "order": 3,
+     "name": "cabinet",
+     "file": "Cut07/07_03_cabinet.png",
+     "gray": true
+    },
+    {
+     "order": 4,
+     "name": "vinny_stopped",
+     "file": "Cut07/07_04_vinny_stopped.png",
+     "gray": true
+    },
+    {
+     "order": 5,
+     "name": "cloth",
+     "file": "Cut07/07_05_cloth.png",
+     "gray": true
+    },
+    {
+     "order": 6,
+     "name": "cloth_before",
+     "file": "Cut07/07_06_cloth_before.png",
+     "gray": true
+    },
+    {
+     "order": 7,
+     "name": "dust",
+     "file": "Cut07/07_07_dust.png",
+     "gray": true
+    }
+   ],
+   "captions": [],
+   "sounds": [
+    "布が落ちる",
+    "蛍光灯「カチン」"
+   ]
+  },
+  {
+   "cut": 8,
+   "start": 38,
+   "end": 45,
+   "description": "メダルを入れると、メダリオが転がり出て、ヴィニーの頭が回り出し「ドン！」と曲が戻る",
+   "layers": [
+    {
+     "order": 1,
+     "name": "bg_burst",
+     "file": "Cut08/08_01_bg_burst.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "glow",
+     "file": "Cut08/08_02_glow.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "vinny",
+     "file": "Cut08/08_03_vinny.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "spin_lines",
+     "file": "Cut08/08_04_spin_lines.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "hand_medal",
+     "file": "Cut08/08_05_hand_medal.png",
+     "gray": false
+    },
+    {
+     "order": 6,
+     "name": "medario",
+     "file": "Cut08/08_06_medario.png",
+     "gray": false
+    },
+    {
+     "order": 7,
+     "name": "bubble",
+     "file": "Cut08/08_07_bubble.png",
+     "gray": false
+    },
+    {
+     "order": 8,
+     "name": "drop_text",
+     "file": "Cut08/08_08_drop_text.png",
+     "gray": false
+    }
+   ],
+   "captions": [
+    {
+     "speaker": "メダリオ",
+     "text": "まだまだ転がるぜ！"
+    }
+   ],
+   "sounds": [
+    "メダル「チャリン」",
+    "針「プツッ」",
+    "ドロップ「ドン！」で曲が戻る"
+   ]
+  },
+  {
+   "cut": 9,
+   "start": 45,
+   "end": 52,
+   "description": "筐体から色が広がる。エリアの幹部たちのシルエットが並ぶ",
+   "layers": [
+    {
+     "order": 1,
+     "name": "sky",
+     "file": "Cut09/09_01_sky.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "city",
+     "file": "Cut09/09_02_city.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "floor",
+     "file": "Cut09/09_03_floor.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "color_ring",
+     "file": "Cut09/09_04_color_ring.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "boss1",
+     "file": "Cut09/09_05_boss1.png",
+     "gray": false
+    },
+    {
+     "order": 6,
+     "name": "boss2",
+     "file": "Cut09/09_06_boss2.png",
+     "gray": false
+    },
+    {
+     "order": 7,
+     "name": "boss3",
+     "file": "Cut09/09_07_boss3.png",
+     "gray": false
+    },
+    {
+     "order": 8,
+     "name": "boss4",
+     "file": "Cut09/09_08_boss4.png",
+     "gray": false
+    },
+    {
+     "order": 9,
+     "name": "notes",
+     "file": "Cut09/09_09_notes.png",
+     "gray": false
+    },
+    {
+     "order": 10,
+     "name": "caption",
+     "file": "Cut09/09_10_caption.png",
+     "gray": false
+    }
+   ],
+   "captions": [
+    {
+     "speaker": "ヴィニー",
+     "text": "取り戻すぜ、街のグルーヴ！"
+    }
+   ],
+   "sounds": [
+    "曲のいちばん盛り上がる所"
+   ]
+  },
+  {
+   "cut": 10,
+   "start": 52,
+   "end": 60,
+   "description": "ロゴが登場し、エリア1の最初のラウンドへ",
+   "layers": [
+    {
+     "order": 1,
+     "name": "sky",
+     "file": "Cut10/10_01_sky.png",
+     "gray": false
+    },
+    {
+     "order": 2,
+     "name": "floor",
+     "file": "Cut10/10_02_floor.png",
+     "gray": false
+    },
+    {
+     "order": 3,
+     "name": "darken",
+     "file": "Cut10/10_03_darken.png",
+     "gray": false
+    },
+    {
+     "order": 4,
+     "name": "rays",
+     "file": "Cut10/10_04_rays.png",
+     "gray": false
+    },
+    {
+     "order": 5,
+     "name": "logo_temp",
+     "file": "Cut10/10_05_logo_temp.png",
+     "gray": false
+    },
+    {
+     "order": 6,
+     "name": "round_text",
+     "file": "Cut10/10_06_round_text.png",
+     "gray": false
+    }
+   ],
+   "captions": [],
+   "sounds": [
+    "ロゴの「ドン」",
+    "曲の終わり"
+   ]
+  }
+ ]
+}
