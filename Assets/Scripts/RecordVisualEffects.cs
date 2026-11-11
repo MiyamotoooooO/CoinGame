@@ -14,6 +14,8 @@ namespace MedalPusher
     ///   ブルース     ：盤面の照明が青く沈む。残り投入数が5以下になると、モニターに「LAST 5」からカウントダウン
     ///   シティポップ ：盤面の奥にネオンの街並みが立ち上がり、10秒ごとにビルの窓の明かりが増える（明かりの数 = 今の加算）
     ///
+    /// 新しいレコードのスクリプト（PopsRecord・FolkRecord・BluesRecord・CityPopRecord）がある時は、そのレコードの仮の演出は出さない。
+    ///
     /// 見た目はすべて仮。演出ができたら、Inspector の「差し替え用」の欄に Prefab や音を入れると、そちらが使われる。
     /// （空の欄は仮の見た目のまま）
     ///
@@ -600,7 +602,7 @@ namespace MedalPusher
         void UpdateCityPop()
         {
             RecordData r = effects.Current;
-            bool on = r != null && r.key == cityPop.recordKey;
+            bool on = r != null && r.key == cityPop.recordKey && CityPopRecord.Instance == null;   // CityPopRecord がある時は、そちらが出す
 
             skylineRise = Mathf.MoveTowards(skylineRise, on ? 1f : 0f, Time.deltaTime / Mathf.Max(0.05f, cityPop.riseSeconds));
             if (skylineRise <= 0f)

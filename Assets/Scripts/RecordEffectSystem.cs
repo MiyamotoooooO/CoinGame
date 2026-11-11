@@ -11,8 +11,9 @@ namespace MedalPusher
     ///   流しているレコードは Loaded。曲はくり返し流れ続ける（効果が無い間は、少しおとなしい音になる）
     /// ・効果（と演出）を始めるには Activate() を呼ぶ（Q キー）。そのレコードのゲージ消費ぶんのグルーヴゲージを使う。
     ///   足りなければ発動できない。発動中のレコードは Current
-    /// ・発動すると、曲は止めずに続きから盛り上がった音に変わる。効果は発動した時から曲1曲ぶんの秒数だけ続く
-    ///   （例：3分の曲なら、発動から3分。曲が無いレコードは CSV の「効果時間」の秒数）
+    /// ・発動すると、曲は止めずに続きから盛り上がった音に変わる。効果は発動した時から「その曲の終わりまで」続く
+    ///   （例：3分の曲の 1分のところで発動したら、残りの2分。効果の残り秒数は、曲の残り秒数にいつも合わせる）
+    ///   曲がまだ鳴っていない時・曲が無いレコードは、前と同じ（曲1曲ぶん／CSV の「効果時間」の秒数）
     ///   効果が終わっても、曲はそのまま流れ続ける（もう一度ゲージを使えば、また発動できる）
     /// ・流している途中で別のレコードを流すと、発動中の効果は終わって切り替わる
     /// ・メダルが穴に落ちるたび、ポイントを「(基本 + 加算) × 倍率」で計算し直し、
@@ -62,6 +63,8 @@ namespace MedalPusher
         [Min(1f)] public float fallbackDuration = 30f;
         [Tooltip("レコードごとに効果時間を決める（曲があっても、こちらが優先）。キー（英名）と秒数を書く")]
         public DurationOverride[] durationOverrides = new DurationOverride[0];
+        [Tooltip("オン：曲が流れている時に発動したら、効果はその曲の終わりまで（曲の残り秒数）。効果の残り秒数は曲の残り秒数にいつも合わせる。\nオフ：前と同じく、発動してから曲1曲ぶんの秒数")]
+        public bool untilSongEnd = true;
 
         [Header("テスト用")]
         [Tooltip("オンにすると、ゲージを使わずに発動できる")]
@@ -153,6 +156,7 @@ namespace MedalPusher
         int dropsThisPlay;          // 発動してから落ちたメダルの枚数
         float stackedMult;          // ジャズ・レクイエム・トランスで積み上がった倍率
         float pusherStopRemaining;  // メタルの曲が終わったあと、プッシャーを止めておく残り秒数
+        bool followSong;            // 効果の残り秒数を、曲の残り秒数に合わせているか
         readonly HashSet<string> playedThisRound = new HashSet<string>();   // このラウンドで発動したレコード（オーケストラ用）
 
         // ================================================================
@@ -292,7 +296,7 @@ namespace MedalPusher
             if (!freePlay) Gauge = Mathf.Max(0f, Gauge - GetGaugeCost(record));
 
             Current = record;
-            CurrentDuration = GetDuration(record);
+            CurrentDuration = GetActivateDuration(record, out followSong);
             Remaining = CurrentDuration;
             PlayCount++;
             dropsThisPlay = 0;
@@ -329,6 +333,7 @@ namespace MedalPusher
             Current = null;
             Remaining = 0f;
             CurrentDuration = 0f;
+            followSong = false;
             stackedMult = 0f;
 
             // メタル：曲が終わると、値2の秒数だけプッシャーが止まる
@@ -360,6 +365,41 @@ namespace MedalPusher
             if (clip != null) return clip.length;
             if (record.duration > 0f) return record.duration * durationScale;
             return fallbackDuration;
+        }
+
+        /// <summary>
+        /// 発動した時の効果の長さ。untilSongEnd がオンで、そのレコードの曲が鳴っていれば「曲の終わりまでの残り秒数」
+        /// （follow が true になり、そのあとも曲の残り秒数に合わせる）。それ以外は GetDuration と同じ。
+        /// </summary>
+        float GetActivateDuration(RecordData record, out bool follow)
+        {
+            follow = false;
+            if (untilSongEnd && !HasDurationOverride(record))
+            {
+                float rest = SongRemaining(record);
+                if (rest > 0.05f)
+                {
+                    follow = true;
+                    return rest;
+                }
+            }
+            return GetDuration(record);
+        }
+
+        bool HasDurationOverride(RecordData record)
+        {
+            if (RecordData.IsNullOrEmpty(record) || durationOverrides == null) return false;
+            foreach (DurationOverride o in durationOverrides)
+                if (o != null && !string.IsNullOrWhiteSpace(o.key) && o.key.Trim() == record.key) return true;
+            return false;
+        }
+
+        /// <summary>record の曲が鳴っていれば、曲の終わりまでの残り秒数。鳴っていなければ -1</summary>
+        float SongRemaining(RecordData record)
+        {
+            if (audioPlayer == null) audioPlayer = FindFirstObjectByType<RecordAudioPlayer>();
+            if (audioPlayer == null || !audioPlayer.IsPlayingSongOf(record)) return -1f;
+            return audioPlayer.SongRemaining;
         }
 
         /// <summary>そのレコードに曲があるか</summary>
@@ -442,7 +482,10 @@ namespace MedalPusher
 
             if (Current != null)
             {
-                Remaining -= Time.deltaTime;
+                float rest = followSong ? SongRemaining(Current) : -1f;
+                if (rest < 0f) Remaining -= Time.deltaTime;          // 曲に合わせない・曲が止まった・切りかえ中
+                else if (rest > Remaining + 1f) Remaining = 0f;       // 曲が最後まで行って、頭に戻った
+                else Remaining = rest;                                // 曲の残り秒数に合わせる
                 if (Remaining <= 0f) Finish(true);
             }
             if (pusherStopRemaining > 0f) pusherStopRemaining -= Time.deltaTime;

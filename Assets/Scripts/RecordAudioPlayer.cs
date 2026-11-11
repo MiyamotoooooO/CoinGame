@@ -9,7 +9,7 @@ namespace MedalPusher
     /// 2026-11-08 の仕様変更（「流す」と「発動」を分けた）：
     /// ・レコードを流すと（ゲージはいらない）、その曲をくり返し流す。効果が無い間は「おとなしい音」で流れる
     /// ・Q キーで効果を発動すると、曲は止めずに、続きから「盛り上がった音」に変わる
-    ///   効果は発動した時から曲1曲ぶんの秒数だけ続く（RecordEffectSystem.GetDuration を参照）
+    ///   効果は発動した時から、その曲の終わりまで続く（残り秒数。RecordEffectSystem の Until Song End を参照）
     /// ・効果が終わると、そのまま「おとなしい音」に戻って流れ続ける（無音にはならない）
     /// ・別のレコードに切り替えたときや止めたときは、フェードアウトしてから切り替える
     /// ・曲が無いレコードは無音（ターンテーブルは回る。効果は CSV の効果時間の秒数）
@@ -77,6 +77,24 @@ namespace MedalPusher
 
         /// <summary>ブレーキ中か（発動してからドロップまで）</summary>
         public bool IsBraking => brakeTimer > 0f;
+
+        /// <summary>
+        /// いま鳴っている曲の、終わりまでの残り秒数。曲が鳴っていない時・切りかえのフェード中は -1。
+        /// （おとなしい版と元の曲は同じ長さで作る決まりなので、どちらが鳴っていても同じ）
+        /// RecordEffectSystem が、効果の長さを「曲の終わりまで」にするのに使う。
+        /// </summary>
+        public float SongRemaining
+        {
+            get
+            {
+                if (source == null || source.clip == null || !source.isPlaying || switching) return -1f;
+                return Mathf.Max(0f, source.clip.length - source.time);
+            }
+        }
+
+        /// <summary>record の曲が、いま鳴っているか</summary>
+        public bool IsPlayingSongOf(RecordData record) =>
+            !RecordData.IsNullOrEmpty(record) && NowPlaying != null && NowPlaying.key == record.key && SongRemaining >= 0f;
 
         /// <summary>
         /// 発動のドロップの瞬間（ブレーキが終わって、盛り上がった音になった瞬間）に呼ばれる。

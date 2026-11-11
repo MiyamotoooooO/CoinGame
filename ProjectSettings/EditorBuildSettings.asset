@@ -14,5 +14,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/TestScene.unity
     guid: eb79da669f97b10449e2d6827d5a1530
+  - enabled: 1
+    path: Assets/Scenes/RecordDex.unity
+    guid: f20d473f0218473ea7b49b6158cc48e7
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
