@@ -17,12 +17,14 @@ namespace MedalPusher
     /// ・物理の変更（プッシャーの速さ・止める・押す距離、重力、メダルのすべりやすさ）は、
     ///   PusherSpeedScale などに入れておくと、発動中だけ反映して、終わり・リセットで必ず元に戻す
     /// ・道具：ポイント・ゲージ、モニターの部品、ポップ、仮の音、盤面の部品、火花の粒、画面の揺れ、メダルを降らせる
+    /// ・モニターの飾り（RecordScreenKit.cs）：テーマの色の背景・走査線・光の帯・枠の光・開く時のワイプを自動で付ける。
+    ///   Panel・Bar・Lbl・Pop も、光る縁やキラキラが付いた見た目になる
     ///
     /// 1枚ずつのスクリプトは、次を書けばよい：
     ///   DefaultKey / ScreenTitle / ScreenSubtitle、BuildBoard、BuildScreen、
     ///   必要なら OnBegin / OnEnd / OnDrop / OnInsert / Tick / UpdateBoard / UpdateScreen
     /// </summary>
-    public abstract class RecordScriptBase : MonoBehaviour
+    public abstract partial class RecordScriptBase : MonoBehaviour
     {
         [Header("つなぐ相手（空なら自動で探す）")]
         public MedalPusherGame game;
@@ -245,7 +247,9 @@ namespace MedalPusher
                 if (Screen != null)
                 {
                     BodyW = Monitor.RecordBodyW;
+                    BuildScreenBackdrop();
                     BuildScreen();
+                    BuildScreenForeground();
                 }
             }
         }
@@ -256,6 +260,7 @@ namespace MedalPusher
             Active = false;
             if (Monitor != null) Monitor.HideRecordScreen(recordKey);
             Screen = null;
+            ResetScreenFx();
             ResetOverrides();
             ApplyPhysics();
             shakeTime = -1f;
@@ -307,7 +312,11 @@ namespace MedalPusher
             bool visible = BoardShown > 0f || KeepBoardVisible();
             if (Board != null && Board.gameObject.activeSelf != visible) Board.gameObject.SetActive(visible);
             if (visible) UpdateBoard(dt);
-            if (Active && Screen != null) UpdateScreen(dt);
+            if (Active && Screen != null)
+            {
+                UpdateScreen(dt);
+                UpdateScreenFx(Time.unscaledDeltaTime);
+            }
             UpdateShake(dt);
         }
 
@@ -428,7 +437,11 @@ namespace MedalPusher
 
         protected Text Lbl(Transform parent, string name, float x, float cy, float w, float h, string text, int size, Color color,
                            TextAnchor align = TextAnchor.MiddleCenter, bool number = false)
-            => Monitor.ScreenLabel(parent, name, x, cy, w, h, text, size, color, align, number);
+        {
+            var t = Monitor.ScreenLabel(parent, name, x, cy, w, h, text, size, color, align, number);
+            DecorateLabel(t, size);
+            return t;
+        }
 
         protected RectTransform Grp(Transform parent, string name, float cx, float cy, float w, float h)
             => Monitor.ScreenGroup(parent, name, cx, cy, w, h);
@@ -441,6 +454,7 @@ namespace MedalPusher
         {
             var img = Img(parent, name, cx, cy, w, h, color);
             img.gameObject.AddComponent<RectMask2D>();
+            DecoratePanel(img, w, h);
             return img.rectTransform;
         }
 
@@ -452,6 +466,7 @@ namespace MedalPusher
             fill.type = Image.Type.Filled;
             fill.fillMethod = Image.FillMethod.Horizontal;
             fill.fillAmount = 0f;
+            DecorateBar(parent, fill, left, cy, w, h);
             return fill;
         }
 
@@ -465,10 +480,16 @@ namespace MedalPusher
         {
             if (Monitor == null || Screen == null) return;
             Monitor.PopText(text, color, Monitor.RecordBodyToCanvas(bodyPos));
+            ScreenBurst(bodyPos, color, 12);
         }
 
         /// <summary>モニターの中身のまん中あたりに弾けさせる</summary>
-        protected void PopCenter(string text, Color color) => Pop(text, color, new Vector2(BodyW * 0.5f, BodyH * 0.35f));
+        protected void PopCenter(string text, Color color)
+        {
+            Pop(text, color, new Vector2(BodyW * 0.5f, BodyH * 0.35f));
+            ScreenFlash(color, 0.22f);
+            ScreenBurst(new Vector2(BodyW * 0.5f, BodyH * 0.35f), color, 18);
+        }
 
         /// <summary>スピーカーも揺らす（大きいイベント用）</summary>
         protected static void Speaker(float strength, int notes = 0, Color? color = null)

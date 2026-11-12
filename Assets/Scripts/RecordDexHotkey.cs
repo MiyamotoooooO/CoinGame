@@ -15,6 +15,8 @@ namespace MedalPusher
     /// ・P キーを押すと、どのシーンからでも図鑑のシーンへ飛ぶ（エディタと Development Build の時だけ）
     ///   図鑑で P か Esc を押すと、元のシーンへもどる（RecordDexScreen が受け持つ）
     ///   ※ P はゲームの「プッシャーを止める」と同じキー。飛ぶ前に一瞬止まるが、シーンが替わるので気にしなくてよい
+    /// ・F3 キーを押すと、40枚のレコードを全部入手する（所持一覧に入れて、図鑑も全部「発見」にする）。デバッグ用。
+    ///   エディタと Development Build の時だけ。図鑑の画面で押すと、図鑑の「発見」だけ全部つける
     /// ・ゲーム中にレコードを流した回数・発動した回数を、この PC に保存する（PlayerPrefs）。図鑑の「発見」に使う
     /// ・シーンに置かなくても、ゲームを始めると自動で作られる（シーンが替わっても消えない）
     /// </summary>
@@ -28,6 +30,9 @@ namespace MedalPusher
 
         static RecordDexHotkey instance;
         RecordEffectSystem watched;
+        string notice;
+        float noticeUntil;
+        GUIStyle noticeStyle;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Create()
@@ -49,8 +54,58 @@ namespace MedalPusher
 
             bool debugAllowed = Application.isEditor || Debug.isDebugBuild;
             if (!debugAllowed) return;
+            if (DexKeys.Pressed(DexKeys.Key.F3)) UnlockAll();
             if (SceneManager.GetActiveScene().name == DexSceneName) return;   // 図鑑の中では RecordDexScreen が P を受け持つ
             if (DexKeys.Pressed(DexKeys.Key.P)) OpenDex();
+        }
+
+        /// <summary>
+        /// デバッグ用：レコードを全部入手する（F3）。
+        /// ゲームのシーンでは所持一覧（RecordInventory）に全部入れ、図鑑の「発見」も全部つける。
+        /// </summary>
+        public void UnlockAll()
+        {
+            var records = RecordDatabase.LoadFromResources();
+            if (records == null || records.Count == 0)
+            {
+                ShowNotice("レコードの CSV が読めませんでした");
+                return;
+            }
+
+            int added = 0;
+            var inventory = FindFirstObjectByType<RecordInventory>();
+            if (inventory != null)
+                foreach (var r in records)
+                    if (!RecordData.IsNullOrEmpty(r) && inventory.Add(r)) added++;
+
+            RecordDexProgress.DiscoverAll(records);
+
+            var dex = FindFirstObjectByType<RecordDexScreen>();
+            if (dex != null) dex.SendMessage("RefreshDetail", SendMessageOptions.DontRequireReceiver);
+
+            string msg = inventory != null
+                ? $"F3：全レコードを入手しました（所持に +{added} 枚、図鑑は全部発見）"
+                : "F3：図鑑のレコードを全部「発見」にしました（所持はゲームの画面で F3）";
+            ShowNotice(msg);
+            Debug.Log("RecordDexHotkey: " + msg);
+        }
+
+        void ShowNotice(string text)
+        {
+            notice = text;
+            noticeUntil = Time.unscaledTime + 3f;
+        }
+
+        void OnGUI()
+        {
+            if (string.IsNullOrEmpty(notice) || Time.unscaledTime > noticeUntil) return;
+            if (noticeStyle == null)
+            {
+                noticeStyle = new GUIStyle(GUI.skin.box) { fontSize = Mathf.Max(14, Screen.height / 40), alignment = TextAnchor.MiddleCenter, wordWrap = true };
+                noticeStyle.normal.textColor = Color.white;
+            }
+            float w = Mathf.Min(Screen.width - 40f, Screen.height * 1.1f), h = noticeStyle.fontSize * 2.6f;
+            GUI.Box(new Rect((Screen.width - w) * 0.5f, Screen.height * 0.12f, w, h), notice, noticeStyle);
         }
 
         /// <summary>図鑑のシーンを開く（今のシーンを覚えておく）</summary>
@@ -105,6 +160,17 @@ namespace MedalPusher
             PlayerPrefs.Save();
         }
 
+        /// <summary>まだ発見していないレコードを、全部「発見」にする（F3 で呼ぶ。デバッグ用）</summary>
+        public static void DiscoverAll(System.Collections.Generic.IEnumerable<RecordData> records)
+        {
+            foreach (var r in records)
+            {
+                if (RecordData.IsNullOrEmpty(r) || IsDiscovered(r.key)) continue;
+                PlayerPrefs.SetInt(HeardPrefix + r.key, 1);
+            }
+            PlayerPrefs.Save();
+        }
+
         /// <summary>記録を消す（図鑑で F9 を押すと呼ぶ。デバッグ用）</summary>
         public static void Clear(System.Collections.Generic.IEnumerable<RecordData> records)
         {
@@ -123,7 +189,7 @@ namespace MedalPusher
     /// </summary>
     public static class DexKeys
     {
-        public enum Key { P, Escape, Backspace, Left, Right, Up, Down, Tab, Q, E, Space, Enter, F5, F9, Shift }
+        public enum Key { P, Escape, Backspace, Left, Right, Up, Down, Tab, Q, E, Space, Enter, F3, F4, F5, F9, Shift }
 
         /// <summary>押した瞬間</summary>
         public static bool Pressed(Key key)
@@ -145,6 +211,8 @@ namespace MedalPusher
                 case Key.E: return k.eKey.wasPressedThisFrame;
                 case Key.Space: return k.spaceKey.wasPressedThisFrame;
                 case Key.Enter: return k.enterKey.wasPressedThisFrame;
+                case Key.F3: return k.f3Key.wasPressedThisFrame;
+                case Key.F4: return k.f4Key.wasPressedThisFrame;
                 case Key.F5: return k.f5Key.wasPressedThisFrame;
                 case Key.F9: return k.f9Key.wasPressedThisFrame;
                 case Key.Shift: return k.leftShiftKey.wasPressedThisFrame || k.rightShiftKey.wasPressedThisFrame;
@@ -165,6 +233,8 @@ namespace MedalPusher
                 case Key.E: return Input.GetKeyDown(KeyCode.E);
                 case Key.Space: return Input.GetKeyDown(KeyCode.Space);
                 case Key.Enter: return Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+                case Key.F3: return Input.GetKeyDown(KeyCode.F3);
+                case Key.F4: return Input.GetKeyDown(KeyCode.F4);
                 case Key.F5: return Input.GetKeyDown(KeyCode.F5);
                 case Key.F9: return Input.GetKeyDown(KeyCode.F9);
                 case Key.Shift: return Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift);
