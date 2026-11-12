@@ -49,6 +49,17 @@ namespace MedalPusher
                 Cone(beams[i], new Vector3(0f, -12f, 0f), 2.4f, 12f, beamMats[i], Vector3.zero, 24);
             }
             sparks = Fx(0.09f, 0.7f, 0.2f, Hero);
+        
+            // マイクスタンドと、まわりの星
+            var standMat = Mat(C("#2a2a34"), 0.8f, 0.7f);
+            Tube(Hero, new Vector3(0.02f, -0.38f, 0.02f), new Vector3(0.02f, -0.62f, 0.02f), 0.035f, standMat);
+            Cyl(Hero, new Vector3(0.02f, -0.63f, 0.02f), 0.34f, 0.03f, standMat);
+            Ring(Hero, new Vector3(0.02f, -0.615f, 0.02f), 0.17f, 0.012f, Glow(Theme, 2.5f));
+            for (int i = 0; i < 5; i++)
+            {
+                float a = i * Mathf.PI * 2f / 5f + 0.3f;
+                Star(Hero, new Vector3(Mathf.Cos(a) * 0.45f, 0.15f + Mathf.Sin(a) * 0.35f, -0.05f), 5, 0.06f, 0.025f, 0.02f, Glow(Calls[i % 3], 2.5f), new Vector3(0f, 0f, i * 20f));
+            }
         }
 
         protected override void OnBegin() { beamLevel = 0f; beamTarget = 0f; }
@@ -347,6 +358,16 @@ namespace MedalPusher
                 }
             Halo(car, new Vector3(0.75f, 0.01f, 0f), new Color(1f, 0.95f, 0.7f, 0.5f), 0.5f);
             trail = Fx(0.2f, 0.7f, 0f);
+        
+            // ヤシの木（左右）
+            var trunk = Mat(C("#3a1a4a"), 0.1f, 0.4f);
+            var leaf = Glow(C("#29e0ff"), 1.2f);
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var palm = Group(Hero, "Palm", new Vector3(side * 0.78f, -0.3f, 0.2f), new Vector3(0f, 0f, side * -8f));
+                for (int i = 0; i < 5; i++) Cyl(palm, new Vector3(side * i * 0.012f, 0.06f + i * 0.11f, 0f), 0.06f - i * 0.006f, 0.12f, trunk, new Vector3(0f, 0f, side * -4f * i));
+                for (int i = 0; i < 6; i++) Egg(palm, new Vector3(side * 0.06f, 0.62f, 0f), new Vector3(0.36f, 0.05f, 0.08f), leaf, new Vector3(0f, i * 60f, -30f + (i % 2) * 15f));
+            }
         }
 
         protected override void OnIntro(float t)
@@ -606,6 +627,21 @@ namespace MedalPusher
                 laserMats[i] = Add(new Color(0.2f, 1f, 0.9f, 0f));
                 lasers[i] = Group(Set, "Laser", new Vector3((i < 3 ? -1f : 1f) * (HalfW - 0.5f), -HalfH - 0.3f, 2f));
                 Box(lasers[i], new Vector3(0f, 8f, 0f), new Vector3(0.06f, 16f, 0.06f), laserMats[i]);
+            }
+        
+            // 左右のスピーカーと、上のアンテナの光
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var spk = Group(Hero, "Speaker", new Vector3(side * 0.62f, -0.15f, 0.05f));
+                Box(spk, Vector3.zero, new Vector3(0.26f, 0.5f, 0.26f), Mat(C("#12141c"), 0.5f, 0.7f));
+                Cyl(spk, new Vector3(0f, 0.1f, -0.135f), 0.18f, 0.02f, Mat(C("#2a2e3a"), 0.6f, 0.6f), new Vector3(90f, 0f, 0f));
+                Cyl(spk, new Vector3(0f, -0.12f, -0.135f), 0.12f, 0.02f, Mat(C("#2a2e3a"), 0.6f, 0.6f), new Vector3(90f, 0f, 0f));
+                Ring(spk, new Vector3(0f, 0.1f, -0.14f), 0.09f, 0.01f, Glow(Theme, 2.5f), new Vector3(90f, 0f, 0f));
+            }
+            for (int i = 0; i < 3; i++)
+            {
+                Tube(Hero, new Vector3(-0.15f + i * 0.15f, 0.36f, 0f), new Vector3(-0.15f + i * 0.15f, 0.5f + (i % 2) * 0.06f, 0f), 0.012f, Mat(C("#c8ccd6"), 0.9f, 0.8f));
+                Ball(Hero, new Vector3(-0.15f + i * 0.15f, 0.51f + (i % 2) * 0.06f, 0f), 0.04f, Glow(i % 2 == 0 ? Theme : C("#ff3ad8"), 3f));
             }
         }
 

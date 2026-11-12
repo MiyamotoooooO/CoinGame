@@ -70,6 +70,10 @@ namespace MedalPusher
 
         /// <summary>フィナーレで紙吹雪を降らせるか</summary>
         public virtual bool FinaleConfetti => true;
+        /// <summary>主役のまわりを光の玉が回るか</summary>
+        public virtual bool OrbitLights => true;
+        /// <summary>主役の後ろに光の放射（後光）を出すか</summary>
+        public virtual bool Aura => true;
 
         /// <summary>モデルを作る（最初に流した時に1回だけ）。Hero と Set の子にする</summary>
         protected virtual void Build() { }
@@ -160,6 +164,7 @@ namespace MedalPusher
                 Set = Group(Root, "Set", Vector3.zero);
                 Build();
                 ComputeFit();
+                BuildDecor();
                 built = true;
             }
             ClearTemps();
@@ -191,13 +196,25 @@ namespace MedalPusher
             switch (phase)
             {
                 case Phase.Intro:
-                    if (Cross(0.3f)) Sfx(SpectacleSfx.Whoosh, 0.8f);
-                    if (Cross(1.05f))
+                    if (Cross(0.3f))
                     {
-                        Kick(0.7f);
-                        Shock(Director.FocusPos + Vector3.forward, Color.Lerp(Theme, Color.white, 0.3f), 1f, 10f, 0.7f);
-                        Sfx(SpectacleSfx.Boom, 0.6f);
+                        Sfx(SpectacleSfx.Whoosh, 0.8f);
+                        Sfx(SpectacleSfx.Rise, 0.5f, 0.8f);
+                        Director.Dim(1f);
+                        Director.SpeedLines(2.6f, Theme);
                     }
+                    if (t_IntroCharge())
+                    {
+                        // ため：まわりから光が中心へ集まる
+                        Vector3 c0 = Director.FocusPos + Vector3.forward * 2f;
+                        for (int k = 0; k < 3; k++)
+                        {
+                            Vector3 p0 = c0 + (Vector3)(UnityEngine.Random.insideUnitCircle.normalized * 8f);
+                            Burst(DecorFx, p0, Color.Lerp(Theme, Color.white, UnityEngine.Random.Range(0f, 0.6f)), 1, 12f, c0 - p0, 0.03f);
+                        }
+                    }
+                    if (Cross(1.05f)) IntroImpact();
+                    if (Cross(3.0f)) Director.Dim(0f);
                     OnIntro(phaseT);
                     if (phaseT >= IntroLength) phase = Phase.Live;
                     break;
@@ -235,9 +252,37 @@ namespace MedalPusher
             if (phase == Phase.Live && BeatEveryDrops > 0 && centerDrops % BeatEveryDrops == 0) FireBeat();
         }
 
+        /// <summary>登場の瞬間（全部のレコード共通の、いちばん派手な所）</summary>
+        void IntroImpact()
+        {
+            Vector3 c = Director.FocusPos + Vector3.forward;
+            Color hot = Color.Lerp(Theme, Color.white, 0.35f);
+            Kick(1.1f);
+            Shake(0.2f, 0.7f);
+            Flash(Color.Lerp(Theme, Color.white, 0.6f), 0.55f);
+            Shock(c, hot, 1f, 12f, 0.7f);
+            Shock(c, Color.white, 0.5f, 9f, 0.5f);
+            After(0.12f, () => Shock(c, Theme, 1f, 15f, 0.9f));
+            After(0.24f, () => Shock(c, hot, 1f, 18f, 1.1f));
+            Burst(DecorFx, c, hot, 120, 14f);
+            Burst(DecorFx, c, Color.white, 60, 9f);
+            Confetti(70, Theme, Color.white, Color.Lerp(Theme, Color.yellow, 0.5f));
+            Sfx(SpectacleSfx.Boom, 0.9f);
+            Sfx(SpectacleSfx.Crash, 0.55f, 1.2f);
+            Sfx(SpectacleSfx.Sparkle, 0.6f);
+            auraKick = 1f;
+        }
+
+        /// <summary>登場の前の「ため」（まわりから光が集まる）の間か</summary>
+        bool t_IntroCharge() => phase == Phase.Intro && phaseT > 0.35f && phaseT < 1.0f;
+
         internal void Finale()
         {
             if (phase == Phase.Hidden || phase == Phase.Finale) return;
+            Director.Dim(0.8f);
+            Director.SpeedLines(2f, Theme);
+            After(2.1f, () => Director.Dim(0f));
+            auraKick = 1f;
             finaleFrom = Hero.localPosition + Hero.localRotation * (fitCenter * Hero.localScale.x);
             finaleFromSize = Hero.localScale.x / Mathf.Max(0.001f, fit);
             phase = Phase.Finale;
@@ -300,6 +345,8 @@ namespace MedalPusher
         void FireBeat()
         {
             Beats++;
+            auraKick = 1f;
+            if (BeatSpotlight > 0f) Director.SpeedLines(1.1f, Theme);
             if (BeatSpotlight > 0f) Spotlight(BeatSpotlight);
             if (!string.IsNullOrEmpty(BeatText)) Director.Banner(BeatText, Theme, 0f);
             OnBeat(Beats);
@@ -383,6 +430,93 @@ namespace MedalPusher
             Hero.localRotation = rot;
             Hero.localScale = Vector3.one * Mathf.Max(0.001f, size);
             Hero.localPosition = pos + HeroOffset - rot * (fitCenter * size);
+            PoseDecor(pos + HeroOffset, size);
+        }
+
+        // ================================================================
+        // 全部のレコード共通の飾り：後光（放射する光）と、まわりを回る光の玉
+        // ================================================================
+
+        Transform aura, orbit;
+        readonly List<Material> auraMats = new List<Material>();
+        Material auraHaloMat;
+        float auraLevel, auraKick;
+        ParticleSystem decorFx;
+        /// <summary>共通の飾りの粒（画面に固定）</summary>
+        protected ParticleSystem DecorFx => decorFx;
+
+        void BuildDecor()
+        {
+            decorFx = Fx(0.22f, 0.9f, 0f);
+            if (Aura)
+            {
+                aura = Group(Root, "Aura", Vector3.zero);
+                const int rays = 20;
+                for (int i = 0; i < rays; i++)
+                {
+                    float a = i * 360f / rays;
+                    bool big = i % 2 == 0;
+                    var m = Add(new Color(1f, 1f, 1f, 0f));
+                    auraMats.Add(m);
+                    float len = big ? 1f : 0.7f, w = big ? 0.07f : 0.045f;
+                    Prism(aura, Vector3.zero, new[] { new Vector2(-w * 0.15f, 0.08f), new Vector2(w, len), new Vector2(-w, len) }, 0.01f, m, new Vector3(0f, 0f, a));
+                }
+                auraHaloMat = SoftAdd(new Color(1f, 1f, 1f, 0f));
+                Quad(aura, new Vector3(0f, 0f, 0.05f), 1.6f, 1.6f, auraHaloMat);
+            }
+            if (OrbitLights)
+            {
+                float inv = 1f / Mathf.Max(0.01f, fit);
+                orbit = Group(Hero, "Orbit", new Vector3(fitCenter.x, fitCenter.y, 0f));
+                for (int i = 0; i < 4; i++)
+                {
+                    float a = i * Mathf.PI * 0.5f;
+                    var p = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 0.62f * inv;
+                    Ball(orbit, p, 0.035f * inv, Glow(Color.Lerp(Theme, Color.white, 0.5f), 3f));
+                    Halo(orbit, p, new Color(Theme.r, Theme.g, Theme.b, 0.8f), 0.16f * inv);
+                }
+            }
+        }
+
+        void PoseDecor(Vector3 heroCenter, float heroScale)
+        {
+            float target;
+            switch (phase)
+            {
+                case Phase.Intro:
+                    target = phaseT < 0.3f ? 0f : phaseT < 2.5f ? 0.85f : Mathf.Lerp(0.85f, 0.15f, Mathf.Clamp01((phaseT - 2.5f) / 0.8f));
+                    break;
+                case Phase.Finale:
+                    target = phaseT < 2.0f ? 1f : 0f;
+                    break;
+                default:
+                    target = 0.15f + 0.8f * SpotWeight();
+                    break;
+            }
+            auraLevel = Mathf.MoveTowards(auraLevel, target, Time.deltaTime * 3f);
+            auraKick *= Mathf.Exp(-Time.deltaTime * 3f);
+            float level = Mathf.Clamp01(auraLevel + auraKick * 0.6f);
+
+            if (aura != null)
+            {
+                float visual = heroScale / Mathf.Max(0.01f, fit);   // モデルの見た目の大きさ（いちばん長い辺）
+                aura.localPosition = heroCenter + new Vector3(0f, 0f, 2.5f);
+                aura.localRotation = Quaternion.Euler(0f, 0f, since * 18f);
+                aura.localScale = Vector3.one * visual * (0.75f + 0.55f * level + 0.35f * auraKick);
+                Color hot = Color.Lerp(Theme, Color.white, 0.3f);
+                for (int i = 0; i < auraMats.Count; i++)
+                {
+                    float flick = 0.75f + 0.25f * Mathf.Sin(since * 5f + i * 1.3f);
+                    Color c = i % 2 == 0 ? hot : Theme;
+                    SetUnlitColor(auraMats[i], new Color(c.r, c.g, c.b, 0.5f * level * flick));
+                }
+                SetUnlitColor(auraHaloMat, new Color(hot.r, hot.g, hot.b, 0.75f * level));
+            }
+            if (orbit != null)
+            {
+                orbit.localRotation = Quaternion.Euler(-68f, since * 120f, 0f);
+                orbit.localScale = Vector3.one * (0.9f + 0.25f * level);
+            }
         }
 
         float SpotWeight()

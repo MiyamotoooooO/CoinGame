@@ -287,6 +287,11 @@ namespace MedalPusher
             runner.gameObject.SetActive(false);
             runSteam = Fx(0.9f, 2f, -0.08f, null, false, 2.5f);
             sparks = Fx(0.12f, 0.5f, 0.6f);
+        
+            // レールと枕木
+            var rail = Mat(C("#9aa0aa"), 0.9f, 0.7f);
+            for (int i = 0; i < 2; i++) Box(Hero, new Vector3(0f, -0.31f, i == 0 ? -0.12f : 0.12f), new Vector3(1.4f, 0.02f, 0.02f), rail);
+            for (int i = 0; i < 9; i++) Box(Hero, new Vector3(-0.64f + i * 0.16f, -0.33f, 0f), new Vector3(0.05f, 0.02f, 0.34f), Mat(C("#5a3216")));
         }
 
         void Run(float seconds, float y)
@@ -427,6 +432,7 @@ namespace MedalPusher
     /// <summary>N012 磁石：巨大なU字磁石と、走る電気</summary>
     public class MagnetSpectacle : RecordSpectacle
     {
+        readonly List<Transform> floating = new List<Transform>();
         public override string Key => "Magnet";
         public override string Title => "MAGNETIC FORCE";
         public override string Catch => "メダルを穴へ引き寄せる";
@@ -462,6 +468,16 @@ namespace MedalPusher
                 Ring(fields[i], Vector3.zero, 0.3f, 0.015f, fieldMats[i], new Vector3(90f, 0f, 0f));
             }
             pull = Fx(0.12f, 0.8f, 0f);
+        
+            // 引き寄せられて浮かぶメダル
+            var gold = Mat(C("#f2b82a"), 1f, 0.85f);
+            for (int i = 0; i < 4; i++)
+            {
+                var coin = Group(Hero, "Coin", new Vector3(-0.3f + i * 0.2f, -0.55f - (i % 2) * 0.1f, -0.05f), new Vector3(70f, i * 30f, 0f));
+                Cyl(coin, Vector3.zero, 0.13f, 0.02f, gold);
+                Star(coin, new Vector3(0f, 0.012f, 0f), 5, 0.04f, 0.017f, 0.005f, Mat(C("#ffe88a"), 1f, 0.9f), new Vector3(90f, 0f, 0f));
+                floating.Add(coin);
+            }
         }
 
         void Arcs(int n)
@@ -486,6 +502,12 @@ namespace MedalPusher
                 SetUnlitColor(fieldMats[i], new Color(0.6f, 0.8f, 1f, 0.5f * (1f - k)));
             }
             magnet.localRotation = Quaternion.Euler(0f, 15f * Mathf.Sin(t), 180f + 4f * Mathf.Sin(t * 3f));
+            for (int i = 0; i < floating.Count; i++)
+            {
+                var p = floating[i].localPosition;
+                floating[i].localPosition = new Vector3(p.x, -0.55f - (i % 2) * 0.1f + 0.04f * Mathf.Sin(t * 3f + i), p.z);
+                floating[i].Rotate(0f, 180f * dt, 0f, Space.Self);
+            }
             if (Every(1.3f)) Arcs(1);
         }
 
@@ -544,6 +566,14 @@ namespace MedalPusher
             Ball(fish, new Vector3(0.185f, 0.04f, -0.09f), 0.016f, Glow(Color.white, 2f));
             Halo(Hero, new Vector3(0f, -0.2f, 0.4f), new Color(0.2f, 0.9f, 0.7f, 0.5f), 1.8f);
             splash = Fx(0.15f, 1f, 0.5f, Hero);
+        
+            // 水面と、うき
+            Egg(Hero, new Vector3(0.25f, -0.52f, 0f), new Vector3(0.9f, 0.06f, 0.4f), Clear(new Color(0.2f, 0.6f, 0.95f, 0.75f)));
+            Ring(Hero, new Vector3(0.25f, -0.5f, 0f), 0.2f, 0.01f, Glow(C("#cfefff"), 1.5f));
+            var bob = Group(Hero, "Bobber", new Vector3(-0.05f, -0.47f, -0.05f));
+            Ball(bob, Vector3.zero, 0.07f, Mat(C("#e8262a"), 0.2f, 0.8f));
+            Ball(bob, new Vector3(0f, 0.03f, 0f), 0.05f, Mat(Color.white));
+            Cyl(bob, new Vector3(0f, 0.07f, 0f), 0.01f, 0.06f, Mat(C("#222")));
         }
 
         void Leap(float seconds)
@@ -627,6 +657,12 @@ namespace MedalPusher
             }
             dust = Fx(0.6f, 1.6f, -0.02f, null, false, 2.2f);
             smoke = Fx(0.4f, 1.2f, -0.05f, null, false, 2.5f);
+        
+            // 窓・門の飾り・草
+            var window = Glow(C("#ffd27a"), 1.6f);
+            for (int i = 0; i < 4; i++) Box(castle, new Vector3(-0.3f + i * 0.2f, -0.05f, -0.205f), new Vector3(0.05f, 0.07f, 0.01f), window);
+            Ring(castle, new Vector3(0f, -0.2f, -0.215f), 0.11f, 0.015f, Mat(C("#5a5650"), 0.1f, 0.3f), new Vector3(90f, 0f, 0f));
+            for (int i = 0; i < 12; i++) Cone(castle, new Vector3(-0.5f + i * 0.09f, -0.36f, -0.22f), 0.03f, 0.07f, Mat(C("#3aa84a")), Vector3.zero, 6);
         }
 
         void Cannon(Vector3 from, float dir)

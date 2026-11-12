@@ -72,11 +72,17 @@ namespace MedalPusher
         [Tooltip("モデルを描くレイヤー。-1 なら空いているレイヤーを自動でえらぶ（モニターが使う 28・29 はさける）")]
         public int layer = -1;
         [Tooltip("モデルの絵を画面に重ねる Canvas の Sort Order の、ArcadeCamera の画面からの差（モニターの画面が +1 なので、+2 でモニターより上）")]
-        public int screenOrderOffset = 2;
-        [Tooltip("モデルを描く細かさ（ゲームの画面のドットの何倍か）。大きいほどなめらか。1 でゲームの画面と同じドット")]
-        [Range(1, 4)] public int modelResolution = 3;
-        [Tooltip("モデルのふちのギザギザを減らす（アンチエイリアス）")]
-        public bool modelAntiAliasing = true;
+        public int screenOrderOffset = 3;
+        [Tooltip("モデルと粒に、ゲームの画面と同じドットのフィルター（減色・ディザ・ふちどり・走査線）をかける")]
+        public bool dotFilter = true;
+        [Tooltip("モデルを描く細かさ（ゲームの画面のドットの何倍か）。ドットのフィルターがオンなら 1 がおすすめ")]
+        [Range(1, 4)] public int modelResolution = 1;
+        [Tooltip("モデルのふちのギザギザを減らす（アンチエイリアス）。ドットのフィルターがオンならオフがおすすめ")]
+        public bool modelAntiAliasing = false;
+        [Tooltip("発動の時、ゲームの画面を暗くしてモデルを目立たせる強さ")]
+        [Range(0f, 1f)] public float introDim = 0.5f;
+        [Tooltip("発動の時、画面のまん中から放射状の集中線を出す")]
+        public bool speedLines = true;
         [Tooltip("モデルの部品どうしで影を落とす（立体感が出る）")]
         public bool modelShadows = true;
 
@@ -112,8 +118,14 @@ namespace MedalPusher
         Transform rig;
         Camera overlay;
         RenderTexture overlayTexture;
-        Canvas screenCanvas;
+        Canvas screenCanvas, dimCanvas;
         RawImage screenImage;
+        Image dimImage;
+        readonly List<RectTransform> lines = new List<RectTransform>();
+        readonly List<Image> lineImages = new List<Image>();
+        float dimLevel, dimTarget, linesTime = -1f, linesLength;
+        Color linesColor = Color.white;
+        Material dotMaterial, plainMaterial;
         Light keyLight, rimLight, fillLight;
         Camera mainCam;
         AudioSource audioSource;
@@ -152,6 +164,8 @@ namespace MedalPusher
         float cardTime = -1f, barTime = -1f, flashAlpha;
         Color flashColor;
         float bannerTime = -1f, bannerDelay;
+        float slamTime = -1f;
+        Text slamText;
         Color bannerColor = Color.white;
         Image bannerEdgeTop, bannerEdgeBottom;
 
@@ -298,13 +312,80 @@ namespace MedalPusher
             screenImage = igo.AddComponent<RawImage>();
             screenImage.raycastTarget = false;
             var premultiplied = Shader.Find("Hidden/MedalPusher/OverlayPremultiplied");
-            if (premultiplied != null) screenImage.material = new Material(premultiplied);
+            if (premultiplied != null) plainMaterial = new Material(premultiplied);
+            var dots = Shader.Find("MedalGame/SpectacleDots");
+            if (dots == null) dots = Resources.Load<Shader>("SpectacleDots");
+            if (dots != null) dotMaterial = new Material(dots);
+            else Debug.LogWarning("RecordSpectacleDirector: SpectacleDots シェーダーが見つからないので、演出にドットのフィルターをかけられません。");
+            screenImage.material = dotFilter && dotMaterial != null ? dotMaterial : plainMaterial;
             var irt = screenImage.rectTransform;
             irt.anchorMin = Vector2.zero;
             irt.anchorMax = Vector2.one;
             irt.offsetMin = Vector2.zero;
             irt.offsetMax = Vector2.zero;
             cgo.SetActive(false);
+
+            // モデルの後ろ（ゲームの画面・モニターの上）：画面を暗くする幕と、集中線
+            var dgo = new GameObject("RecordSpectacleDim");
+            dimCanvas = dgo.AddComponent<Canvas>();
+            dimCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            var dscaler = dgo.AddComponent<CanvasScaler>();
+            dscaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            dscaler.referenceResolution = new Vector2(1920f, 1080f);
+            dscaler.matchWidthOrHeight = 1f;
+            var dim = Rect(dgo.transform, "Dim", Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            dimImage = dim.gameObject.AddComponent<Image>();
+            dimImage.color = Color.clear;
+            dimImage.raycastTarget = false;
+            for (int i = 0; i < 48; i++)
+            {
+                var l = Rect(dgo.transform, "SpeedLine", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(600f, 6f));
+                l.localRotation = Quaternion.Euler(0f, 0f, i * 7.5f + UnityEngine.Random.Range(-3f, 3f));
+                var img = l.gameObject.AddComponent<Image>();
+                img.raycastTarget = false;
+                img.color = Color.clear;
+                lines.Add(l);
+                lineImages.Add(img);
+            }
+            dgo.SetActive(false);
+        }
+
+        /// <summary>ゲームの画面を暗くする（level 0〜1。モデルの後ろだけ暗くなる）</summary>
+        public void Dim(float level) => dimTarget = Mathf.Clamp01(level) * introDim;
+
+        /// <summary>画面のまん中から放射状の集中線を seconds 秒出す</summary>
+        public void SpeedLines(float seconds, Color color)
+        {
+            if (!speedLines) return;
+            linesTime = 0f;
+            linesLength = Mathf.Max(0.1f, seconds);
+            linesColor = color;
+        }
+
+        void UpdateDimAndLines(float dt)
+        {
+            if (dimCanvas == null) return;
+            dimLevel = Mathf.MoveTowards(dimLevel, dimTarget, dt * 2.5f);
+            bool linesOn = linesTime >= 0f;
+            bool show = (dimLevel > 0.001f || linesOn) && screenCanvas != null && screenCanvas.gameObject.activeSelf;
+            if (dimCanvas.gameObject.activeSelf != show) dimCanvas.gameObject.SetActive(show);
+            if (!show) return;
+            dimCanvas.sortingOrder = screenCanvas.sortingOrder - 1;
+            dimImage.color = new Color(0f, 0f, 0.02f, dimLevel);
+            if (!linesOn) { foreach (var img in lineImages) img.color = Color.clear; return; }
+            linesTime += dt;
+            float env = Mathf.Clamp01(linesTime / 0.15f) * Mathf.Clamp01((linesLength - linesTime) / 0.4f);
+            for (int i = 0; i < lines.Count; i++)
+            {
+                // 内側の端が中心のまわりで出たり入ったりして、外へ流れて見える
+                float phase = Mathf.Repeat(linesTime * 3.2f + i * 0.37f, 1f);
+                float inner = Mathf.Lerp(260f, 520f, phase);
+                lines[i].anchoredPosition = (Vector2)(lines[i].localRotation * Vector3.right) * inner;
+                lines[i].sizeDelta = new Vector2(1400f, Mathf.Lerp(10f, 3f, phase) * (1f + (i % 3)));
+                Color c = i % 4 == 0 ? linesColor : Color.white;
+                lineImages[i].color = new Color(c.r, c.g, c.b, 0.55f * env * (1f - phase * 0.6f));
+            }
+            if (linesTime >= linesLength) linesTime = -1f;
         }
 
         /// <summary>モデルを描く先を決める（ドット化されている時は専用の絵、そうでなければ画面に直接）</summary>
@@ -337,6 +418,18 @@ namespace MedalPusher
                 screenImage.texture = overlayTexture;
                 var arcade = mainCam.GetComponent<ArcadeCamera>();
                 screenCanvas.sortingOrder = (arcade != null ? arcade.sortingOrder : -100) + screenOrderOffset;
+                var mat = dotFilter && dotMaterial != null ? dotMaterial : plainMaterial;
+                if (screenImage.material != mat) screenImage.material = mat;
+                if (mat == dotMaterial && dotMaterial != null)
+                {
+                    // ドットの数はゲームの画面と同じ。色の段階・ディザ・ふちどりなどは、ゲームの画面のマテリアルからまねる
+                    dotMaterial.SetVector("_DotCount", new Vector4(mainTarget.width, mainTarget.height, 0f, 0f));
+                    var src = arcade != null ? arcade.screenMaterial : null;
+                    if (src != null)
+                        foreach (var prop in new[] { "_ColorLevels", "_DitherStrength", "_OutlineStrength", "_OutlineThreshold", "_ScanlineStrength" })
+                            if (src.HasProperty(prop)) dotMaterial.SetFloat(prop, src.GetFloat(prop));
+                    if (src != null && src.HasProperty("_OutlineColor")) dotMaterial.SetColor("_OutlineColor", src.GetColor("_OutlineColor"));
+                }
             }
             else
             {
@@ -388,6 +481,9 @@ namespace MedalPusher
             introCam = 0f;
             finaleCam = -1f;
             barTime = 0f;
+            slamTime = 0f;
+            slamText.text = sp.Title;
+            slamText.color = Color.Lerp(sp.Theme, Color.white, 0.15f);
             if (titleCard) ShowCard(record, sp);
         }
 
@@ -416,7 +512,9 @@ namespace MedalPusher
             current = null;
             currentRecord = null;
             introCam = finaleCam = -1f;
-            cardTime = barTime = bannerTime = -1f;
+            cardTime = barTime = bannerTime = slamTime = -1f;
+            dimTarget = 0f;
+            linesTime = -1f;
         }
 
         // ================================================================
@@ -465,6 +563,7 @@ namespace MedalPusher
             }
             UpdateSlowMo();
             UpdateUi(Time.unscaledDeltaTime, dt);
+            UpdateDimAndLines(dt);
         }
 
         void LateUpdate()
@@ -762,6 +861,19 @@ namespace MedalPusher
             bs.effectDistance = new Vector2(8f, -8f);
             bannerRoot.gameObject.SetActive(false);
 
+            // タイトルをまん中にたたきつける（カードに入る前に）
+            slamText = MakeText(root, "Slam", Vector2.zero, new Vector2(1900f, 260f), numFont, 190, TextAnchor.MiddleCenter);
+            var srt = slamText.rectTransform;
+            srt.anchorMin = srt.anchorMax = new Vector2(0.5f, 0.5f);
+            srt.pivot = new Vector2(0.5f, 0.5f);
+            var so = slamText.gameObject.AddComponent<Outline>();
+            so.effectColor = Color.white;
+            so.effectDistance = new Vector2(6f, -6f);
+            var ss = slamText.gameObject.AddComponent<Shadow>();
+            ss.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            ss.effectDistance = new Vector2(12f, -12f);
+            slamText.gameObject.SetActive(false);
+
             foreach (var g in canvas.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = false;
         }
 
@@ -863,11 +975,33 @@ namespace MedalPusher
             barTop.sizeDelta = new Vector2(0f, barH);
             barBottom.sizeDelta = new Vector2(0f, barH);
 
-            // タイトルカード（ブーストのカットインが終わるころに出す）
+            // タイトルをたたきつける（ブーストのカットインが終わった直後。0.55 秒）
+            if (slamTime >= 0f)
+            {
+                slamTime += dt;
+                float t = slamTime - 1.8f;
+                bool on = t >= 0f && t < 0.6f;
+                if (slamText.gameObject.activeSelf != on) slamText.gameObject.SetActive(on);
+                if (on)
+                {
+                    float inK = Ease.OutBack(Mathf.Clamp01(t / 0.14f));
+                    float outK = Ease.InCubic(Mathf.Clamp01((t - 0.42f) / 0.18f));
+                    float s = Mathf.Lerp(3.2f, 1f, inK) * (1f - 0.5f * outK);
+                    var rt = slamText.rectTransform;
+                    rt.localScale = new Vector3(s, s, 1f);
+                    rt.localRotation = Quaternion.Euler(0f, 0f, -4f + 3f * Mathf.Sin(t * 40f) * (1f - inK));
+                    rt.anchoredPosition = Vector2.Lerp(new Vector2(UnityEngine.Random.Range(-8f, 8f), 60f + UnityEngine.Random.Range(-8f, 8f)), new Vector2(-560f, -330f), outK);
+                    var c = slamText.color; c.a = 1f - outK; slamText.color = c;
+                    if (t < dt * 1.5f) { Flash(Color.white, 0.55f); Kick(0.8f); Shake(0.12f, 0.35f); Sfx(SpectacleSfx.Boom, 0.8f, 1.3f); }
+                }
+                if (t >= 0.6f) slamTime = -1f;
+            }
+
+            // タイトルカード（たたきつけたタイトルが、左下のカードに入る）
             if (cardTime >= 0f)
             {
                 cardTime += dt;
-                float t = cardTime - 1.85f;
+                float t = cardTime - 2.35f;
                 bool on = t >= 0f && t < 2.5f;
                 if (cardRoot.gameObject.activeSelf != on) cardRoot.gameObject.SetActive(on);
                 if (on)

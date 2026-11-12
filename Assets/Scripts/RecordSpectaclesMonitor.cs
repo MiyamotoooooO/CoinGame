@@ -196,6 +196,19 @@ namespace MedalPusher
             rainbow.gameObject.SetActive(false);
             rain = Fx(0.12f, 0.9f, 2f, null, false, 1f);
             snow = Fx(0.18f, 4f, 0.05f, null, false, 1f);
+        
+            // 雲の顔と、しずく・いなずま
+            Ball(cloud, new Vector3(-0.08f, 0.02f, -0.17f), 0.04f, Mat(C("#2a2a3a")));
+            Ball(cloud, new Vector3(0.08f, 0.02f, -0.17f), 0.04f, Mat(C("#2a2a3a")));
+            Ball(cloud, new Vector3(-0.14f, -0.04f, -0.15f), 0.05f, Mat(C("#ffb0c0")));
+            Ball(cloud, new Vector3(0.14f, -0.04f, -0.15f), 0.05f, Mat(C("#ffb0c0")));
+            for (int i = 0; i < 3; i++)
+            {
+                var drop = Group(cloud, "Drop", new Vector3(-0.15f + i * 0.15f, -0.26f - (i % 2) * 0.06f, 0f));
+                Ball(drop, Vector3.zero, 0.06f, Glow(C("#5ab8ff"), 1.2f));
+                Cone(drop, new Vector3(0f, 0.015f, 0f), 0.028f, 0.06f, Glow(C("#5ab8ff"), 1.2f), Vector3.zero, 10);
+            }
+            Prism(cloud, new Vector3(0.3f, -0.3f, 0f), new[] { new Vector2(0.02f, 0.12f), new Vector2(0.06f, 0.12f), new Vector2(0.02f, 0.02f), new Vector2(0.05f, 0.02f), new Vector2(-0.03f, -0.13f), new Vector2(0f, -0.02f), new Vector2(-0.03f, -0.02f) }, 0.03f, Glow(C("#ffe24a"), 2.5f));
         }
 
         void SetWeather(int w)
@@ -682,6 +695,19 @@ namespace MedalPusher
             Lathe(bell, new Vector3(0f, -0.08f, 0f), new[] { new Vector2(0f, 0.12f), new Vector2(0.04f, 0.11f), new Vector2(0.07f, 0.05f), new Vector2(0.09f, 0f), new Vector2(0f, 0f) }, Mat(C("#f2c23a"), 0.95f, 0.85f));
             Halo(Hero, new Vector3(0f, 0f, 0.6f), new Color(1f, 0.6f, 0.7f, 0.5f), 2.2f);
             petals = Fx(0.22f, 5f, 0.05f, null, false, 1f);
+        
+            // しめ縄と紙垂（しで）
+            var gateT = Hero.Find("Torii");
+            if (gateT != null)
+            {
+                for (int i = 0; i < 9; i++)
+                {
+                    float x = -0.4f + i * 0.1f;
+                    Ball(gateT, new Vector3(x, 0.19f - Mathf.Sin(i / 8f * Mathf.PI) * 0.04f, -0.06f), 0.06f, Mat(C("#e8d8a0")));
+                }
+                for (int i = 0; i < 4; i++)
+                    Prism(gateT, new Vector3(-0.3f + i * 0.2f, 0.08f, -0.08f), new[] { new Vector2(-0.02f, 0.06f), new Vector2(0.03f, 0.06f), new Vector2(0.03f, 0.02f), new Vector2(0.0f, -0.01f), new Vector2(0.03f, -0.04f), new Vector2(0.0f, -0.08f), new Vector2(-0.02f, -0.04f) }, 0.005f, Mat(Color.white));
+            }
         }
 
         void Draw()

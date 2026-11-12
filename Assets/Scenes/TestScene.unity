@@ -2527,7 +2527,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 255856c3135a69f419718fb1b4316836, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  debugPlayOnSceneStart: 1
+  debugPlayOnSceneStart: 0
   areaIndex: -1
   resourceFolder: 
   pauseGame: 1

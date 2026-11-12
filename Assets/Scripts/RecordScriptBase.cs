@@ -622,7 +622,91 @@ namespace MedalPusher
             r.shadowCastingMode = ShadowCastingMode.Off;
             r.receiveShadows = false;
             r.sharedMaterial = ParticleMaterial;
+            UpgradeParticles(ps, name, size);
             return ps;
+        }
+
+        // ---- 粒の見た目を良くする（全部のレコードの粒にかかる） ----
+
+        /// <summary>光る粒（火花・星・炎など）として描く名前。それ以外（煙・雪・紙吹雪など）は、すける粒のまま</summary>
+        static readonly HashSet<string> GlowNames = new HashSet<string>
+        {
+            "Sparks", "Sparkle", "Shine", "Trail", "Swirl", "Stars", "SkyBurst", "Notes", "Lava", "Flame", "Embers", "Frost",
+        };
+
+        static Material glowParticleMaterial;
+        static Texture2D glowDotTexture;
+
+        /// <summary>光る粒の素材（重ねるほど明るい。まん中が強く光る）</summary>
+        protected static Material GlowParticleMaterial
+        {
+            get
+            {
+                if (glowParticleMaterial != null) return glowParticleMaterial;
+                if (glowDotTexture == null)
+                {
+                    const int n = 64;
+                    glowDotTexture = new Texture2D(n, n, TextureFormat.RGBA32, false) { name = "RecordGlowDot", wrapMode = TextureWrapMode.Clamp };
+                    var px = new Color32[n * n];
+                    for (int y = 0; y < n; y++)
+                        for (int x = 0; x < n; x++)
+                        {
+                            float dx = (x + 0.5f) / n * 2f - 1f, dy = (y + 0.5f) / n * 2f - 1f;
+                            float d = Mathf.Sqrt(dx * dx + dy * dy);
+                            float core = Mathf.Clamp01(1f - d * 2.8f), halo = Mathf.Clamp01(1f - d);
+                            float a = Mathf.Clamp01(core * core + halo * halo * 0.55f);
+                            px[y * n + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                        }
+                    glowDotTexture.SetPixels32(px);
+                    glowDotTexture.Apply();
+                }
+                var sh = Shader.Find("Legacy Shaders/Particles/Additive");
+                if (sh == null) return ParticleMaterial;
+                glowParticleMaterial = new Material(sh) { mainTexture = glowDotTexture, name = "RecordGlowParticle" };
+                glowParticleMaterial.SetColor("_TintColor", new Color(0.5f, 0.5f, 0.5f, 0.5f));
+                return glowParticleMaterial;
+            }
+        }
+
+        /// <summary>
+        /// 粒に、ふくらんでから縮む大きさの変化・ゆらぎ（ノイズ）・回転を付ける。
+        /// 光る粒は、重ねるほど明るい素材にして、光の尾（トレイル）を引く
+        /// </summary>
+        void UpgradeParticles(ParticleSystem ps, string name, float size)
+        {
+            bool glow = GlowNames.Contains(name);
+            var r = ps.GetComponent<ParticleSystemRenderer>();
+            var main = ps.main;
+
+            var sz = ps.sizeOverLifetime;
+            sz.enabled = true;
+            sz.size = new ParticleSystem.MinMaxCurve(1f, glow
+                ? new AnimationCurve(new Keyframe(0f, 0.3f), new Keyframe(0.08f, 1.15f), new Keyframe(1f, 0.15f))
+                : new AnimationCurve(new Keyframe(0f, 0.5f), new Keyframe(0.15f, 1f), new Keyframe(1f, 0.85f)));
+
+            var noise = ps.noise;
+            noise.enabled = true;
+            noise.strength = D * (glow ? 0.9f : 0.45f);
+            noise.frequency = 0.8f;
+            noise.scrollSpeed = 0.6f;
+            noise.damping = true;
+
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            var rot = ps.rotationOverLifetime;
+            rot.enabled = true;
+            rot.z = new ParticleSystem.MinMaxCurve(-3f, 3f);
+
+            if (!glow) return;
+            r.sharedMaterial = GlowParticleMaterial;
+            var tr = ps.trails;
+            tr.enabled = true;
+            tr.ratio = 0.6f;
+            tr.lifetime = new ParticleSystem.MinMaxCurve(0.18f);
+            tr.widthOverTrail = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0f));
+            tr.inheritParticleColor = true;
+            tr.dieWithParticles = true;
+            tr.minVertexDistance = D * 0.05f;
+            r.trailMaterial = GlowParticleMaterial;
         }
 
         /// <summary>粒を position から count 個出す</summary>
@@ -633,6 +717,21 @@ namespace MedalPusher
             ps.transform.position = position;
             var p = new ParticleSystem.EmitParams { startColor = color, applyShapeToPosition = true };
             ps.Emit(p, count);
+            // 光る粒は、出た所に一瞬だけ大きな光を足す（ぱっと光る）
+            var r = ps.GetComponent<ParticleSystemRenderer>();
+            if (r != null && glowParticleMaterial != null && r.sharedMaterial == glowParticleMaterial)
+            {
+                var flash = new ParticleSystem.EmitParams
+                {
+                    position = position,
+                    applyShapeToPosition = false,
+                    velocity = Vector3.zero,
+                    startColor = Color.Lerp(color, Color.white, 0.5f),
+                    startSize = ps.main.startSize.constantMax * 4f,
+                    startLifetime = 0.16f,
+                };
+                ps.Emit(flash, 1);
+            }
         }
 
         static Texture2D MakeSoftTexture()

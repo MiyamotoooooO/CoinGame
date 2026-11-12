@@ -145,6 +145,12 @@ namespace MedalPusher
             Ball(rabbit, new Vector3(0f, 0.02f, 0.12f), 0.06f, white);
             floaters = Fx(0.14f, 4f, -0.03f, null, true, 1f);
             stars = Fx(0.12f, 2f, 0f);
+        
+            // うさぎのもちつき（うすと、きね）
+            Lathe(Hero, new Vector3(0.12f, -0.5f, -0.3f), new[] { new Vector2(0f, 0f), new Vector2(0.08f, 0f), new Vector2(0.07f, 0.05f), new Vector2(0.09f, 0.1f), new Vector2(0.06f, 0.1f), new Vector2(0f, 0.08f) }, Mat(C("#8a5a2a")), Vector3.zero, 14);
+            Ball(Hero, new Vector3(0.12f, -0.41f, -0.3f), 0.08f, Mat(Color.white));
+            Tube(rabbit, new Vector3(-0.08f, 0.05f, -0.05f), new Vector3(-0.18f, 0.16f, -0.05f), 0.015f, Mat(C("#a86a2a")));
+            Cyl(rabbit, new Vector3(-0.2f, 0.18f, -0.05f), 0.05f, 0.12f, Mat(C("#a86a2a")), new Vector3(0f, 0f, 90f));
         }
 
         void Hop()

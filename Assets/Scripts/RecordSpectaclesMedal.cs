@@ -37,6 +37,11 @@ namespace MedalPusher
             }
             trail = Fx(0.25f, 0.7f, 0f);
             twinkle = Fx(0.14f, 1.5f, 0f);
+        
+            // 笑った口と、ほっぺ
+            Box(star, new Vector3(0f, -0.03f, -0.1f), new Vector3(0.08f, 0.02f, 0.01f), Mat(C("#2a1a0a")));
+            Ball(star, new Vector3(-0.14f, 0f, -0.095f), 0.05f, Mat(C("#ff9a6a")));
+            Ball(star, new Vector3(0.14f, 0f, -0.095f), 0.05f, Mat(C("#ff9a6a")));
         }
 
         void Meteor(Vector3 to, float seconds)
@@ -215,6 +220,14 @@ namespace MedalPusher
             Prism(pick, new Vector3(0f, 0.45f, 0f), new[] { new Vector2(-0.24f, -0.04f), new Vector2(0f, 0.05f), new Vector2(0.24f, -0.04f), new Vector2(0f, 0.01f) }, 0.04f, Mat(C("#b8bcc4"), 0.9f, 0.8f));
             Halo(Hero, new Vector3(0f, 0.1f, 0.5f), new Color(1f, 0.8f, 0.2f, 0.6f), 2f);
             gold = Fx(0.22f, 1.6f, 1.4f);
+        
+            // ランタンと、輝く結晶
+            var lantern = Group(cart, "Lantern", new Vector3(-0.38f, 0.32f, 0f));
+            Box(lantern, Vector3.zero, new Vector3(0.08f, 0.1f, 0.08f), Glow(C("#ffd27a"), 2.5f));
+            Box(lantern, new Vector3(0f, 0.065f, 0f), new Vector3(0.1f, 0.02f, 0.1f), Mat(C("#2a2a2a"), 0.7f, 0.6f));
+            Halo(lantern, new Vector3(0f, 0f, 0.05f), new Color(1f, 0.8f, 0.3f, 0.8f), 0.35f);
+            for (int i = 0; i < 4; i++)
+                Cone(cart, new Vector3(-0.2f + i * 0.13f, 0.3f, -0.05f + (i % 2) * 0.08f), 0.04f, 0.16f, Glow(i % 2 == 0 ? C("#5af0ff") : C("#ff5ad8"), 1.8f), new Vector3(0f, 0f, -15f + i * 10f), 6);
         }
 
         void Geyser(int n, float speed)
@@ -658,6 +671,15 @@ namespace MedalPusher
             Cyl(twinB, Vector3.zero, 0.26f, 0.04f, Glow(C("#9ae0ff"), 1.5f));
             Halo(Hero, new Vector3(0f, 0f, 0.4f), new Color(0.6f, 0.9f, 1f, 0.55f), 2f);
             shards = Fx(0.16f, 1.2f, 0.6f);
+        
+            // 上の王冠と、横のつる草の飾り
+            var crown = Mat(C("#e8c25a"), 0.95f, 0.85f);
+            for (int i = 0; i < 5; i++) Cone(frame, new Vector3(-0.12f + i * 0.06f, 0.52f, -0.02f), 0.025f, 0.08f + (i == 2 ? 0.04f : 0f), crown, Vector3.zero, 8);
+            Box(frame, new Vector3(0f, 0.52f, -0.02f), new Vector3(0.3f, 0.04f, 0.05f), crown);
+            foreach (float side in new[] { -1f, 1f })
+                for (int i = 0; i < 4; i++)
+                    Egg(frame, new Vector3(side * (0.42f + 0.02f * Mathf.Sin(i)), -0.3f + i * 0.2f, -0.02f), new Vector3(0.1f, 0.05f, 0.03f), crown, new Vector3(0f, 0f, side * (30f + i * 15f)));
+            Halo(frame, new Vector3(0.1f, 0.15f, -0.05f), new Color(1f, 1f, 1f, 0.5f), 0.25f);
         }
 
         void Split(float seconds)
@@ -740,6 +762,12 @@ namespace MedalPusher
             Halo(Hero, new Vector3(0f, 0f, 0.5f), new Color(1f, 0.5f, 0.15f, 0.45f), 2f);
             steam = Fx(0.5f, 1.6f, -0.12f, null, false, 2.5f);
             sparks = Fx(0.1f, 0.6f, 0.4f, Hero);
+        
+            // ベルトコンベアと、回転灯
+            Box(Hero, new Vector3(0f, -0.36f, -0.12f), new Vector3(1f, 0.04f, 0.14f), Mat(C("#2a2c30"), 0.5f, 0.5f));
+            for (int i = 0; i < 2; i++) Cyl(Hero, new Vector3(i == 0 ? -0.5f : 0.5f, -0.36f, -0.12f), 0.06f, 0.15f, Mat(C("#9aa0aa"), 0.9f, 0.7f), new Vector3(90f, 0f, 0f));
+            for (int i = 0; i < 4; i++) Cyl(Hero, new Vector3(-0.35f + i * 0.23f, -0.33f, -0.12f), 0.09f, 0.02f, Mat(i % 2 == 0 ? C("#f2b82a") : C("#8a8e96"), 1f, 0.8f));
+            Cyl(Hero, new Vector3(0.48f, 0.62f, 0.15f), 0.08f, 0.06f, Glow(C("#ff3a1a"), 3f));
         }
 
         void AddGear(Vector3 pos, int teeth, float r, Material m, float speed)
