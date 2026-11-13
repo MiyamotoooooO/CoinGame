@@ -108,6 +108,41 @@ namespace MedalPusher
     {
         public static BossBattle Instance { get; private set; }
 
+        // ---- 説明の枠（HoverTooltip）に渡すもの ----
+        /// <summary>説明を出すボスの物の種類。</summary>
+        public enum HoverKind { MuteBlock, Lock, Hand, Head, Shadow }
+        /// <summary>盤面にある（手で運んでいる物もふくむ）ミュートブロックの数。</summary>
+        public int MuteBlockCount
+        {
+            get
+            {
+                int n = blocks.Count;
+                if (hands != null) foreach (var h in hands) n += h.heldBlocks.Count;
+                return n;
+            }
+        }
+        /// <summary>投入ストップの残り秒数（0 なら止まっていない）。</summary>
+        public float InsertStopRemaining => Mathf.Max(0f, insertStopTimer);
+        /// <summary>いまのボスの名前。</summary>
+        public string BossName => boss != null ? boss.name : "ボス";
+
+        /// <summary>説明を出すボスの物（ブロック・南京錠・手・顔・予告の影）を list に入れる。extra は、いっしょに光らせる見た目（手の袖）。</summary>
+        public void CollectHoverTargets(List<(GameObject go, HoverKind kind, Renderer[] extra)> list)
+        {
+            list.Clear();
+            foreach (var b in blocks) if (b.go != null) list.Add((b.go, HoverKind.MuteBlock, null));
+            if (hands != null)
+                foreach (var h in hands)
+                {
+                    foreach (var b in h.heldBlocks) if (b.go != null) list.Add((b.go, HoverKind.MuteBlock, null));
+                    if (h.root != null)
+                        list.Add((h.root.gameObject, HoverKind.Hand, h.sleeve != null ? h.sleeve.GetComponentsInChildren<Renderer>(true) : null));
+                }
+            if (locks != null) foreach (var lk in locks) if (lk != null) list.Add((lk, HoverKind.Lock, null));
+            if (emergeHead != null) list.Add((emergeHead.gameObject, HoverKind.Head, null));
+            foreach (var sh in warnShadows) if (sh != null) list.Add((sh, HoverKind.Shadow, null));
+        }
+
         [Header("つなぐ相手（空なら自動で探す）")]
         public MedalPusherGame game;
         public RecordAudioPlayer audioPlayer;
