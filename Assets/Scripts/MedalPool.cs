@@ -27,6 +27,12 @@ namespace MedalPusher
         Transform root;
 
         public IReadOnlyList<Medal> Active => active;
+
+        /// <summary>
+        /// 寝かせる力（立つのを防ぐ）をかけないメダルを決める（true でかけない）。
+        /// 盤面の手前のふちで傾いているメダルを寝かせ直すと、ふちに引っかかって落ちなくなるため（EdgeDropHelper が使う）。
+        /// </summary>
+        public System.Predicate<Medal> skipAntiStand;
         public int ActiveCount => active.Count;
         public int TotalCreated => all.Count;
 
@@ -283,6 +289,7 @@ namespace MedalPusher
                 if (m == null) continue;
                 var rb = m.Body;
                 if (rb.IsSleeping()) continue;
+                if (skipAntiStand != null && skipAntiStand(m)) continue;
 
                 Vector3 axis = rb.rotation * Vector3.up;   // メダルの面の向き（寝ていれば真上か真下）
                 float flatness = Mathf.Abs(axis.y);        // 1 = 寝ている、0 = 立っている
