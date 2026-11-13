@@ -436,7 +436,7 @@ MonoBehaviour:
     rounds:
     - title: "\u30E9\u30A6\u30F3\u30C91\uFF08\u4EEE\uFF09"
       quota: 150
-      isBoss: 1
+      isBoss: 0
       thumbnail: {fileID: 0}
       placeholderColor: {r: 0.2, g: 0.45, b: 0.5, a: 1}
     - title: "\u30E9\u30A6\u30F3\u30C92\uFF08\u4EEE\uFF09"
@@ -461,6 +461,38 @@ MonoBehaviour:
       placeholderColor: {r: 0.5, g: 0.3, b: 0.45, a: 1}
     - title: "\u30DC\u30B9\uFF08\u4EEE\uFF09"
       quota: 450
+      isBoss: 1
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.6, g: 0.15, b: 0.15, a: 1}
+  - title: "\u30A8\u30EA\u30A22 \uFF5E\u4EEE\u30BF\u30A4\u30C8\u30EB\uFF5E"
+    rounds:
+    - title: "\u30E9\u30A6\u30F3\u30C91\uFF08\u4EEE\uFF09"
+      quota: 230
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.2, g: 0.45, b: 0.5, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C92\uFF08\u4EEE\uFF09"
+      quota: 270
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.25, g: 0.5, b: 0.3, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C93\uFF08\u4EEE\uFF09"
+      quota: 330
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.45, g: 0.5, b: 0.25, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C94\uFF08\u4EEE\uFF09"
+      quota: 390
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.55, g: 0.42, b: 0.2, a: 1}
+    - title: "\u30E9\u30A6\u30F3\u30C95\uFF08\u4EEE\uFF09"
+      quota: 470
+      isBoss: 0
+      thumbnail: {fileID: 0}
+      placeholderColor: {r: 0.5, g: 0.3, b: 0.45, a: 1}
+    - title: "\u30DC\u30B9\uFF08\u4EEE\uFF09"
+      quota: 680
       isBoss: 1
       thumbnail: {fileID: 0}
       placeholderColor: {r: 0.6, g: 0.15, b: 0.15, a: 1}
@@ -594,6 +626,7 @@ MonoBehaviour:
   durationScale: 1
   fallbackDuration: 30
   durationOverrides: []
+  untilSongEnd: 1
   freePlay: 0
   showDebugPanel: 1
 --- !u!114 &222109771
