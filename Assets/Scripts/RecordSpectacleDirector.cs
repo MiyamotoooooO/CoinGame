@@ -18,6 +18,16 @@ namespace MedalPusher
     ///
     /// Inspector で、オン・オフ、カメラの強さ、モデルの置き場所・大きさを変えられる。
     ///
+    /// 盤面に置く（Board Mode。2026-11-16 の変更）：
+    ///   主役のモデルを、盤面の下の段の奥（左右のどちらか。レコードごとに Board Spots で変えられる）に立てる。
+    ///   ゲームの画面と同じカメラで描くので、メダルの奥・手前もそのまま見え、メダルが当たる（じゃまになる）。
+    ///   画面のまん中に大きく出る演出（登場・見せ場・フィナーレ）、カメラの動き、大きな文字、暗転、集中線、
+    ///   画面のフラッシュ、紙吹雪、スローは出さない。代わりに、盤面の上で
+    ///   　発動：モデルがぽんと生えてくる（足もとにキラキラと煙）
+    ///   　見せ場：モデルがぷるっとはずんで、まわりがキラキラ
+    ///   　終わり：モデルが小さくなって消える
+    ///   の、うるさすぎない演出にする。効果音も少し小さくする。左下のタイトルカードは出す
+    ///
     /// デバッグ用（エディタと Development Build の時だけ）：
     ///   F4 … 次のレコードの演出だけを見る（効果は発動しない。12秒でフィナーレ）。Shift+F4 で前のレコード
     /// </summary>
@@ -59,6 +69,32 @@ namespace MedalPusher
         public Vector2 beatViewport = new Vector2(0.5f, 0.66f);
         [Tooltip("見せ場の時の大きさ（画面の高さに対する割合）")]
         [Range(0.1f, 1f)] public float beatHeight = 0.5f;
+
+        [Header("盤面に置く（主役のモデルを、盤面の上に立てる）")]
+        [Tooltip("オン：主役のモデルを盤面の下の段の奥に立てて、メダルが当たる。画面のまん中に大きく出る演出・カメラの動き・大きな文字などは出さない")]
+        public bool boardMode = true;
+        [Tooltip("盤面に置くモデルの高さ（メダルの直径を 1 とした数。いちばん長い辺がこの大きさ）")]
+        [Range(1f, 8f)] public float boardHeight = 3.2f;
+        [Tooltip("盤面に置いたモデルに、メダルが当たる")]
+        public bool boardColliders = true;
+        [Tooltip("レコードごとの置き場所。無いレコードは、左右の奥のどちらか（キーで決まる）")]
+        public List<BoardSpot> boardSpots = new List<BoardSpot>();
+
+        /// <summary>盤面に置く場所（レコードごと）</summary>
+        [Serializable]
+        public class BoardSpot
+        {
+            [Tooltip("レコードのキー（英名。Pops など）")]
+            public string key = "";
+            [Tooltip("左右（-1 左のはし、0 まん中、1 右のはし）")]
+            [Range(-1f, 1f)] public float x = 0.72f;
+            [Tooltip("前後（0 手前のふち、1 プッシャーがいちばん出た時の前）")]
+            [Range(0f, 1f)] public float depth = 0.78f;
+            [Tooltip("高さ（メダルの直径を 1 とした数。0 なら Board Height）")]
+            [Range(0f, 8f)] public float height = 0f;
+            [Tooltip("向き（度。0 でカメラの方を向く）")]
+            [Range(-180f, 180f)] public float yaw = 0f;
+        }
 
         [Header("画面の文字")]
         [Tooltip("空ならモニターと同じ本文のフォント")]
@@ -104,6 +140,69 @@ namespace MedalPusher
         public float FocusSize => focusHeight * HalfH * 2f;
         public Vector3 BeatPos => ViewportToStage(beatViewport);
         public float BeatSize => beatHeight * HalfH * 2f;
+
+        /// <summary>盤面に置いたモデルを入れる入れ物（ワールド）</summary>
+        public Transform BoardRoot
+        {
+            get
+            {
+                if (boardRoot == null) boardRoot = new GameObject("RecordSpectacleBoard").transform;
+                return boardRoot;
+            }
+        }
+        Transform boardRoot;
+
+        /// <summary>
+        /// 盤面に置く時の、モデルの足もと（ワールド）・高さ（ワールドの長さ）・向き（度）。
+        /// 場所は盤面の下の段（手前のふちから、プッシャーがいちばん出た時の前面まで）の中。
+        /// </summary>
+        public bool TryGetBoardPose(string key, out Vector3 basePos, out float height, out float yaw)
+        {
+            basePos = Vector3.zero;
+            height = 1f;
+            yaw = 0f;
+            if (game == null) return false;
+            float d = game.tuning.medalDiameter;
+            float half = game.BoardHalfWidth;
+            float front = game.layout.floorFrontZ;
+            float back = game.layout.pusherRetractZ - (game.Pusher != null ? game.Pusher.stroke : game.tuning.pusherStroke);
+            BoardSpot spot = null;
+            if (boardSpots != null)
+                foreach (var s in boardSpots)
+                    if (s != null && s.key == key) { spot = s; break; }
+            float x = spot != null ? spot.x : DefaultSide(key) * 0.72f;
+            float depth = spot != null ? spot.depth : 0.78f;
+            height = (spot != null && spot.height > 0f ? spot.height : boardHeight) * d;
+            yaw = spot != null ? spot.yaw : 0f;
+            float wx = Mathf.Clamp(x, -1f, 1f) * Mathf.Max(0f, half - d * 0.8f);
+            float wz = Mathf.Lerp(front + d * 0.8f, Mathf.Max(front + d, back - d * 1.1f), Mathf.Clamp01(depth));
+            basePos = new Vector3(wx, FloorY(wx, wz), wz);
+            return true;
+        }
+
+        /// <summary>置き場所の左右（キーで決める。-1 左、1 右）</summary>
+        static float DefaultSide(string key)
+        {
+            int h = 17;
+            if (key != null) foreach (char c in key) h = h * 31 + c;
+            return (h & 1) == 0 ? 1f : -1f;
+        }
+
+        /// <summary>その場所の床の高さ（上から下へ調べる。メダル・動く物・盤面に置いたモデルは数えない）</summary>
+        float FloorY(float x, float z)
+        {
+            var hits = Physics.RaycastAll(new Vector3(x, 5f, z), Vector3.down, 20f, ~0, QueryTriggerInteraction.Ignore);
+            float best = float.NegativeInfinity;
+            foreach (var h in hits)
+            {
+                if (h.collider.GetComponentInParent<Medal>() != null) continue;
+                var rb = h.collider.attachedRigidbody;
+                if (rb != null && !rb.isKinematic) continue;
+                if (boardRoot != null && h.collider.transform.IsChildOf(boardRoot)) continue;
+                if (h.point.y > best) best = h.point.y;
+            }
+            return float.IsNegativeInfinity(best) ? 0f : best;
+        }
 
         // ================================================================
         // 中身
@@ -249,6 +348,7 @@ namespace MedalPusher
                 }
             }
             if (rig != null) Destroy(rig.gameObject);
+            if (boardRoot != null) Destroy(boardRoot.gameObject);
             if (canvas != null) Destroy(canvas.gameObject);
             if (screenCanvas != null) Destroy(screenCanvas.gameObject);
             if (overlayTexture != null) { overlayTexture.Release(); Destroy(overlayTexture); }
@@ -351,12 +451,12 @@ namespace MedalPusher
         }
 
         /// <summary>ゲームの画面を暗くする（level 0〜1。モデルの後ろだけ暗くなる）</summary>
-        public void Dim(float level) => dimTarget = Mathf.Clamp01(level) * introDim;
+        public void Dim(float level) => dimTarget = boardMode ? 0f : Mathf.Clamp01(level) * introDim;
 
         /// <summary>画面のまん中から放射状の集中線を seconds 秒出す</summary>
         public void SpeedLines(float seconds, Color color)
         {
-            if (!speedLines) return;
+            if (!speedLines || boardMode) return;
             linesTime = 0f;
             linesLength = Mathf.Max(0.1f, seconds);
             linesColor = color;
@@ -478,10 +578,10 @@ namespace MedalPusher
             SetRim(Color.Lerp(sp.Theme, Color.white, 0.3f), 1f);
             sp.Begin(this, record);
             if (!showing.Contains(sp)) showing.Add(sp);
-            introCam = 0f;
+            introCam = boardMode ? -1f : 0f;   // 盤面に置く時は、カメラの動き・帯・大きな文字を出さない
             finaleCam = -1f;
-            barTime = 0f;
-            slamTime = 0f;
+            barTime = boardMode ? -1f : 0f;
+            slamTime = boardMode ? -1f : 0f;
             slamText.text = sp.Title;
             slamText.color = Color.Lerp(sp.Theme, Color.white, 0.15f);
             if (titleCard) ShowCard(record, sp);
@@ -492,7 +592,7 @@ namespace MedalPusher
             if (previewRecord != null && record == previewRecord) previewTimer = -1f;
             if (current == null || currentRecord == null || record == null || record.key != currentRecord.key) return;
             current.Finale();
-            finaleCam = 0f;
+            finaleCam = boardMode ? -1f : 0f;
             introCam = -1f;
             current = null;
             currentRecord = null;
@@ -679,11 +779,12 @@ namespace MedalPusher
         }
 
         /// <summary>カメラをどんっと押す（画角が一瞬広がる）</summary>
-        public void Kick(float strength) => kick = Mathf.Max(kick, strength);
+        public void Kick(float strength) { if (!boardMode) kick = Mathf.Max(kick, strength); }
 
         /// <summary>画面を揺らす</summary>
         public void Shake(float strength, float seconds)
         {
+            if (boardMode) return;
             shakeStrength = Mathf.Max(shakeTime >= 0f ? shakeStrength : 0f, strength);
             shakeSeconds = Mathf.Max(0.05f, seconds);
             shakeTime = 0f;
@@ -696,7 +797,7 @@ namespace MedalPusher
         /// <summary>一瞬スローにする（ほかの所が時間を変えている時は何もしない）</summary>
         public void SlowMo(float scale, float seconds)
         {
-            if (!slowMotion || slowStart >= 0f || !Mathf.Approximately(Time.timeScale, 1f)) return;
+            if (!slowMotion || boardMode || slowStart >= 0f || !Mathf.Approximately(Time.timeScale, 1f)) return;
             slowScale = Mathf.Clamp(scale, 0.05f, 1f);
             slowLength = Mathf.Max(0.05f, seconds);
             slowStart = Time.unscaledTime;
@@ -728,6 +829,7 @@ namespace MedalPusher
         public void Sfx(SpectacleSfx sfx, float vol, float pitch)
         {
             if (audioSource == null || volume <= 0f) return;
+            if (boardMode) vol *= 0.6f;   // 盤面に置く時は、少し小さく
             if (!sfxClips.TryGetValue(sfx, out var clip) || clip == null)
             {
                 clip = MakeSfx(sfx);
@@ -936,7 +1038,7 @@ namespace MedalPusher
         /// <summary>まん中の上に大きな文字を出す（delay 秒あとに）</summary>
         public void Banner(string text, Color color, float delay)
         {
-            if (bannerText == null || string.IsNullOrEmpty(text)) return;
+            if (bannerText == null || string.IsNullOrEmpty(text) || boardMode) return;
             bannerText.text = text;
             bannerText.color = color;
             var o = bannerText.GetComponent<Outline>();
@@ -950,6 +1052,7 @@ namespace MedalPusher
         /// <summary>画面を光らせる</summary>
         public void Flash(Color color, float alpha)
         {
+            if (boardMode) return;
             flashColor = color;
             flashAlpha = Mathf.Max(flashAlpha, Mathf.Clamp01(alpha));
         }

@@ -127,6 +127,16 @@ namespace MedalPusher
         float finaleFromSize;
         float fit = 1f;          // モデルの大きさをそろえる倍率（いちばん長い辺が 1 になる）
         Vector3 fitCenter;       // モデルのまん中のずれ
+        float fitMinY;           // モデルのいちばん下（盤面に立てる時、ここを床に合わせる）
+
+        // ---- 盤面に置く（Director.boardMode） ----
+        Transform boardHolder;   // 盤面に置いた主役の入れ物（ワールド）
+        Vector3 boardBase;       // 足もと（ワールド）
+        float boardHeight = 1f;  // 高さ（ワールドの長さ）
+        float boardYaw;
+        float layerTimer;
+        /// <summary>盤面に置いているか</summary>
+        protected bool OnBoard => Director != null && Director.boardMode && boardHolder != null;
 
         /// <summary>見えているか</summary>
         public bool Visible => phase != Phase.Hidden;
@@ -167,8 +177,14 @@ namespace MedalPusher
                 BuildDecor();
                 built = true;
             }
+            if (director.boardMode) SetupBoard();
             ClearTemps();
             Root.gameObject.SetActive(true);
+            if (OnBoard)
+            {
+                director.TryGetBoardPose(Key, out boardBase, out boardHeight, out boardYaw);
+                boardHolder.gameObject.SetActive(true);
+            }
             phase = Phase.Intro;
             phaseT = 0f;
             prevPhaseT = -1f;
@@ -195,6 +211,11 @@ namespace MedalPusher
 
             switch (phase)
             {
+                case Phase.Intro when OnBoard:
+                    if (Cross(0.05f)) BoardAppear();
+                    OnIntro(phaseT);
+                    if (phaseT >= IntroLength) phase = Phase.Live;
+                    break;
                 case Phase.Intro:
                     if (Cross(0.3f))
                     {
@@ -240,6 +261,16 @@ namespace MedalPusher
             pulse *= Mathf.Exp(-dt * 7f);
             if (spotT >= 0f) spotT += dt;
             PoseHero();
+            if (OnBoard)
+            {
+                // あとから主役の中に作られた物（粒など）も、ゲームの画面のカメラで描く
+                layerTimer -= dt;
+                if (layerTimer <= 0f)
+                {
+                    layerTimer = 0.25f;
+                    SetLayerDeep(boardHolder, BoardLayer);
+                }
+            }
         }
 
         internal void Drop(DropZoneType type, Vector3 at)
@@ -279,6 +310,18 @@ namespace MedalPusher
         internal void Finale()
         {
             if (phase == Phase.Hidden || phase == Phase.Finale) return;
+            if (OnBoard)
+            {
+                // 盤面の上で、小さくなって消える
+                phase = Phase.Finale;
+                phaseT = 0f;
+                prevPhaseT = -1f;
+                spotT = -1f;
+                Sparkle(HeroPoint(new Vector3(fitCenter.x, fitCenter.y, 0f)), Color.Lerp(Theme, Color.white, 0.4f), 18, 2f, Vector3.up, 1f);
+                Sfx(SpectacleSfx.Sparkle, 0.5f);
+                OnFinale();
+                return;
+            }
             Director.Dim(0.8f);
             Director.SpeedLines(2f, Theme);
             After(2.1f, () => Director.Dim(0f));
@@ -306,6 +349,7 @@ namespace MedalPusher
             tweens.Clear();
             ClearTemps();
             if (Root != null) Root.gameObject.SetActive(false);
+            if (boardHolder != null) boardHolder.gameObject.SetActive(false);
         }
 
         /// <summary>モデルの大きさを測って、いちばん長い辺（横か縦）が 1 になるようにそろえる（光の玉と光線は測らない）</summary>
@@ -334,6 +378,7 @@ namespace MedalPusher
             float longest = Mathf.Max(b.size.x, b.size.y, 0.01f);
             fit = Mathf.Clamp(1f / longest, 0.35f, 2.5f);
             fitCenter = new Vector3(b.center.x, b.center.y, 0f);
+            fitMinY = b.min.y;
         }
 
         static bool HasAncestorNamed(Transform t, string name)
@@ -346,6 +391,14 @@ namespace MedalPusher
         {
             Beats++;
             auraKick = 1f;
+            if (OnBoard)
+            {
+                // 盤面の上で、ぷるっとはずんで、まわりがキラキラ（画面のまん中には出さない）
+                Pulse(1f);
+                Sparkle(HeroPoint(new Vector3(fitCenter.x, fitCenter.y, 0f)), Color.Lerp(Theme, Color.white, 0.4f), 14, 2.2f, Vector3.up, 1f);
+                OnBeat(Beats);
+                return;
+            }
             if (BeatSpotlight > 0f) Director.SpeedLines(1.1f, Theme);
             if (BeatSpotlight > 0f) Spotlight(BeatSpotlight);
             if (!string.IsNullOrEmpty(BeatText)) Director.Banner(BeatText, Theme, 0f);
@@ -358,6 +411,11 @@ namespace MedalPusher
 
         void PoseHero()
         {
+            if (OnBoard)
+            {
+                PoseHeroOnBoard();
+                return;
+            }
             Vector3 res = Director.ResidentPos, foc = Director.FocusPos;
             float resSize = Director.ResidentSize, focSize = Director.FocusSize;
             Vector3 pos;
@@ -431,6 +489,119 @@ namespace MedalPusher
             Hero.localScale = Vector3.one * Mathf.Max(0.001f, size);
             Hero.localPosition = pos + HeroOffset - rot * (fitCenter * size);
             PoseDecor(pos + HeroOffset, size);
+        }
+
+        // ================================================================
+        // 盤面に置く
+        // ================================================================
+
+        /// <summary>盤面に置いたモデルを描くレイヤー（ゲームの画面のカメラで描く Default）</summary>
+        const int BoardLayer = 0;
+
+        /// <summary>
+        /// 主役を、盤面に置く入れ物（ワールド）へ移す（1回だけ）。ゲームの画面のカメラで描き、メダルが当たるようにする。
+        /// 画面に固定の物（Set）と後光は出さない。中の明かりは、ワールドの大きさに合わせて小さくする。
+        /// </summary>
+        void SetupBoard()
+        {
+            if (boardHolder != null) return;
+            boardHolder = new GameObject("Spectacle_" + Key + "_Board").transform;
+            boardHolder.SetParent(Director.BoardRoot, false);
+            Hero.SetParent(boardHolder, false);
+            Hero.localPosition = Vector3.zero;
+            SetLayerDeep(boardHolder, BoardLayer);
+            // 画面に固定の飾り（スポットライトなどのモデル）は見せない。キラキラなどの粒は Set の中で使うので残す
+            if (Set != null)
+                foreach (var r in Set.GetComponentsInChildren<MeshRenderer>(true)) r.enabled = false;
+            if (aura != null) aura.gameObject.SetActive(false);
+            if (orbit != null) orbit.gameObject.SetActive(false);
+
+            // 明かりは、盤面の大きさに合わせて届く範囲をちぢめ、少し弱くする
+            Director.TryGetBoardPose(Key, out _, out float h, out _);
+            float ratio = h / Mathf.Max(0.01f, Director.ResidentSize);
+            foreach (var l in Hero.GetComponentsInChildren<Light>(true))
+            {
+                l.range *= ratio;
+                l.intensity *= 0.6f;
+                l.cullingMask = ~0;
+            }
+
+            if (Director.boardColliders)
+            {
+                // 部品ごとに箱の当たり判定（光の板・光線・うすい板はつけない）
+                foreach (var mf in Hero.GetComponentsInChildren<MeshFilter>(true))
+                {
+                    if (mf.sharedMesh == null) continue;
+                    if (HasAncestorNamed(mf.transform, "Beam") || HasAncestorNamed(mf.transform, "Orbit")) continue;
+                    var r = mf.GetComponent<MeshRenderer>();
+                    if (r != null && r.sharedMaterial != null && !IsLit(r.sharedMaterial)) continue;   // 光る板・半透明の光
+                    var sz = mf.sharedMesh.bounds.size;
+                    if (Mathf.Min(sz.x, Mathf.Min(sz.y, sz.z)) < 0.0005f) continue;                // うすい板
+                    if (mf.GetComponent<Collider>() == null) mf.gameObject.AddComponent<BoxCollider>();
+                }
+                var body = Hero.gameObject.GetComponent<Rigidbody>();
+                if (body == null) body = Hero.gameObject.AddComponent<Rigidbody>();
+                body.isKinematic = true;   // 動かすのはコード。メダルは押される
+                body.useGravity = false;
+            }
+            boardHolder.gameObject.SetActive(false);
+        }
+
+        static void SetLayerDeep(Transform t, int layer)
+        {
+            if (t.gameObject.layer != layer) t.gameObject.layer = layer;
+            for (int i = 0; i < t.childCount; i++) SetLayerDeep(t.GetChild(i), layer);
+        }
+
+        /// <summary>発動：主役が盤面からぽんと生えてくる。足もとにキラキラと煙（静かめ）</summary>
+        void BoardAppear()
+        {
+            Vector3 foot = Director.WorldToStage(boardBase);
+            Sparkle(foot, Color.Lerp(Theme, Color.white, 0.4f), 18, 2.4f, Vector3.up, 0.8f);
+            Smoke(foot, new Color(1f, 1f, 1f, 0.6f), 8, 0.8f, Vector3.up, 1f);
+            Sfx(SpectacleSfx.Rise, 0.35f, 1.1f);
+            Sfx(SpectacleSfx.Sparkle, 0.35f);
+        }
+
+        /// <summary>
+        /// 盤面に置いた主役の形：足もと（boardBase）に、いちばん下を床に合わせて立てる。カメラの方を向く。
+        /// 発動：ぽんと大きくなる（0.6秒）。見せ場：ぷるっと。終わり：小さくなって消える。
+        /// HeroOffset・HeroTilt（各レコードの動き）は、盤面の大きさに直してそのまま使う。
+        /// </summary>
+        void PoseHeroOnBoard()
+        {
+            float grow;
+            switch (phase)
+            {
+                case Phase.Intro:
+                    grow = Ease.OutBack(Mathf.Clamp01((phaseT - 0.05f) / 0.6f));
+                    break;
+                case Phase.Finale:
+                    grow = 1f - Ease.InCubic(Mathf.Clamp01((phaseT - 0.2f) / 0.8f));
+                    break;
+                default:
+                    grow = 1f;
+                    break;
+            }
+            float worldPerStage = boardHeight / Mathf.Max(0.01f, Director.ResidentSize);
+            float size = boardHeight * fit * Mathf.Max(0.001f, grow) * (1f + 0.08f * pulse);
+
+            // カメラの方を向く（左右だけ）
+            var cam = Camera.main;
+            Vector3 toCam = cam != null ? cam.transform.position - boardBase : Vector3.back;
+            toCam.y = 0f;
+            float faceYaw = toCam.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(-toCam).eulerAngles.y : 0f;
+            float spin = phase == Phase.Finale ? 180f * Ease.InCubic(Mathf.Clamp01(phaseT / 1f)) : 0f;
+            var rot = Quaternion.Euler(0f, faceYaw + boardYaw + spin, 0f) * Quaternion.Euler(HeroTilt.x, HeroTilt.y, HeroTilt.z);
+
+            // いちばん下を床に合わせる（モデルのまん中を、足もとの上に）
+            Vector3 anchor = new Vector3(fitCenter.x, fitMinY, 0f);
+            Vector3 offset = rot * (HeroOffset * worldPerStage);
+            boardHolder.position = boardBase;
+            boardHolder.rotation = Quaternion.identity;
+            Hero.localRotation = rot;
+            Hero.localScale = Vector3.one * size;
+            Hero.localPosition = offset - rot * (anchor * size);
         }
 
         // ================================================================
@@ -551,7 +722,9 @@ namespace MedalPusher
         }
 
         /// <summary>主役の中の点を、Set の中の点にする（主役から物を飛ばす時）</summary>
-        protected Vector3 HeroPoint(Vector3 local) => Set.InverseTransformPoint(Hero.TransformPoint(local));
+        protected Vector3 HeroPoint(Vector3 local) => OnBoard
+            ? Director.WorldToStage(Hero.TransformPoint(local))       // 盤面の主役が、画面のどこに見えるか
+            : Set.InverseTransformPoint(Hero.TransformPoint(local));
 
         // ================================================================
         // 画面・カメラ・音（監督に頼む）
@@ -1154,6 +1327,7 @@ namespace MedalPusher
         /// <summary>画面の上から紙吹雪を降らせる</summary>
         protected void Confetti(int count, params Color[] colors)
         {
+            if (OnBoard) return;   // 盤面に置く時は、画面いっぱいの紙吹雪は出さない
             if (confettiFx == null) confettiFx = Fx(0.22f, 3.4f, 0.16f, null, false, 1f);
             for (int i = 0; i < count; i++)
             {
