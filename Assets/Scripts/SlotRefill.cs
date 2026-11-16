@@ -84,10 +84,10 @@ namespace MedalPusher
         [Header("置き場所（ワールド）")]
         [Tooltip("オン：下の位置・向き・大きさで置く。オフ：画面の割合（Viewport）で置く")]
         public bool useWorldPose = true;
-        public Vector3 worldPosition = new Vector3(1.915926f, 1.327f, -0.15f);
+        public Vector3 worldPosition = new Vector3(2.49f, 1.327f, -0.15f);
         [Tooltip("向き（度）")]
         public Vector3 worldRotation = new Vector3(3.484f, 83.603f, -0.817f);
-        public float worldScale = 0.7f;
+        public float worldScale = 1.42f;
 
         [Header("置き場所（画面の割合。Use World Pose がオフの時だけ。左下が (0,0)、右上が (1,1)）")]
         public Vector2 viewport = new Vector2(0.68f, 0.73f);
