@@ -7,7 +7,7 @@ namespace MedalPusher
     /// <summary>
     /// N015 メリーゴーランド「回転木馬のファンファーレ」。効果の発動中（曲1曲分）だけ動く。
     ///
-    /// ・盤面：プッシャーの前の床のまん中に、木馬の付いた小さな回転台がせり上がって回る（当たり判定あり）。
+    /// ・盤面：プッシャーの前の床のまん中に、木馬の付いた回転台（しま模様のとんがり屋根・金の柱・電球・上下する6頭の木馬）がせり上がって回る（当たり判定あり）。
     ///   上に乗ったメダルを回しながら運ぶ。回る向きは flipSeconds 秒ごとに入れかわる
     /// ・モニター：メリーゴーランドの絵（回る）。ファンファーレまでの時間、回る向き、ファンファーレ中の残り
     /// ・ルール：
@@ -26,7 +26,9 @@ namespace MedalPusher
 
         [Header("回転台")]
         [Tooltip("回転台の半径（メダルの直径に対する倍率）")]
-        [Range(0.5f, 4f)] public float radius = 1.3f;
+        [Range(0.5f, 4f)] public float radius = 2.1f;
+        [Tooltip("屋根までの高さ（メダルの直径に対する倍率）")]
+        [Range(1f, 5f)] public float height = 2.3f;
         [Tooltip("ふだんの回る速さ（1秒あたりの角度）")]
         [Range(0f, 360f)] public float spinSpeed = 40f;
         [Tooltip("ファンファーレ中の回る速さ")]
@@ -74,7 +76,9 @@ namespace MedalPusher
         Rigidbody platformBody;
         readonly List<Transform> horses = new List<Transform>();
         readonly List<Light> bulbs = new List<Light>();
-        ParticleSystem confetti;
+        readonly List<Material> bulbMats = new List<Material>();
+        Transform mirrorColumn;
+        ParticleSystem confetti, sparkle;
 
         RectTransform wheel;
         readonly List<RectTransform> screenHorses = new List<RectTransform>();
@@ -93,26 +97,142 @@ namespace MedalPusher
             platformBody.interpolation = RigidbodyInterpolation.Interpolate;
             float r = D * radius;
             if (carouselPrefab != null) Instantiate(carouselPrefab, platform).transform.localPosition = Vector3.zero;
-            else
-            {
-                Shape(PrimitiveType.Cylinder, "Deck", platform, new Vector3(0f, D * 0.04f, 0f), new Vector3(r * 2f, D * 0.04f, r * 2f), Glow(Cream, 0.2f));
-                Shape(PrimitiveType.Cylinder, "Pole", platform, new Vector3(0f, D * 0.6f, 0f), new Vector3(D * 0.12f, D * 0.55f, D * 0.12f), Glow(Gold, 0.6f));
-                Shape(PrimitiveType.Cylinder, "Roof", platform, new Vector3(0f, D * 1.15f, 0f), new Vector3(r * 1.2f, D * 0.05f, r * 1.2f), Glow(Pink, 0.5f));
-                for (int i = 0; i < 4; i++)
-                {
-                    float a = i * Mathf.PI * 0.5f;
-                    var horse = Cube($"Horse{i}", platform, new Vector3(Mathf.Cos(a) * r * 0.7f, D * 0.55f, Mathf.Sin(a) * r * 0.7f), new Vector3(D * 0.12f, D * 0.22f, D * 0.32f), Glow(i % 2 == 0 ? Pink : Mint, 0.6f));
-                    horse.transform.localRotation = Quaternion.Euler(0f, -a * Mathf.Rad2Deg, 0f);
-                    Cube($"HorsePole{i}", platform, new Vector3(Mathf.Cos(a) * r * 0.7f, D * 0.7f, Mathf.Sin(a) * r * 0.7f), new Vector3(D * 0.025f, D * 0.9f, D * 0.025f), Glow(Gold, 0.6f));
-                    horses.Add(horse.transform);
-                    bulbs.Add(PointLight($"Bulb{i}", platform, new Vector3(Mathf.Cos(a) * r * 0.6f, D * 1.2f, Mathf.Sin(a) * r * 0.6f), i % 2 == 0 ? Pink : Gold, D * 2.5f));
-                }
-            }
+            else BuildModel(r, D * height);
             // 当たり判定：台の上面（メダルが乗る）
             var col = platform.gameObject.AddComponent<MeshCollider>();
             col.sharedMesh = ProtoAssets.CreateCylinderMesh(r, D * 0.16f, 24);   // 中心が原点。上の面が床より少し上に出る
             col.convex = true;
             confetti = Particles("Confetti", Board, Vector3.up, D * 4f, D * 0.12f, 1.8f, 0.4f, 40f);
+            sparkle = Particles("Sparkle", Board, Vector3.up, D * 1.5f, D * 0.07f, 0.9f, -0.1f, 80f);
+        }
+
+        static Material Shiny(Color c, float metal, float smooth, float glow)
+        {
+            var m = ProtoAssets.MakeMaterial(c, metal, smooth);
+            m.EnableKeyword("_EMISSION");
+            m.SetColor("_EmissionColor", c * glow);
+            return m;
+        }
+
+        /// <summary>回転台の見た目を組み立てる（r は台の半径、H は屋根の下までの高さ）</summary>
+        void BuildModel(float r, float H)
+        {
+            var cream = Shiny(Cream, 0.1f, 0.7f, 0.15f);
+            var pink = Shiny(Pink, 0.1f, 0.75f, 0.35f);
+            var gold = Shiny(Gold, 0.95f, 0.9f, 0.35f);
+            var mint = Shiny(Mint, 0.1f, 0.75f, 0.3f);
+            var mirror = Shiny(new Color(0.8f, 0.92f, 1f), 1f, 0.97f, 0.5f);
+            var deep = Shiny(new Color32(0x6a, 0x1c, 0x4a, 0xff), 0.2f, 0.7f, 0.1f);
+
+            // 台（クリーム色の床と、金のふち、ふちの電球）
+            Shape(PrimitiveType.Cylinder, "Deck", platform, new Vector3(0f, D * 0.05f, 0f), new Vector3(r * 2f, D * 0.05f, r * 2f), cream);
+            Shape(PrimitiveType.Cylinder, "DeckRim", platform, new Vector3(0f, D * 0.03f, 0f), new Vector3(r * 2.06f, D * 0.04f, r * 2.06f), gold);
+            Shape(PrimitiveType.Cylinder, "DeckInlay", platform, new Vector3(0f, D * 0.101f, 0f), new Vector3(r * 1.5f, D * 0.002f, r * 1.5f), deep);
+            for (int i = 0; i < 28; i++)
+            {
+                float a = i * Mathf.PI * 2f / 28f;
+                var m = Shiny(i % 2 == 0 ? Gold : Color.white, 0f, 0.8f, 2.5f);
+                bulbMats.Add(m);
+                Shape(PrimitiveType.Sphere, "RimBulb", platform, new Vector3(Mathf.Cos(a) * r * 1.01f, D * 0.08f, Mathf.Sin(a) * r * 1.01f), Vector3.one * D * 0.09f, m);
+            }
+
+            // まん中の柱（鏡の板つき）
+            mirrorColumn = new GameObject("Column").transform;
+            mirrorColumn.SetParent(platform, false);
+            Shape(PrimitiveType.Cylinder, "ColumnCore", mirrorColumn, new Vector3(0f, H * 0.5f, 0f), new Vector3(r * 0.34f, H * 0.5f, r * 0.34f), deep);
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * 45f;
+                var panel = Cube("Mirror", mirrorColumn, Quaternion.Euler(0f, a, 0f) * new Vector3(0f, H * 0.5f, r * 0.175f), new Vector3(r * 0.12f, H * 0.62f, D * 0.02f), mirror);
+                panel.transform.localRotation = Quaternion.Euler(0f, a, 0f);
+            }
+            Shape(PrimitiveType.Cylinder, "ColumnTopRing", mirrorColumn, new Vector3(0f, H * 0.86f, 0f), new Vector3(r * 0.4f, D * 0.05f, r * 0.4f), gold);
+            Shape(PrimitiveType.Cylinder, "ColumnLowRing", mirrorColumn, new Vector3(0f, H * 0.14f, 0f), new Vector3(r * 0.4f, D * 0.05f, r * 0.4f), gold);
+
+            // とんがり屋根（ピンクとクリームのしま）
+            int seg = 14;
+            float roofH = D * 1.05f, roofR = r * 1.1f;
+            for (int i = 0; i < seg; i++)
+            {
+                float a0 = i * 360f / seg, a1 = (i + 1) * 360f / seg;
+                RecordMeshKit.Make("Roof", RecordMeshKit.ConeSector(roofR, roofH, a0, a1, 4), i % 2 == 0 ? pink : cream, platform, new Vector3(0f, H, 0f), Vector3.one, Vector3.zero);
+            }
+            Shape(PrimitiveType.Cylinder, "RoofBase", platform, new Vector3(0f, H, 0f), new Vector3(roofR * 2f, D * 0.04f, roofR * 2f), gold);
+            // 屋根のふちのフリルと電球
+            for (int i = 0; i < seg * 2; i++)
+            {
+                float a = (i + 0.5f) * Mathf.PI * 2f / (seg * 2);
+                Vector3 p = new Vector3(Mathf.Cos(a) * roofR * 0.99f, H - D * 0.1f, Mathf.Sin(a) * roofR * 0.99f);
+                var flap = Shape(PrimitiveType.Sphere, "Flap", platform, p, new Vector3(roofR * 0.22f, D * 0.22f, D * 0.05f), i % 2 == 0 ? pink : cream);
+                flap.transform.localRotation = Quaternion.LookRotation(new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)));
+                var m = Shiny(i % 2 == 0 ? Color.white : Gold, 0f, 0.8f, 2.5f);
+                bulbMats.Add(m);
+                Shape(PrimitiveType.Sphere, "RoofBulb", platform, p + Vector3.down * D * 0.13f, Vector3.one * D * 0.08f, m);
+            }
+            // 屋根のてっぺん
+            Shape(PrimitiveType.Sphere, "TopBall", platform, new Vector3(0f, H + roofH + D * 0.08f, 0f), Vector3.one * D * 0.22f, gold);
+            Shape(PrimitiveType.Cylinder, "FlagPole", platform, new Vector3(0f, H + roofH + D * 0.35f, 0f), new Vector3(D * 0.03f, D * 0.25f, D * 0.03f), gold);
+            Cube("Flag", platform, new Vector3(D * 0.14f, H + roofH + D * 0.5f, 0f), new Vector3(D * 0.26f, D * 0.15f, D * 0.01f), pink);
+
+            // 金の柱と、上下する木馬（6頭）
+            for (int i = 0; i < 6; i++)
+            {
+                float a = i * Mathf.PI * 2f / 6f;
+                Vector3 at = new Vector3(Mathf.Cos(a) * r * 0.68f, 0f, Mathf.Sin(a) * r * 0.68f);
+                Shape(PrimitiveType.Cylinder, $"Pole{i}", platform, at + Vector3.up * H * 0.5f, new Vector3(D * 0.06f, H * 0.5f, D * 0.06f), gold);
+                for (int k = 0; k < 10; k++)   // ねじれた柱に見えるらせんの玉
+                {
+                    float t = (k + 0.5f) / 10f;
+                    float sa = t * Mathf.PI * 6f;
+                    Shape(PrimitiveType.Sphere, "Twist", platform, at + new Vector3(Mathf.Cos(sa) * D * 0.035f, H * t, Mathf.Sin(sa) * D * 0.035f), Vector3.one * D * 0.045f, gold);
+                }
+                var horse = BuildHorse(platform, D * 0.95f, i % 3 == 0 ? Color.white : i % 3 == 1 ? Pink : Mint, i % 2 == 0 ? gold : pink);
+                horse.localPosition = at + Vector3.up * H * 0.38f;
+                horse.localRotation = Quaternion.LookRotation(new Vector3(-Mathf.Sin(a), 0f, Mathf.Cos(a)));
+                horses.Add(horse);
+            }
+
+            for (int i = 0; i < 4; i++)
+            {
+                float a = i * Mathf.PI * 0.5f + 0.4f;
+                bulbs.Add(PointLight($"Bulb{i}", platform, new Vector3(Mathf.Cos(a) * r * 0.6f, H * 0.9f, Mathf.Sin(a) * r * 0.6f), i % 2 == 0 ? Pink : Gold, r * 1.8f));
+            }
+        }
+
+        /// <summary>木馬（頭が +Z）。s は大きさのめやす</summary>
+        Transform BuildHorse(Transform parent, float s, Color coat, Material accent)
+        {
+            var g = new GameObject("Horse").transform;
+            g.SetParent(parent, false);
+            var body = Shiny(coat, 0.1f, 0.85f, 0.25f);
+            var dark = ProtoAssets.MakeMaterial(new Color(0.08f, 0.06f, 0.1f), 0f, 0.9f);
+            var saddle = Shiny(new Color32(0xd8, 0x1c, 0x3a, 0xff), 0.2f, 0.8f, 0.3f);
+            Shape(PrimitiveType.Sphere, "Body", g, Vector3.zero, new Vector3(s * 0.3f, s * 0.32f, s * 0.72f), body);
+            var neck = Cube("Neck", g, new Vector3(0f, s * 0.2f, s * 0.3f), new Vector3(s * 0.15f, s * 0.38f, s * 0.17f), body);
+            neck.transform.localRotation = Quaternion.Euler(-28f, 0f, 0f);
+            var head = Shape(PrimitiveType.Sphere, "Head", g, new Vector3(0f, s * 0.42f, s * 0.46f), new Vector3(s * 0.15f, s * 0.17f, s * 0.32f), body);
+            head.transform.localRotation = Quaternion.Euler(30f, 0f, 0f);
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Cube("Ear", g, new Vector3(k * s * 0.04f, s * 0.53f, s * 0.38f), new Vector3(s * 0.03f, s * 0.08f, s * 0.03f), body);
+                Shape(PrimitiveType.Sphere, "Eye", g, new Vector3(k * s * 0.07f, s * 0.46f, s * 0.48f), Vector3.one * s * 0.035f, dark);
+            }
+            var mane = Cube("Mane", g, new Vector3(0f, s * 0.32f, s * 0.24f), new Vector3(s * 0.05f, s * 0.36f, s * 0.12f), accent);
+            mane.transform.localRotation = Quaternion.Euler(-28f, 0f, 0f);
+            // 足（前足は上げて、跳ねているように）
+            for (int k = -1; k <= 1; k += 2)
+            {
+                var f = Cube("FrontLeg", g, new Vector3(k * s * 0.09f, -s * 0.12f, s * 0.3f), new Vector3(s * 0.06f, s * 0.32f, s * 0.06f), body);
+                f.transform.localRotation = Quaternion.Euler(-55f, 0f, 0f);
+                var b = Cube("BackLeg", g, new Vector3(k * s * 0.09f, -s * 0.24f, -s * 0.25f), new Vector3(s * 0.06f, s * 0.34f, s * 0.06f), body);
+                b.transform.localRotation = Quaternion.Euler(22f, 0f, 0f);
+                Shape(PrimitiveType.Sphere, "Hoof", g, new Vector3(k * s * 0.09f, -s * 0.39f, -s * 0.31f), Vector3.one * s * 0.07f, accent);
+            }
+            var tail = Cube("Tail", g, new Vector3(0f, s * 0.02f, -s * 0.4f), new Vector3(s * 0.05f, s * 0.3f, s * 0.07f), accent);
+            tail.transform.localRotation = Quaternion.Euler(40f, 0f, 0f);
+            Cube("Saddle", g, new Vector3(0f, s * 0.16f, -s * 0.02f), new Vector3(s * 0.34f, s * 0.06f, s * 0.28f), saddle);
+            Cube("Blanket", g, new Vector3(0f, s * 0.13f, -s * 0.02f), new Vector3(s * 0.36f, s * 0.03f, s * 0.36f), accent);
+            return g;
         }
 
         protected override void OnBegin()
@@ -172,23 +292,35 @@ namespace MedalPusher
             Pop($"+{fanfareBonus}", Pink, new Vector2(BodyW * Random.Range(0.3f, 0.7f), 300f));
         }
 
-        protected override bool KeepBoardVisible() => confetti != null && confetti.particleCount > 0;
+        protected override bool KeepBoardVisible() => (confetti != null && confetti.particleCount > 0) || (sparkle != null && sparkle.particleCount > 0);
 
         protected override void UpdateBoard(float dt)
         {
             var c = Center;
-            platform.position = new Vector3(c.x, -D * 1.4f * (1f - BoardShown), c.z);
+            platform.position = new Vector3(c.x, -D * (height + 1.4f) * (1f - BoardShown), c.z);
             if (platformBody != null) platformBody.position = platform.position;
+            float H = D * height;
             for (int i = 0; i < horses.Count; i++)
             {
                 var p = horses[i].localPosition;
-                horses[i].localPosition = new Vector3(p.x, D * 0.55f + Mathf.Sin(Time.time * (Fanfare ? 8f : 3f) + i * 1.6f) * D * 0.12f, p.z);
+                horses[i].localPosition = new Vector3(p.x, H * 0.38f + Mathf.Sin(Time.time * (Fanfare ? 7f : 2.6f) + i * 1.05f) * D * 0.28f, p.z);
+                float tilt = Mathf.Cos(Time.time * (Fanfare ? 7f : 2.6f) + i * 1.05f) * 10f;
+                var e = horses[i].localRotation.eulerAngles;
+                horses[i].localRotation = Quaternion.Euler(tilt, e.y, 0f);
             }
+            if (mirrorColumn != null) mirrorColumn.localRotation = Quaternion.Euler(0f, -Time.time * 40f, 0f);
             for (int i = 0; i < bulbs.Count; i++)
             {
                 bool on = Fanfare ? Mathf.Repeat(Time.time * 6f + i, 2f) < 1f : true;
-                bulbs[i].intensity = (on ? 1.5f : 0.2f) * BoardShown;
+                bulbs[i].intensity = (on ? 2f : 0.3f) * BoardShown;
             }
+            for (int i = 0; i < bulbMats.Count; i++)
+            {
+                bool on = Fanfare ? (i + Mathf.FloorToInt(Time.time * 12f)) % 3 == 0 : (i + Mathf.FloorToInt(Time.time * 3f)) % 2 == 0;
+                SetGlow(bulbMats[i], bulbMats[i].color, on ? 3f : 0.6f);
+            }
+            if (Active && Fanfare && Random.value < dt * 20f)
+                Emit(sparkle, platform.position + new Vector3(Random.Range(-1f, 1f) * D * radius, H * Random.Range(0.3f, 1.1f), Random.Range(-1f, 1f) * D * radius), Random.value < 0.5f ? Gold : Pink, 2);
         }
 
         protected override void BuildScreen()

@@ -211,25 +211,61 @@ namespace MedalPusher
         {
             Halo(Hero, new Vector3(0f, 0f, 0.6f), new Color(0.25f, 0.45f, 1f, 0.55f), 2.2f);
             var glass = Group(Hero, "Glass", new Vector3(0f, -0.08f, 0f));
-            var edge = Glow(C("#cfe2ff"), 1.4f);
-            // グラスのふち（光る線で輪郭を描く）と、厚い底
-            Lathe(glass, Vector3.zero, new[] { new Vector2(0f, -0.4f), new Vector2(0.3f, -0.4f), new Vector2(0.3f, -0.33f), new Vector2(0f, -0.33f) }, Mat(C("#b8d0f0"), 0.6f, 0.95f));
-            for (int i = 0; i < 10; i++)
-            {
-                float a = i * Mathf.PI * 2f / 10f;
-                if (Mathf.Sin(a) > 0.2f) continue;   // 奥側の線は描かない
-                Tube(glass, new Vector3(Mathf.Cos(a) * 0.3f, -0.4f, Mathf.Sin(a) * 0.3f), new Vector3(Mathf.Cos(a) * 0.33f, 0.3f, Mathf.Sin(a) * 0.33f), 0.012f, edge);
-            }
-            Ring(glass, new Vector3(0f, -0.4f, 0f), 0.3f, 0.014f, edge);
-            liquid = Lathe(glass, Vector3.zero, new[] { new Vector2(0f, -0.33f), new Vector2(0.28f, -0.33f), new Vector2(0.3f, 0.06f), new Vector2(0f, 0.06f) }, Glow(C("#2f6bff"), 1.1f));
-            Cyl(glass, new Vector3(0f, 0.065f, 0f), 0.6f, 0.01f, Glow(C("#7fb0ff"), 1.8f));
-            var iceMat = Mat(C("#e8f6ff"), 0.4f, 0.98f);
+            // コースター
+            Cyl(glass, new Vector3(0f, -0.43f, 0f), 0.9f, 0.03f, Mat(C("#141a2e"), 0.2f, 0.5f));
+            Ring(glass, new Vector3(0f, -0.414f, 0f), 0.44f, 0.01f, Glow(C("#3f7bff"), 2.2f));
+            // 厚いガラスの底（光をたくさん返す）
+            var thick = RecordMeshKit.Glass(new Color(0.78f, 0.9f, 1f, 0.42f), 0.98f);
+            NoShadow(Lathe(glass, Vector3.zero, new[] { new Vector2(0f, -0.415f), new Vector2(0.285f, -0.415f), new Vector2(0.305f, -0.4f), new Vector2(0.31f, -0.31f), new Vector2(0f, -0.3f) }, thick, default, 48));
+            // 側面（外側と内側の2枚。上に向かって少し広がるロックグラス）
+            var wall = RecordMeshKit.Glass(new Color(0.82f, 0.92f, 1f, 0.14f), 0.985f);
+            NoShadow(Lathe(glass, Vector3.zero, new[] { new Vector2(0.305f, -0.4f), new Vector2(0.312f, -0.3f), new Vector2(0.342f, 0.3f) }, wall, default, 56));
+            NoShadow(Lathe(glass, Vector3.zero, new[] { new Vector2(0.326f, 0.3f), new Vector2(0.296f, -0.3f) }, wall, default, 56));
+            // 口のふち（丸くて厚い）
+            NoShadow(Ring(glass, new Vector3(0f, 0.3f, 0f), 0.334f, 0.012f, RecordMeshKit.Glass(new Color(0.92f, 0.97f, 1f, 0.55f), 0.99f)));
+            Ring(glass, new Vector3(0f, 0.304f, 0f), 0.334f, 0.005f, Add(new Color(0.75f, 0.88f, 1f, 0.6f)));
+            // ガラスの左右のふちが明るく見える光（輪郭）と、表面の映りこみ
+            var edgeMat = Add(new Color(0.7f, 0.85f, 1f, 0.55f));
+            Quad(glass, new Vector3(-0.326f, -0.05f, -0.01f), 0.016f, 0.7f, edgeMat, new Vector3(0f, 0f, -2.8f));
+            Quad(glass, new Vector3(0.326f, -0.05f, -0.01f), 0.016f, 0.7f, edgeMat, new Vector3(0f, 0f, 2.8f));
+            var shine = SoftAdd(new Color(1f, 1f, 1f, 0.55f));
+            Quad(glass, new Vector3(-0.19f, -0.02f, -0.34f), 0.07f, 0.58f, shine, new Vector3(0f, 0f, -2f));
+            Quad(glass, new Vector3(-0.12f, 0.02f, -0.34f), 0.02f, 0.5f, shine, new Vector3(0f, 0f, -2f));
+            Quad(glass, new Vector3(0.22f, 0.1f, -0.33f), 0.03f, 0.3f, SoftAdd(new Color(1f, 1f, 1f, 0.3f)), new Vector3(0f, 0f, 2f));
+            // 青いお酒（すけて、少し光る）と、表面
+            var drink = RecordMeshKit.Glass(new Color(0.12f, 0.36f, 1f, 0.6f), 0.95f);
+            drink.EnableKeyword("_EMISSION");
+            drink.SetColor("_EmissionColor", new Color(0.1f, 0.3f, 1f) * 0.9f);
+            liquid = NoShadow(Lathe(glass, Vector3.zero, new[] { new Vector2(0f, -0.3f), new Vector2(0.293f, -0.3f), new Vector2(0.309f, 0.06f), new Vector2(0f, 0.06f) }, drink, default, 48));
+            Cyl(liquid, new Vector3(0f, 0.062f, 0f), 0.615f, 0.004f, Add(new Color(0.45f, 0.7f, 1f, 0.55f)));
+            Ring(liquid, new Vector3(0f, 0.064f, 0f), 0.306f, 0.006f, Add(new Color(0.7f, 0.88f, 1f, 0.8f)));
+            Halo(glass, new Vector3(0f, -0.12f, 0f), new Color(0.2f, 0.45f, 1f, 0.45f), 0.7f);
+            // 氷（すける角の丸い立方体）
+            var iceMat = RecordMeshKit.Glass(new Color(0.92f, 0.97f, 1f, 0.38f), 0.99f);
             for (int i = 0; i < 3; i++)
-                ice[i] = Box(glass, new Vector3(-0.12f + i * 0.12f, 0.06f, Rand(-0.06f, 0.06f)), Vector3.one * 0.11f, iceMat, new Vector3(Rand(0f, 40f), Rand(0f, 90f), Rand(0f, 40f)));
+            {
+                ice[i] = NoShadow(Box(glass, new Vector3(-0.12f + i * 0.12f, 0.06f, Rand(-0.06f, 0.06f)), Vector3.one * 0.12f, iceMat, new Vector3(Rand(0f, 40f), Rand(0f, 90f), Rand(0f, 40f))));
+                Halo(ice[i], Vector3.zero, new Color(0.8f, 0.9f, 1f, 0.35f), 1.1f);
+            }
+            // グラスの外の水滴
+            var drop = Mat(new Color(0.92f, 0.97f, 1f), 0.3f, 0.99f);
+            for (int i = 0; i < 16; i++)
+            {
+                float a = Rand(200f, 340f) * Mathf.Deg2Rad;   // 手前側だけ
+                float y = Rand(-0.32f, 0.22f);
+                float r = Mathf.Lerp(0.312f, 0.342f, (y + 0.3f) / 0.6f) + 0.004f;
+                NoShadow(Ball(glass, new Vector3(Mathf.Cos(a) * r, y, Mathf.Sin(a) * r), Rand(0.012f, 0.026f), drop));
+            }
+            // ストロー
             Cyl(glass, new Vector3(0.1f, 0.25f, -0.05f), 0.02f, 0.6f, Mat(C("#ff4a6a"), 0.2f, 0.7f), new Vector3(0f, 0f, -18f));
-            Ring(glass, new Vector3(0f, 0.3f, 0f), 0.33f, 0.014f, edge);
             noteMat = Glow(C("#4f8bff"), 2.5f);
             haze = Fx(0.7f, 2.2f, -0.05f, null, true, 2.2f);
+        }
+
+        static Transform NoShadow(Transform t)
+        {
+            RecordMeshKit.NoShadow(t.gameObject);
+            return t;
         }
 
         Transform MakeNote(Transform parent, Vector3 pos, float s)
