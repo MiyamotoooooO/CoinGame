@@ -217,6 +217,7 @@ namespace MedalPusher
                 }
                 if (Board != null) Destroy(Board.gameObject);
             }
+            DestroyHype();
             OnDestroyed();
         }
 
@@ -270,6 +271,7 @@ namespace MedalPusher
         {
             if (!Active || medal == null || type == DropZoneType.Lost || !IsScoring) return;
             OnDrop(medal, type);
+            HypeDrop(medal, type);   // 中央の穴の火花（RecordScriptHype.cs）
         }
 
         void HandleInserted(Medal medal)
@@ -318,6 +320,7 @@ namespace MedalPusher
                 UpdateScreenFx(Time.unscaledDeltaTime);
             }
             UpdateShake(dt);
+            UpdateHype(dt);
         }
 
         void LateUpdate()
@@ -489,6 +492,7 @@ namespace MedalPusher
             Pop(text, color, new Vector2(BodyW * 0.5f, BodyH * 0.35f));
             ScreenFlash(color, 0.22f);
             ScreenBurst(new Vector2(BodyW * 0.5f, BodyH * 0.35f), color, 18);
+            HypeBurst(color);   // 盤面全体の光・光の輪・揺れ（RecordScriptHype.cs）
         }
 
         /// <summary>スピーカーも揺らす（大きいイベント用）</summary>

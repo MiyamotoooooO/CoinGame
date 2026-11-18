@@ -7,7 +7,7 @@ namespace MedalPusher
     /// <summary>
     /// N008 海「ビッグウェーブ」。効果の発動中（曲1曲分）だけ動く。
     ///
-    /// ・盤面：stormInterval 秒ごとに、水しぶきをまとった竜巻が盤面に生まれ、stormSeconds 秒かけて動き回る。
+    /// ・盤面：stormInterval 秒ごとに、水しぶきをまとった竜巻（ねじれた3層の水の柱・床の渦潮・根元の泡の輪）が盤面に生まれ、stormSeconds 秒かけて動き回る。
     ///   竜巻は「最後にメダルを投入した側（左・右）」へ寄っていく。近くのメダルを巻き込んで持ち上げ、ぐるぐる回す
     ///   竜巻が消える時に「ビッグウェーブ」：巻き込んだメダルを手前（穴の方）へ押し出す
     /// ・モニター：海の天気図。盤面の地図の上に竜巻の位置、巻き込んだ枚数、次の竜巻までの時間
@@ -75,10 +75,13 @@ namespace MedalPusher
         int caughtTotal;
         bool Storming => stormTimer > 0f;
 
-        Transform tornado;
-        readonly List<Transform> rings = new List<Transform>();
-        Material ringMaterial;
-        ParticleSystem spray;
+        Transform tornado, column;
+        readonly List<Transform> funnels = new List<Transform>();
+        readonly List<Material> funnelMats = new List<Material>();
+        readonly List<float> funnelSpin = new List<float>();
+        Transform whirl, foamRing;
+        Material whirlMat, foamMat;
+        ParticleSystem spray, mist;
 
         RectTransform map, stormIcon;
         Text countText, timerText, statusText;
@@ -96,16 +99,30 @@ namespace MedalPusher
             }
             else
             {
-                ringMaterial = Glow(Water, 1.2f);
-                for (int i = 0; i < 7; i++)
-                {
-                    float r = D * (0.6f + i * 0.28f);
-                    var ring = Shape(PrimitiveType.Cylinder, $"Ring{i}", tornado, new Vector3(0f, D * (0.2f + i * 0.35f), 0f), new Vector3(r * 2f, D * 0.03f, r * 2f), ringMaterial);
-                    rings.Add(ring.transform);
-                }
+                column = new GameObject("Column").transform;
+                column.SetParent(tornado, false);
+                float h = D * 3.4f;
+                // 3層のねじれた水の柱（外側はすける水、まん中は光る芯）
+                AddFunnel(RecordMeshKit.Funnel(D * 0.22f, D * 1.35f, h, 0.65f), RecordMeshKit.AlphaBlend(RecordMeshKit.WaterStreaks, new Color(0.55f, 0.85f, 1f, 0.6f)), 260f);
+                AddFunnel(RecordMeshKit.Funnel(D * 0.32f, D * 1.6f, h * 0.9f, -0.45f), RecordMeshKit.AlphaBlend(RecordMeshKit.WaterStreaks, new Color(0.85f, 0.97f, 1f, 0.38f)), -170f);
+                AddFunnel(RecordMeshKit.Funnel(D * 0.1f, D * 0.6f, h * 1.05f, 1.3f, 32, 20, 1.4f), RecordMeshKit.Additive(RecordMeshKit.WaterStreaks, new Color(0.45f, 0.8f, 1f, 0.5f)), 420f);
+                // 床の渦潮と、根元の泡の輪
+                whirlMat = RecordMeshKit.AlphaBlend(RecordMeshKit.Whirlpool, new Color(0.75f, 0.93f, 1f, 0.9f));
+                whirl = RecordMeshKit.Make("Whirlpool", RecordMeshKit.Annulus(D * 0.15f, D * 2.1f, 72, 8), whirlMat, tornado, new Vector3(0f, D * 0.03f, 0f), Vector3.one, Vector3.zero);
+                foamMat = RecordMeshKit.Additive(RecordMeshKit.Ripple, new Color(0.9f, 0.98f, 1f, 0.7f));
+                foamRing = RecordMeshKit.Make("Foam", RecordMeshKit.Annulus(D * 0.3f, D * 1.0f, 48, 3), foamMat, tornado, new Vector3(0f, D * 0.05f, 0f), Vector3.one, Vector3.zero);
             }
             spray = Particles("Spray", tornado, Vector3.up, D * 3f, D * 0.15f, 1f, 0.5f, 60f);
+            mist = Particles("Mist", tornado, Vector3.up, D * 1.2f, D * 0.6f, 1.4f, -0.1f, 40f);
             tornado.gameObject.SetActive(false);
+        }
+
+        void AddFunnel(Mesh mesh, Material mat, float spin)
+        {
+            var t = RecordMeshKit.Make("Funnel", mesh, mat, column, Vector3.zero, Vector3.one, Vector3.zero);
+            funnels.Add(t);
+            funnelMats.Add(mat);
+            funnelSpin.Add(spin);
         }
 
         protected override void OnBegin()
@@ -208,13 +225,29 @@ namespace MedalPusher
             tornado.position = stormPos;
             float grow = Mathf.Clamp01((stormSeconds - stormTimer) / 0.5f) * Mathf.Clamp01(stormTimer / 0.5f);
             tornado.localScale = Vector3.one * Mathf.Max(0.01f, grow);
-            for (int i = 0; i < rings.Count; i++)
+            float t = Time.time;
+            if (column != null)
             {
-                rings[i].localRotation = Quaternion.Euler(0f, Time.time * (300f + i * 60f), 0f);
-                var p = rings[i].localPosition;
-                rings[i].localPosition = new Vector3(Mathf.Sin(Time.time * 3f + i) * D * 0.1f * i, p.y, Mathf.Cos(Time.time * 3f + i) * D * 0.1f * i);
+                // 柱がうねって傾く
+                column.localRotation = Quaternion.Euler(Mathf.Sin(t * 1.7f) * 7f, 0f, Mathf.Cos(t * 1.3f) * 7f);
+                for (int i = 0; i < funnels.Count; i++)
+                {
+                    funnels[i].localRotation = Quaternion.Euler(0f, t * funnelSpin[i], 0f);
+                    RecordMeshKit.Scroll(funnelMats[i], dt * 0.12f * Mathf.Sign(funnelSpin[i]), -dt * (0.5f + i * 0.25f));
+                }
+                whirl.localRotation = Quaternion.Euler(0f, t * 140f, 0f);
+                float pulse = 1f + 0.12f * Mathf.Sin(t * 9f);
+                foamRing.localScale = new Vector3(pulse, 1f, pulse);
+                RecordMeshKit.SetColor(foamMat, new Color(0.9f, 0.98f, 1f, 0.5f + 0.3f * Mathf.Sin(t * 9f)));
             }
-            if (Random.value < 0.6f) Emit(spray, stormPos + new Vector3(0f, D * 0.2f, 0f), Foam, 2);
+            // らせんを描いて上がるしぶき
+            for (int k = 0; k < 2; k++)
+            {
+                float a = t * 6f + k * Mathf.PI + Random.Range(-0.3f, 0.3f);
+                float r = D * Random.Range(0.6f, 1.1f);
+                Emit(spray, stormPos + new Vector3(Mathf.Cos(a) * r, D * Random.Range(0.1f, 1.8f), Mathf.Sin(a) * r), Foam, 1);
+            }
+            if (Random.value < 0.5f) Emit(mist, stormPos + new Vector3(Random.Range(-D, D), D * 0.2f, Random.Range(-D, D)), new Color(0.85f, 0.95f, 1f, 0.35f), 1);
         }
 
         protected override void BuildScreen()

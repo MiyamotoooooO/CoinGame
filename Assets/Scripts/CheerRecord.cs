@@ -7,7 +7,8 @@ namespace MedalPusher
     /// <summary>
     /// N021 応援団「フレー！フレー！」。効果の発動中（曲1曲分）だけ動く。
     ///
-    /// ・盤面：中央の穴の左右に、応援団の旗（赤・白）が立つ。次に落とすとよい側の旗が大きく振られる。10コンボごとに紙吹雪
+    /// ・盤面：盤面の左右に、大きな応援団の旗（赤・白）が立つ。布は波打ってはためき、次に落とすとよい側の旗が大きく弧を描いて振られる。
+    ///   コンボが増えるほど、振る速さと大きさが増える。10コンボごとに紙吹雪
     /// ・モニター：学ラン姿の応援団が、コンボ数を叫ぶ。大きなコンボ数と今の倍率、コンボが切れるまでのバー
     /// ・ルール：
     ///   comboWindow 秒以内に続けて中央の穴に落ちるとコンボ。中央の穴のポイントに ×(1 + コンボ数 × perCombo) が掛かる（最大 ×maxMultiplier）
@@ -30,6 +31,14 @@ namespace MedalPusher
         [Range(0f, 1f)] public float perCombo = 0.1f;
         [Range(1f, 10f)] public float maxMultiplier = 4f;
         [Range(0f, 50f)] public float comboGauge = 5f;
+
+        [Header("旗")]
+        [Tooltip("旗ざおの高さ（メダルの直径に対する倍率）")]
+        [Range(1f, 6f)] public float poleHeight = 3.4f;
+        [Tooltip("旗の布の幅（メダルの直径に対する倍率）")]
+        [Range(0.5f, 4f)] public float flagWidth = 1.9f;
+        [Tooltip("旗を振る角度の大きさ（度）")]
+        [Range(10f, 80f)] public float swingAngle = 50f;
 
         [Header("音")]
         [Range(0f, 1f)] public float volume = 0.8f;
@@ -60,6 +69,10 @@ namespace MedalPusher
         float Multiplier => Mathf.Min(maxMultiplier, 1f + combo * perCombo);
 
         readonly Transform[] flags = new Transform[2];
+        readonly Mesh[] cloths = new Mesh[2];
+        readonly Vector3[][] clothBase = new Vector3[2][];
+        readonly float[] swingPhase = new float[2], swingAmp = new float[2], swingSpeed = new float[2];
+        float clothW;
         ParticleSystem confetti;
 
         readonly List<RectTransform> members = new List<RectTransform>();
@@ -67,16 +80,63 @@ namespace MedalPusher
         Image windowFill;
         AudioClip madeShout, madeConfetti;
 
+        static Material Shiny(Color c, float metal, float smooth, float glow)
+        {
+            var m = ProtoAssets.MakeMaterial(c, metal, smooth);
+            m.EnableKeyword("_EMISSION");
+            m.SetColor("_EmissionColor", c * glow);
+            return m;
+        }
+
+        /// <summary>旗の布の模様（地の色・ふちの色・まん中の丸）</summary>
+        static Texture2D FlagTexture(Color field, Color border, Color circle)
+        {
+            const int W = 128, H = 84;
+            var tex = new Texture2D(W, H, TextureFormat.RGBA32, true) { name = "CheerFlag", wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[W * H];
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    Color c = field;
+                    int edge = Mathf.Min(Mathf.Min(x, W - 1 - x), Mathf.Min(y, H - 1 - y));
+                    if (edge < 7) c = border;
+                    float dx = (x - W * 0.55f) / (H * 0.3f), dy = (y - H * 0.5f) / (H * 0.3f);
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (d < 1f) c = Color.Lerp(circle, c, Mathf.Clamp01((d - 0.93f) / 0.07f));
+                    if (d >= 1f && d < 1.12f) c = border;
+                    px[y * W + x] = c;
+                }
+            tex.SetPixels32(px);
+            tex.Apply(true);
+            return tex;
+        }
+
         protected override void BuildBoard()
         {
+            float P = D * poleHeight;
+            clothW = D * flagWidth;
+            float clothH = clothW * 0.66f;
+            var wood = Shiny(new Color(0.75f, 0.6f, 0.38f), 0.1f, 0.6f, 0.1f);
+            var gold = Shiny(Gold, 0.95f, 0.9f, 0.4f);
             for (int i = 0; i < 2; i++)
             {
                 int side = i == 0 ? -1 : 1;
                 var holder = new GameObject(side < 0 ? "FlagLeft" : "FlagRight").transform;
                 holder.SetParent(Board, false);
-                holder.position = new Vector3(side * (HoleHalf + D * 0.3f), 0f, FrontZ + D * 0.2f);
-                Cube("Pole", holder, new Vector3(0f, D * 0.8f, 0f), new Vector3(D * 0.05f, D * 1.6f, D * 0.05f), Glow(new Color(0.7f, 0.6f, 0.4f), 0.2f));
-                var cloth = Cube("Cloth", holder, new Vector3(-side * D * 0.35f, D * 1.35f, 0f), new Vector3(D * 0.7f, D * 0.45f, D * 0.02f), Glow(side < 0 ? Red : White, 0.6f));
+                holder.position = new Vector3(side * (HalfW - D * 0.6f), 0f, Mathf.Lerp(FrontZ, PusherFrontZ, 0.6f));
+                Shape(PrimitiveType.Cylinder, "Pole", holder, new Vector3(0f, P * 0.5f, 0f), new Vector3(D * 0.09f, P * 0.5f, D * 0.09f), wood);
+                Shape(PrimitiveType.Sphere, "Finial", holder, new Vector3(0f, P + D * 0.08f, 0f), Vector3.one * D * 0.2f, gold);
+                Shape(PrimitiveType.Cylinder, "Grip", holder, new Vector3(0f, D * 0.4f, 0f), new Vector3(D * 0.12f, D * 0.2f, D * 0.12f), gold);
+
+                cloths[i] = RecordMeshKit.Cloth(clothW, clothH, 16, 8, out clothBase[i]);
+                var tex = side < 0 ? FlagTexture(Red, Gold, White) : FlagTexture(White, Red, Red);
+                var mat = ProtoAssets.MakeMaterial(Color.white, 0f, 0.35f);
+                mat.mainTexture = tex;
+                mat.EnableKeyword("_EMISSION");
+                mat.SetTexture("_EmissionMap", tex);
+                mat.SetColor("_EmissionColor", new Color(0.35f, 0.35f, 0.35f));
+                // 布は旗ざおから、盤面のまん中の方へのびる
+                RecordMeshKit.Make("Cloth", cloths[i], mat, holder, new Vector3(0f, P - D * 0.06f, 0f), Vector3.one, new Vector3(0f, side < 0 ? 0f : 180f, 0f));
                 flags[i] = holder;
             }
             confetti = Particles("Confetti", Board, Vector3.up, D * 5f, D * 0.12f, 2f, 0.4f, 35f);
@@ -121,8 +181,8 @@ namespace MedalPusher
             if (before / 10 != combo / 10)
             {
                 AddGauge(comboGauge);
-                Emit(confetti, new Vector3(-HalfW * 0.8f, D * 0.3f, FrontZ + D), Red, 50);
-                Emit(confetti, new Vector3(HalfW * 0.8f, D * 0.3f, FrontZ + D), Gold, 50);
+                Emit(confetti, flags[0].TransformPoint(new Vector3(0f, D * poleHeight, 0f)), Red, 70);
+                Emit(confetti, flags[1].TransformPoint(new Vector3(0f, D * poleHeight, 0f)), Gold, 70);
                 Play(confettiSound, ref madeConfetti, () => RecordSynth.Notes("CheerConfetti", new[] { RecordSynth.Note(7), RecordSynth.Note(12), RecordSynth.Note(16), RecordSynth.Note(19) }, 0.06f, 0.4f, 0.3f, RecordSynth.Wave.Square));
                 PopCenter($"{combo / 10 * 10} コンボ！", Gold);
                 Speaker(0.9f, 12, Red);
@@ -134,13 +194,24 @@ namespace MedalPusher
         protected override void UpdateBoard(float dt)
         {
             int nextSide = lastSide == 0 ? 0 : -lastSide;
+            float heat = Mathf.Clamp01(combo / 30f);   // コンボが増えるほど激しく
             for (int i = 0; i < 2; i++)
             {
                 int side = i == 0 ? -1 : 1;
                 bool wave = Active && (nextSide == 0 || nextSide == side);
-                float a = wave ? Mathf.Sin(Time.time * 10f + i) * 30f : Mathf.Sin(Time.time * 2f + i) * 5f;
-                flags[i].localRotation = Quaternion.Euler(0f, 0f, a);
+                float targetAmp = wave ? swingAngle * (0.8f + 0.45f * heat) : 6f;
+                float targetSpeed = wave ? 4.2f + 4f * heat + shout * 2f : 1.4f;
+                swingAmp[i] = Mathf.MoveTowards(swingAmp[i], targetAmp, dt * 90f);
+                swingSpeed[i] = Mathf.MoveTowards(swingSpeed[i], targetSpeed, dt * 8f);
+                swingPhase[i] += swingSpeed[i] * dt;
+                // 大きな弧を描いて振る（少し内側に傾けた所を中心に）。前後にも少しゆれる
+                float a = side * swingAmp[i] * 0.3f + swingAmp[i] * 0.75f * Mathf.Sin(swingPhase[i] + i * 1.3f);
+                float b = Mathf.Sin(swingPhase[i] * 2f + i) * swingAmp[i] * 0.12f;
+                flags[i].localRotation = Quaternion.Euler(b, 0f, a);
                 flags[i].localScale = new Vector3(1f, Mathf.Max(0.01f, BoardShown), 1f);
+                // 布をはためかせる（速く振るほど大きく波打つ）
+                float flutter = D * (0.08f + 0.004f * swingAmp[i] * swingSpeed[i] / 5f);
+                RecordMeshKit.WaveCloth(cloths[i], clothBase[i], clothW, Time.time + i * 0.7f, flutter, 1.4f, 5f + swingSpeed[i] * 1.5f, D * 0.08f);
             }
         }
 
