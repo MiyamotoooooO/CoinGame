@@ -65,6 +65,8 @@ namespace MedalPusher
         protected virtual void UpdateScreen(float dt) { }
         /// <summary>ゲームの状態が変わった時（発動していなくても呼ぶ）</summary>
         protected virtual void OnStateChanged(GameState state) { }
+        /// <summary>モニターにレコードの画面を出すか（false なら、発動中もモニターはふだんの画面のまま。BuildScreen は呼ばない）</summary>
+        protected virtual bool UseMonitor => true;
         /// <summary>盤面を、発動が終わってもしばらく見せておくか（粒が残っている間など）</summary>
         protected virtual bool KeepBoardVisible() => false;
         /// <summary>Awake の終わりに呼ぶ（Instance を入れる）</summary>
@@ -241,7 +243,7 @@ namespace MedalPusher
             ResetOverrides();
             OnBegin();
             Screen = null;
-            if (Monitor != null)
+            if (Monitor != null && UseMonitor)
             {
                 Screen = Monitor.ShowRecordScreen(recordKey, ScreenTitle, ScreenSubtitle);
                 if (Screen != null)
