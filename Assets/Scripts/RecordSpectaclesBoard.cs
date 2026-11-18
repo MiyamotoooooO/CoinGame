@@ -17,8 +17,12 @@ namespace MedalPusher
         public override float BeatInterval => 8f;
         public override string BeatText => "WATERSPOUT!";
 
-        Transform whale, tail, waves, spout;
-        Material spoutMat;
+        Transform whale, tail, waves, spout, spoutWhirl;
+        readonly List<Transform> spoutParts = new List<Transform>();
+        readonly List<Material> spoutMats = new List<Material>();
+        readonly List<Color> spoutColors = new List<Color>();
+        readonly List<float> spoutSpin = new List<float>();
+        Material whirlMat;
         ParticleSystem spray, bubbles;
         float spoutLevel;
 
@@ -46,11 +50,25 @@ namespace MedalPusher
                 Egg(waves, new Vector3(-0.9f + i * 0.3f, 0f, 0f), new Vector3(0.42f, 0.18f, 0.3f), sea);
                 Egg(waves, new Vector3(-0.9f + i * 0.3f + 0.08f, 0.07f, -0.05f), new Vector3(0.16f, 0.05f, 0.1f), foam);
             }
-            spoutMat = Add(new Color(0.6f, 0.9f, 1f, 0f));
+            // 竜巻（ねじれた3層の水の柱と、根元の渦潮）
             spout = Group(Set, "Spout", new Vector3(0f, -HalfH - 0.5f, 2f));
-            Cone(spout, new Vector3(0f, 10f, 0f), 1.6f, 10f, spoutMat, new Vector3(180f, 0f, 0f), 24);
+            AddSpoutLayer(RecordMeshKit.Funnel(0.35f, 2.1f, 10.5f, 0.7f), RecordMeshKit.AlphaBlend(RecordMeshKit.WaterStreaks, Color.white), new Color(0.55f, 0.85f, 1f, 0.6f), 300f);
+            AddSpoutLayer(RecordMeshKit.Funnel(0.5f, 2.5f, 9.5f, -0.5f), RecordMeshKit.AlphaBlend(RecordMeshKit.WaterStreaks, Color.white), new Color(0.85f, 0.97f, 1f, 0.4f), -200f);
+            AddSpoutLayer(RecordMeshKit.Funnel(0.15f, 0.9f, 11f, 1.4f, 32, 20, 1.4f), RecordMeshKit.Additive(RecordMeshKit.WaterStreaks, Color.white), new Color(0.45f, 0.8f, 1f, 0.55f), 520f);
+            whirlMat = RecordMeshKit.AlphaBlend(RecordMeshKit.Whirlpool, new Color(0.75f, 0.93f, 1f, 0f));
+            spoutWhirl = Part("Whirlpool", RecordMeshKit.Annulus(0.3f, 3.6f, 72, 8), whirlMat, spout, new Vector3(0f, 0.2f, 0f), Vector3.one, new Vector3(-20f, 0f, 0f));
             spray = Fx(0.22f, 1.3f, 0.9f);
             bubbles = Fx(0.12f, 1.6f, -0.2f, Hero);
+        }
+
+        void AddSpoutLayer(Mesh mesh, Material mat, Color color, float spin)
+        {
+            var t = Part("SpoutLayer", mesh, mat, spout, Vector3.zero, Vector3.one, Vector3.zero);
+            spoutParts.Add(t);
+            spoutMats.Add(mat);
+            spoutColors.Add(color);
+            spoutSpin.Add(spin);
+            RecordMeshKit.SetColor(mat, new Color(color.r, color.g, color.b, 0f));
         }
 
         void Splash(Vector3 at, int n)
@@ -81,9 +99,17 @@ namespace MedalPusher
             }
             Drip(bubbles, new Vector3(Rand(-0.6f, 0.6f), -0.35f, -0.1f), new Color(0.8f, 0.95f, 1f, 0.8f), 4f, 0.4f, Vector3.up, 0.3f, dt);
             spoutLevel = Mathf.MoveTowards(spoutLevel, 0f, dt * 0.35f);
-            spout.localRotation = Quaternion.Euler(0f, t * 600f, 0f);
             spout.localScale = new Vector3(0.5f + 0.5f * spoutLevel, Mathf.Max(0.01f, spoutLevel), 0.5f + 0.5f * spoutLevel);
-            SetUnlitColor(spoutMat, new Color(0.6f, 0.9f, 1f, 0.35f * spoutLevel));
+            spout.localRotation = Quaternion.Euler(Mathf.Sin(t * 1.7f) * 6f, 0f, Mathf.Cos(t * 1.3f) * 6f);
+            for (int i = 0; i < spoutParts.Count; i++)
+            {
+                spoutParts[i].localRotation = Quaternion.Euler(0f, t * spoutSpin[i], 0f);
+                Color c = spoutColors[i];
+                RecordMeshKit.SetColor(spoutMats[i], new Color(c.r, c.g, c.b, c.a * spoutLevel));
+                RecordMeshKit.Scroll(spoutMats[i], dt * 0.12f * Mathf.Sign(spoutSpin[i]), -dt * (0.6f + i * 0.3f));
+            }
+            spoutWhirl.localRotation = Quaternion.Euler(-20f, t * 160f, 0f);
+            RecordMeshKit.SetColor(whirlMat, new Color(0.75f, 0.93f, 1f, 0.9f * spoutLevel));
             if (spoutLevel > 0.1f) Drip(spray, spout.localPosition + Vector3.up * Rand(0f, 9f) * spoutLevel, new Color(0.8f, 0.95f, 1f), 60f * spoutLevel, 3f, new Vector3(Rand(-1f, 1f), 0.3f, 0f), 0.5f, dt);
         }
 
@@ -345,26 +371,32 @@ namespace MedalPusher
         public override string BeatText => "GRAVITY WAVE";
         public override string FinaleText => "SUPERNOVA!!";
 
-        Transform disk, jets;
-        readonly Transform[] rings = new Transform[4];
-        readonly Material[] ringMats = new Material[4];
+        Transform disk, diskA, diskB, lens, jets;
+        Material diskMat, photonMat, jetMat;
         ParticleSystem matter, stars;
 
         protected override void Build()
         {
-            disk = Group(Hero, "Disk", Vector3.zero, new Vector3(-72f, 0f, 12f));
-            Color[] cols = { C("#ffd27a"), C("#ff8a3a"), C("#c05cff"), C("#5a7cff") };
-            for (int i = 0; i < 4; i++)
-            {
-                ringMats[i] = Add(new Color(cols[i].r, cols[i].g, cols[i].b, 0.75f));
-                rings[i] = Ring(disk, Vector3.zero, 0.24f + i * 0.08f, 0.05f + i * 0.012f, ringMats[i]);
-            }
-            Ball(Hero, Vector3.zero, 0.36f, Mat(Color.black, 0f, 1f));
-            Ring(Hero, Vector3.zero, 0.19f, 0.012f, Add(new Color(1f, 0.9f, 0.7f, 0.9f)), new Vector3(90f, 0f, 0f));
-            Halo(Hero, new Vector3(0f, 0f, 0.3f), new Color(0.6f, 0.3f, 1f, 0.8f), 1.6f);
-            jets = Group(Hero, "Jets", Vector3.zero, new Vector3(0f, 0f, 12f));
-            Cone(jets, new Vector3(0f, 0.15f, 0f), 0.06f, 0.9f, Add(new Color(0.6f, 0.75f, 1f, 0.6f)));
-            Cone(jets, new Vector3(0f, -0.15f, 0f), 0.06f, 0.9f, Add(new Color(0.6f, 0.75f, 1f, 0.6f)), new Vector3(180f, 0f, 0f));
+            const float core = 0.2f;   // 黒い穴の半径
+            // 円盤（ほぼ真横から見える。手前の半分は穴の前を通り、奥の半分は穴にかくれる）
+            disk = Group(Hero, "Disk", Vector3.zero, new Vector3(-80f, 0f, 10f));
+            diskMat = RecordMeshKit.Additive(RecordMeshKit.Accretion, Color.white);
+            diskA = Part("DiskA", RecordMeshKit.Annulus(core * 1.08f, 1.05f, 96, 8), diskMat, disk, Vector3.zero, Vector3.one, Vector3.zero);
+            diskB = Part("DiskB", RecordMeshKit.Annulus(core * 1.15f, 0.8f, 96, 6), RecordMeshKit.Additive(RecordMeshKit.Accretion, new Color(1f, 0.7f, 1f, 0.55f)), disk, new Vector3(0f, 0.004f, 0f), Vector3.one, new Vector3(0f, 77f, 0f));
+            // 真っ黒な穴
+            Ball(Hero, Vector3.zero, core * 2f, Mat(Color.black, 0f, 0f));
+            // 奥の円盤の光が、重力で曲がって穴の上と下に回りこんで見える輪（アインシュタイン・リング）
+            lens = Part("Lens", RecordMeshKit.Annulus(core * 1.02f, core * 2.1f, 96, 6), RecordMeshKit.Additive(RecordMeshKit.Accretion, new Color(1f, 0.9f, 0.8f, 0.85f)), Hero, new Vector3(0f, 0f, 0.06f), Vector3.one, new Vector3(-90f, 0f, 0f));
+            // 穴のふちの、細くて強い光の輪
+            photonMat = Add(new Color(1f, 0.92f, 0.75f, 1f));
+            Ring(Hero, new Vector3(0f, 0f, -0.01f), core * 1.03f, 0.006f, photonMat, new Vector3(90f, 0f, 0f));
+            Halo(Hero, new Vector3(0f, 0f, 0.3f), new Color(0.6f, 0.3f, 1f, 0.8f), 1.7f);
+            Halo(Hero, new Vector3(0f, 0f, 0.25f), new Color(1f, 0.6f, 0.3f, 0.35f), 0.9f);
+            // 上下に噴き出す光の柱
+            jets = Group(Hero, "Jets", Vector3.zero, new Vector3(0f, 0f, 10f));
+            jetMat = RecordMeshKit.Additive(RecordMeshKit.WaterStreaks, new Color(0.6f, 0.78f, 1f, 0.85f));
+            Part("JetUp", RecordMeshKit.Funnel(0.02f, 0.11f, 1.2f, 2f, 20, 10, 0.8f), jetMat, jets, new Vector3(0f, core * 0.7f, 0f), Vector3.one, Vector3.zero);
+            Part("JetDown", RecordMeshKit.Funnel(0.02f, 0.11f, 1.2f, 2f, 20, 10, 0.8f), jetMat, jets, new Vector3(0f, -core * 0.7f, 0f), Vector3.one, new Vector3(180f, 0f, 0f));
             matter = Fx(0.12f, 1.2f, 0f);
             stars = Fx(0.1f, 2.5f, 0f);
         }
@@ -389,9 +421,13 @@ namespace MedalPusher
 
         protected override void Idle(float t, float dt)
         {
-            for (int i = 0; i < 4; i++) rings[i].Rotate(0f, (220f - i * 40f) * dt, 0f, Space.Self);
-            disk.localRotation = Quaternion.Euler(-72f + 4f * Mathf.Sin(t * 0.7f), 0f, 12f);
+            diskA.Rotate(0f, 170f * dt, 0f, Space.Self);
+            diskB.Rotate(0f, 115f * dt, 0f, Space.Self);
+            lens.Rotate(0f, 120f * dt, 0f, Space.Self);
+            disk.localRotation = Quaternion.Euler(-80f + 3f * Mathf.Sin(t * 0.7f), 0f, 10f);
             jets.localScale = new Vector3(1f, 1f + 0.25f * Mathf.Sin(t * 9f), 1f);
+            RecordMeshKit.Scroll(jetMat, 0f, -dt * 1.8f);
+            SetUnlitColor(photonMat, new Color(1f, 0.92f, 0.75f, 0.8f + 0.2f * Mathf.Sin(t * 23f)));
             Inhale(Mathf.RoundToInt(dt * 40f + Rand(0f, 1f)), 4f);
         }
 
