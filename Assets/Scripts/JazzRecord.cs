@@ -1,16 +1,14 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace MedalPusher
 {
     /// <summary>
-    /// N006 ジャズ「ミッドナイト・セッション」。効果の発動中（曲1曲分）だけ動く。
+    /// N006 ジャズ「ミッドナイト・セッション」。効果の発動中（曲1曲分）だけ動く。モニターはふだんの画面のまま（盤面だけで見せる）。
     ///
     /// ・盤面：紫のムード照明。上から1本のスポットライトが、中央の穴の手前をゆっくり左右に動く（床に光の輪）。
     ///   倍率が最大になると、スポットライトが金色になる
-    /// ・モニター：左にサックスのメーター（半円の目盛りと針。落ちるたびに上がり、最大で金色）、右に大きく今の倍率「×1.26」。
-    ///   下に中央の穴の横はばの帯と、いまのスポットライトの位置
+    ///   奥の壁の左に、ネオンのサックス。管の目盛りが倍率に合わせて下から光っていき、最大で金色になる。横に今の倍率「×1.26」
     /// ・ルール：
     ///   中央の穴のポイントに、今の倍率が掛かる（はじめ ×1）。倍率は下がらない
     ///   中央の穴に落ちるたびに、倍率 +stepOutside。スポットライトの輪の中に落ちると「アドリブ成功」で +stepInside
@@ -54,6 +52,7 @@ namespace MedalPusher
         protected override string ScreenTitle => "JAZZ";
         protected override string ScreenSubtitle => "ミッドナイト・セッション";
         protected override float RecordSoundVolume => volume;
+        protected override bool UseMonitor => false;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoAttach() => Attach<JazzRecord>();
@@ -64,7 +63,7 @@ namespace MedalPusher
         static readonly Color Amber = new Color32(0xff, 0xb3, 0x3c, 0xff);
         static readonly Color Gold = new Color32(0xff, 0xd7, 0x4a, 0xff);
         static readonly Color Ink = new Color32(0xf4, 0xf4, 0xf6, 0xff);
-        static readonly Color Mute = new Color32(0x9c, 0x9e, 0xae, 0xff);
+        static readonly Color NeonOff = new Color32(0x30, 0x24, 0x48, 0xff);
 
         float add;               // 倍率の上がった分
         float spotX, spotPulse, addShown;
@@ -76,12 +75,14 @@ namespace MedalPusher
         Material ringMaterial;
         ParticleSystem sparkle;
 
-        readonly List<Image> ticks = new List<Image>();
-        RectTransform needle, spotMarker;
-        Text multText, multSub, statusText;
-        Image spotMarkerImg;
-        float laneLeft, laneW;
+        const int Segments = 10;
+        readonly List<Material> segMats = new List<Material>();
+        Material saxMat;
+        float meterPulse;
+        BoardText multText;
         AudioClip madeAdlib, madeDrop, madeMax;
+
+        Vector3 SaxBase => new Vector3(-HalfW * 0.62f, Layout.pusherHeight + D * 0.6f, BackZ - D * 0.25f);
 
         float SpotZ => FrontZ + D * 0.6f;
 
@@ -100,6 +101,37 @@ namespace MedalPusher
             ringMaterial = Glow(Amber, 1.2f);
             ring = Shape(PrimitiveType.Cylinder, "SpotRing", Board, Vector3.zero, new Vector3(D * spotRadius * 2f, D * 0.004f, D * spotRadius * 2f), ringMaterial);
             sparkle = Particles("Sparkle", Board, Vector3.up, D * 2f, D * 0.1f, 0.9f, 0.2f, 40f);
+            BuildSax();
+        }
+
+        /// <summary>奥の壁の左のネオンのサックス：まっすぐな管（目盛り Segments 個）、下で曲がって上を向くベル、上の吹き口</summary>
+        void BuildSax()
+        {
+            var root = new GameObject("NeonSax").transform;
+            root.SetParent(Board, false);
+            root.position = SaxBase;
+            root.rotation = Quaternion.Euler(0f, 0f, -12f);   // 少し傾ける
+            saxMat = Glow(Gold, 1f);
+            float segH = D * 0.32f, w = D * 0.36f;
+            for (int i = 0; i < Segments; i++)
+            {
+                var m = Glow(NeonOff, 0.2f);
+                Cube($"Seg{i}", root, new Vector3(0f, D * 0.5f + segH * (i + 0.5f), 0f), new Vector3(w, segH * 0.8f, D * 0.08f), m);
+                segMats.Add(m);
+            }
+            float top = D * 0.5f + segH * Segments;
+            // 管のふち（金のネオンの線）
+            Cube("EdgeL", root, new Vector3(-w * 0.62f, top * 0.5f + D * 0.25f, 0f), new Vector3(D * 0.04f, top - D * 0.5f, D * 0.04f), saxMat);
+            Cube("EdgeR", root, new Vector3(w * 0.62f, top * 0.5f + D * 0.25f, 0f), new Vector3(D * 0.04f, top - D * 0.5f, D * 0.04f), saxMat);
+            // 下で曲がって、右上を向くベル
+            var bend = Shape(PrimitiveType.Cylinder, "Bend", root, new Vector3(w * 0.6f, D * 0.3f, 0f), new Vector3(w * 1.2f, D * 0.04f, w * 1.2f), saxMat);
+            bend.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var bell = Shape(PrimitiveType.Cylinder, "Bell", root, new Vector3(w * 1.5f, D * 0.75f, 0f), new Vector3(w * 1.6f, D * 0.03f, w * 1.6f), saxMat);
+            bell.transform.localRotation = Quaternion.Euler(0f, 0f, -20f);
+            // 上の吹き口（左へ曲がる）
+            var neck = Cube("Neck", root, new Vector3(-w * 0.4f, top + D * 0.15f, 0f), new Vector3(w * 1.1f, D * 0.06f, D * 0.06f), saxMat);
+            neck.transform.localRotation = Quaternion.Euler(0f, 0f, 25f);
+            multText = BoardLabel("Mult", Board, SaxBase + new Vector3(D * 2.6f, top * 0.55f, 0f), "", D * 0.9f, Ink);
         }
 
         protected override void OnBegin()
@@ -125,6 +157,7 @@ namespace MedalPusher
 
             // いまの倍率でポイントを足してから、倍率を上げる
             int extra = AddMultiplied(Multiplier);
+            meterPulse = 1f;
             if (maxed && inside)
             {
                 AddPoints(goldBonus);
@@ -134,23 +167,23 @@ namespace MedalPusher
             add = Mathf.Min(maxAdd, add + (inside ? stepInside : stepOutside));
             maxed = add >= maxAdd - 0.0001f;
 
-            Vector2 pos = new Vector2(BodyW * 0.72f, 320f);
+            var pos = new Vector3(x, D * 1.2f, SpotZ);
             if (inside)
             {
                 spotPulse = 1f;
                 Play(adlibSound, ref madeAdlib, () => RecordSynth.Notes("JazzAdlib", new[] { RecordSynth.Note(7), RecordSynth.Note(10), RecordSynth.Note(14), RecordSynth.Note(15) }, 0.07f, 0.4f, 0.3f, RecordSynth.Wave.Triangle));
-                Pop(maxed ? $"アドリブ！ +{CenterPoints + extra}" : $"アドリブ！ +{stepInside:0.00}", Gold, pos);
+                BoardPop(maxed ? $"アドリブ！ +{CenterPoints + extra}" : $"アドリブ！ ×+{stepInside:0.00}", Gold, pos, D * 0.7f);
                 Emit(sparkle, new Vector3(x, D * 0.3f, SpotZ), Gold, 20);
             }
             else
             {
                 Play(dropSound, ref madeDrop, () => RecordSynth.Notes("JazzDrop", new[] { RecordSynth.Note(-5) }, 0.05f, 0.25f, 0.25f, RecordSynth.Wave.Sine), 0.6f);
-                Pop($"+{stepOutside:0.00}", Violet, pos);
+                BoardPop($"+{CenterPoints + extra}", Violet, pos, D * 0.6f);
             }
             if (maxed && !wasMax)
             {
                 Play(maxSound, ref madeMax, () => RecordSynth.Chord("JazzMax", new[] { RecordSynth.Note(0), RecordSynth.Note(4), RecordSynth.Note(7), RecordSynth.Note(11), RecordSynth.Note(14) }, 1.6f, 0.35f, RecordSynth.Wave.Triangle));
-                PopCenter("セッション最高潮！", Gold);
+                BoardPop("セッション最高潮！", Gold, new Vector3(0f, D * 2.5f, SpotZ + D * 1.5f), D * 1.1f);
                 Speaker(1f, 12, Gold);
             }
         }
@@ -171,68 +204,27 @@ namespace MedalPusher
             ring.transform.position = new Vector3(spotX, D * 0.01f, SpotZ);
             SetGlow(ringMaterial, c, (0.8f + 1.5f * spotPulse) * BoardShown);
             ring.SetActive(BoardShown > 0.01f);
-        }
 
-        protected override void BuildScreen()
-        {
-            ticks.Clear();
-            float W = BodyW;
-            Tag(Screen, "Badge", 70f, 24f, 100f, 26f, "JAZZ", 14, Violet, new Color32(0x16, 0x12, 0x22, 0xff));
-
-            // 左：半円のメーター
-            float cx = W * 0.3f, cy = 330f, r = 170f;
-            const int count = 21;
-            for (int i = 0; i < count; i++)
+            // ネオンのサックス：倍率に合わせて目盛りが下から光る
+            meterPulse = Mathf.MoveTowards(meterPulse, 0f, dt * 2.5f);
+            float fill = maxAdd > 0f ? Mathf.Clamp01(addShown / maxAdd) * Segments : 0f;
+            for (int i = 0; i < segMats.Count; i++)
             {
-                float a = Mathf.Lerp(180f, 0f, i / (float)(count - 1)) * Mathf.Deg2Rad;
-                var tick = Img(Screen, $"Tick{i}", cx + Mathf.Cos(a) * r, cy - Mathf.Sin(a) * r, 10f, 34f, new Color(1f, 1f, 1f, 0.15f));
-                tick.rectTransform.localRotation = Quaternion.Euler(0f, 0f, a * Mathf.Rad2Deg - 90f);
-                ticks.Add(tick);
+                float k = Mathf.Clamp01(fill - i);
+                Color sc = maxed ? Gold : Color.Lerp(Violet, Amber, i / (Segments - 1f));
+                Color col = Color.Lerp(NeonOff, sc, k);
+                float g = (0.2f + 2.2f * k + (i == Mathf.FloorToInt(fill) ? 1.5f * meterPulse : 0f)) * BoardShown;
+                if (maxed) g *= 0.8f + 0.4f * Mathf.Sin(Time.time * 6f + i * 0.5f);
+                SetGlow(segMats[i], col, g);
             }
-            var n = Img(Screen, "Needle", cx, cy, 6f, r * 0.9f, Ink);
-            needle = n.rectTransform;
-            needle.pivot = new Vector2(0.5f, 0f);
-            Place(needle, cx, cy);
-            Img(Screen, "Hub", cx, cy, 30f, 30f, Ink, MonitorDisplay.ScreenShape.Circle);
-
-            // 右：倍率
-            multText = Lbl(Screen, "Mult", W * 0.72f, 220f, 460f, 140f, "", 110, Gold, TextAnchor.MiddleCenter, true);
-            multSub = Lbl(Screen, "MultSub", W * 0.72f, 300f, 460f, 32f, "", 20, Ink);
-
-            // 下：中央の穴の帯とスポットライトの位置
-            laneLeft = W * 0.2f;
-            laneW = W * 0.6f;
-            Lbl(Screen, "LaneLabel", 24f, 470f, 160f, 30f, "中央の穴", 18, Mute, TextAnchor.MiddleLeft);
-            Img(Screen, "Lane", laneLeft + laneW * 0.5f, 470f, laneW, 30f, new Color(1f, 1f, 1f, 0.1f), MonitorDisplay.ScreenShape.Pill);
-            spotMarkerImg = Img(Screen, "Spot", laneLeft + laneW * 0.5f, 470f, laneW * spotRadius * D / Mathf.Max(0.01f, HoleHalf), 30f, Amber, MonitorDisplay.ScreenShape.Pill);
-            spotMarker = spotMarkerImg.rectTransform;
-            Lbl(Screen, "LeftLabel", laneLeft - 10f, 470f, 60f, 30f, "左", 16, Mute, TextAnchor.MiddleRight);
-            Lbl(Screen, "RightLabel", laneLeft + laneW + 10f, 470f, 60f, 30f, "右", 16, Mute, TextAnchor.MiddleLeft);
-            statusText = Lbl(Screen, "Status", 24f, 560f, W - 48f, 36f, "", 20, Ink, TextAnchor.MiddleLeft);
-        }
-
-        protected override void UpdateScreen(float dt)
-        {
-            float frac = Mathf.Clamp01(addShown / Mathf.Max(0.01f, maxAdd));
-            int lit = Mathf.RoundToInt(frac * (ticks.Count - 1));
-            for (int i = 0; i < ticks.Count; i++)
+            if (saxMat != null) SetGlow(saxMat, maxed ? Gold : Amber, (maxed ? 2.5f : 1.2f) * BoardShown);
+            if (multText != null)
             {
-                Color c = maxed ? Gold : Color.Lerp(new Color32(0xff, 0x7a, 0x1a, 0xff), Gold, i / (float)(ticks.Count - 1));
-                ticks[i].color = i <= lit && addShown > 0.001f ? c : new Color(1f, 1f, 1f, 0.15f);
+                multText.gameObject.SetActive(Active);
+                multText.text = $"×{1f + addShown:0.00}";
+                multText.Color = maxed ? Gold : Ink;
+                multText.Scale = 1f + 0.15f * meterPulse;
             }
-            needle.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(90f, -90f, frac) + Mathf.Sin(Time.time * 20f) * 0.6f);
-
-            multText.text = $"×{1f + addShown:0.00}";
-            multText.color = maxed ? Color.Lerp(Gold, Color.white, 0.3f + 0.3f * Mathf.Sin(Time.time * 6f)) : Gold;
-            multSub.text = maxed ? "セッション最高潮！ 輪の中で +" + goldBonus + "pt" : "落ちるたびに倍率が上がる";
-
-            float x01 = Mathf.InverseLerp(-HoleHalf, HoleHalf, spotX);
-            Place(spotMarker, laneLeft + laneW * x01, 470f);
-            spotMarkerImg.color = Color.Lerp(maxed ? Gold : Amber, Color.white, spotPulse * 0.6f);
-
-            statusText.text = maxed
-                ? $"<color=#FFD74A>最高潮！</color>  スポットライトの輪の中に落とすと +{goldBonus}pt"
-                : $"スポットライトの輪の中に落とすとアドリブ成功：倍率 +{stepInside:0.00}（外は +{stepOutside:0.00}）";
         }
     }
 }

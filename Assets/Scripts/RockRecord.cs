@@ -1,21 +1,21 @@
-﻿using System.Collections.Generic;
-using UnityEngine;
-using UnityEngine.UI;
+﻿using UnityEngine;
 
 namespace MedalPusher
 {
     /// <summary>
-    /// N005 ロック「ライブハウス・ファイア」。効果の発動中（曲1曲分）だけ動く。
+    /// N005 ロック「ライブハウス・ファイア」。効果の発動中（曲1曲分）だけ動く。モニターはふだんの画面のまま（盤面だけで見せる）。
     ///
     /// ・盤面：左右の端の穴の上に、炎の柱が立つ。燃え上がっている側の炎は高く、白っぽく燃える。
     ///   中央の穴に落ちると、両方の炎が「ボッ」と上がる
-    /// ・モニター：暗いライブハウスのステージ。真ん中に大きく今の倍率「×2」。
-    ///   下の左右に「燃える穴」の札（燃えている間は残り秒数）、まん中にソロまでの残り（●●○）
+    ///   まん中の上に今の倍率「×2」と、ソロまでの残り（●●○）。燃えている穴の上には残り秒数
+    ///   ギターソロの間は、ビートのたびに筐体のスピーカーが大きくふるえ、衝撃波の輪がプッシャーの前から手前へ走って、
+    ///   盤面のメダルを少し手前へ押す（音圧で押す）
     /// ・ルール：
     ///   中央の穴のポイントが ×centerMultiplier（基本のポイントに掛かる）
     ///   fireInterval 秒ごとに、左右どちらかの端の穴が fireSeconds 秒「燃える穴」になる。
     ///   燃えている端の穴に落ちると +fireBonus pt（端の穴はふだん 0pt。燃えていない方は 0pt のまま）
-    ///   燃える穴に hitsForSolo 回入れると「ギターソロ」：soloSeconds 秒のあいだ中央の穴が ×soloMultiplier。画面が揺れる
+    ///   燃える穴に hitsForSolo 回入れると「ギターソロ」：soloSeconds 秒のあいだ中央の穴が ×soloMultiplier。画面が揺れる。
+    ///   ソロの間は soloBpm のビートごとに、盤面のメダルを手前へ soloPush の強さで押す
     /// ・発射口（左・右）をえらんで、燃えている側をねらう遊び
     ///
     /// 見た目と音はコードで作る仮のもの。「差し替え用」に入れると、そちらを使う。
@@ -44,6 +44,10 @@ namespace MedalPusher
         [Range(1f, 8f)] public float soloMultiplier = 3f;
         [Tooltip("ソロ中に画面を揺らす強さ")]
         [Range(0f, 0.3f)] public float soloShake = 0.03f;
+        [Tooltip("ソロ中に音圧で押すビートの速さ（BPM）")]
+        [Range(60f, 240f)] public float soloBpm = 140f;
+        [Tooltip("ソロ中のビートで、盤面のメダルを手前へ押す強さ")]
+        [Range(0f, 3f)] public float soloPush = 0.35f;
 
         [Header("盤面の炎")]
         [Tooltip("燃え上がった炎の高さ（盤面の幅に対する割合）")]
@@ -62,6 +66,7 @@ namespace MedalPusher
         protected override string ScreenTitle => "ROCK";
         protected override string ScreenSubtitle => "ライブハウス・ファイア";
         protected override float RecordSoundVolume => volume;
+        protected override bool UseMonitor => false;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoAttach() => Attach<RockRecord>();
@@ -73,25 +78,20 @@ namespace MedalPusher
         static readonly Color FireYellow = new Color32(0xff, 0xd0, 0x3a, 0xff);
         static readonly Color HotWhite = new Color32(0xff, 0xf4, 0xd8, 0xff);
         static readonly Color Ink = new Color32(0xf4, 0xf4, 0xf6, 0xff);
-        static readonly Color Mute = new Color32(0x9c, 0x9e, 0xae, 0xff);
-        static readonly Color Dark = new Color32(0x24, 0x22, 0x26, 0xff);
 
         int fireSide;            // 燃えている側（-1 左、1 右、0 なし）
-        float fireTimer, nextFire, soloTimer, dropPulse, igniteTimer;
+        float fireTimer, nextFire, soloTimer, dropPulse, igniteTimer, beatTimer, wave = -1f;
         int hits;
         bool Solo => soloTimer > 0f;
 
         readonly ParticleSystem[] flames = new ParticleSystem[2];
         readonly Light[] lights = new Light[2];
         ParticleSystem embers;
-
-        RectTransform multGroup, soloTag;
-        Text multText, multSub, soloText, statusText;
-        readonly Text[] sideTexts = new Text[2];
-        readonly Image[] sideBoxes = new Image[2];
-        readonly List<Image> pips = new List<Image>();
-        readonly List<Image> bgFlames = new List<Image>();
-        AudioClip madeIgnite, madeHit, madeSolo;
+        GameObject shockRing;
+        Material shockMaterial;
+        BoardText multText, pipText;
+        readonly BoardText[] sideTimers = new BoardText[2];
+        AudioClip madeIgnite, madeHit, madeSolo, madeBeat;
 
         float SideX(int side) => side * (HoleHalf + (HalfW - HoleHalf) * 0.5f);
 
@@ -107,6 +107,20 @@ namespace MedalPusher
                 lights[i] = PointLight("FlameLight", holder, new Vector3(0f, D * 1.2f, D * 0.5f), Fire, Layout.boardWidth * 0.5f);
             }
             embers = Particles("Embers", Board, Vector3.up, D * 5f, D * 0.08f, 1.2f, 0.4f, 30f);
+
+            // 音圧の衝撃波（ソロ中、ビートごとにプッシャーの前から手前へ走る光の帯）
+            shockMaterial = Glow(Fire, 2f);
+            shockRing = Cube("Shock", Board, Vector3.zero, new Vector3(HalfW * 2f, D * 0.03f, D * 0.12f), shockMaterial);
+            shockRing.SetActive(false);
+
+            float midZ = (FrontZ + PusherFrontZ) * 0.5f;
+            multText = BoardLabel("Mult", Board, new Vector3(0f, D * 3.4f, midZ), "", D * 1.3f, Ink);
+            pipText = BoardLabel("Pips", Board, new Vector3(0f, D * 2.5f, midZ), "", D * 0.5f, Ink);
+            for (int i = 0; i < 2; i++)
+            {
+                int side = i == 0 ? -1 : 1;
+                sideTimers[i] = BoardLabel(side < 0 ? "TimerLeft" : "TimerRight", Board, new Vector3(SideX(side), Layout.boardWidth * flameHeightRatio * 0.5f + D * 2f, FrontZ + D * 0.3f), "", D * 0.6f, FireYellow);
+            }
         }
 
         ParticleSystem BuildFlame(Transform parent)
@@ -140,6 +154,8 @@ namespace MedalPusher
             nextFire = 2f;
             soloTimer = 0f;
             hits = 0;
+            beatTimer = 0f;
+            wave = -1f;
         }
 
         protected override void OnEnd()
@@ -154,10 +170,21 @@ namespace MedalPusher
             igniteTimer = Mathf.MoveTowards(igniteTimer, 0f, dt * 2f);
             if (!running) return;
 
+            if (wave >= 0f)
+            {
+                wave += dt * 2.5f;
+                if (wave > 1f) wave = -1f;
+            }
             if (Solo)
             {
                 soloTimer -= dt;
                 Shake(soloShake, 0.2f);
+                beatTimer -= dt;
+                if (beatTimer <= 0f)
+                {
+                    beatTimer = 60f / Mathf.Max(30f, soloBpm);
+                    SoloBeat();
+                }
             }
 
             if (fireSide != 0)
@@ -177,6 +204,22 @@ namespace MedalPusher
             }
         }
 
+        /// <summary>ソロのビート：スピーカーをふるわせ、衝撃波でプッシャーの前の床のメダルを手前へ押す</summary>
+        void SoloBeat()
+        {
+            wave = 0f;
+            Speaker(0.9f, 2, Fire);
+            Play(null, ref madeBeat, () => RecordSynth.Thud("RockBeat", 60f, 0.25f, 0.8f), 0.6f);
+            foreach (var m in BoardMedals)
+            {
+                if (m == null || m.Consumed) continue;
+                var p = m.transform.position;
+                if (p.y < -0.1f || p.y > Layout.pusherHeight * 0.9f) continue;   // 上の段は押さない
+                if (p.z < FrontZ || p.z > PusherFrontZ + D) continue;
+                Push(m, new Vector3(0f, D * 0.15f, -D * soloPush));
+            }
+        }
+
         protected override void OnDrop(Medal medal, DropZoneType type)
         {
             if (type == DropZoneType.Center)
@@ -184,7 +227,7 @@ namespace MedalPusher
                 float mult = Solo ? soloMultiplier : centerMultiplier;
                 int extra = AddMultiplied(mult);
                 dropPulse = 1f;
-                Pop($"×{mult:0.#}  +{CenterPoints + extra}", Solo ? FireYellow : Fire, new Vector2(BodyW * Random.Range(0.3f, 0.7f), 300f));
+                BoardPop($"+{CenterPoints + extra}", Solo ? FireYellow : Fire, new Vector3(medal.transform.position.x, D * 1.2f, FrontZ + D * 0.5f), D * 0.7f);
                 return;
             }
 
@@ -195,14 +238,15 @@ namespace MedalPusher
             hits++;
             Play(fireHitSound, ref madeHit, () => RecordSynth.Chord("RockHit", new[] { 82.41f, 123.47f, 164.81f }, 0.8f, 0.3f, RecordSynth.Wave.Saw));
             Emit(embers, new Vector3(SideX(side), D * 0.5f, FrontZ + D * 0.3f), FireYellow, 40);
-            Pop($"燃える穴！ +{fireBonus}", FireYellow, new Vector2(side < 0 ? BodyW * 0.2f : BodyW * 0.8f, 470f));
+            BoardPop($"燃える穴！ +{fireBonus}", FireYellow, new Vector3(SideX(side), D * 1.5f, FrontZ + D * 0.5f), D * 0.7f);
             Speaker(0.6f);
             if (hits >= hitsForSolo && !Solo)
             {
                 hits = 0;
                 soloTimer = soloSeconds;
                 Play(soloSound, ref madeSolo, () => RecordSynth.Sweep("RockSolo", 659f, 988f, 1.2f, 0.35f, RecordSynth.Wave.Saw));
-                PopCenter("GUITAR SOLO!", FireYellow);
+                beatTimer = 0f;
+                BoardPop("GUITAR SOLO!", FireYellow, new Vector3(0f, D * 2.5f, FrontZ + D * 1.5f), D * 1.2f);
                 Speaker(1f, 16, Fire);
             }
         }
@@ -237,83 +281,46 @@ namespace MedalPusher
                     lights[i].intensity = flameLightIntensity * BoardShown * power * flicker * (1f + 0.5f * dropPulse);
                     lights[i].enabled = lights[i].intensity > 0.001f;
                 }
-            }
-        }
 
-        protected override void BuildScreen()
-        {
-            pips.Clear();
-            bgFlames.Clear();
-            float W = BodyW;
-            var stage = Panel(Screen, "Stage", W * 0.5f, 210f, W - 48f, 400f, new Color32(0x10, 0x0c, 0x0e, 0xff));
-            float sw = W - 48f;
-            int n = Mathf.Max(12, Mathf.FloorToInt(sw / 34f));
-            for (int i = 0; i < n; i++)
+                if (sideTimers[i] != null)
+                {
+                    sideTimers[i].gameObject.SetActive(burning);
+                    if (burning) sideTimers[i].text = $"{fireTimer:0.0}";
+                }
+            }
+
+            // 衝撃波：プッシャーの前から手前のふちへ走る
+            if (shockRing != null)
             {
-                Color c = i % 3 == 0 ? FireRed : i % 3 == 1 ? Fire : FireYellow;
-                var img = Img(stage, $"BgFlame{i}", (i + 0.5f) * sw / n, 400f, sw / n * 1.6f, 80f, c);
-                img.rectTransform.pivot = new Vector2(0.5f, 0f);
-                Place(img.rectTransform, (i + 0.5f) * sw / n, 400f);
-                img.rectTransform.localRotation = Quaternion.Euler(0f, 0f, (i % 2 == 0 ? 1f : -1f) * 6f);
-                bgFlames.Add(img);
+                bool on = wave >= 0f && Active;
+                shockRing.SetActive(on);
+                if (on)
+                {
+                    shockRing.transform.position = new Vector3(0f, D * 0.15f, Mathf.Lerp(PusherFrontZ, FrontZ, wave));
+                    SetGlow(shockMaterial, FireYellow, 3f * (1f - wave));
+                }
             }
-            multGroup = Grp(stage, "Mult", sw * 0.5f, 170f, 460f, 220f);
-            multText = Lbl(multGroup, "Text", 230f, 100f, 460f, 200f, "", 170, Ink, TextAnchor.MiddleCenter, true);
-            var outline = multText.gameObject.AddComponent<Outline>();
-            outline.effectColor = FireRed;
-            outline.effectDistance = new Vector2(5f, -5f);
-            multSub = Lbl(multGroup, "Sub", 230f, 205f, 460f, 30f, "中央の穴のポイント", 20, Ink);
-            soloTag = Grp(stage, "SoloTag", sw * 0.5f, 36f, 440f, 52f);
-            Tag(soloTag, "Bg", 220f, 26f, 440f, 50f, "", 10, FireYellow, Dark);
-            soloText = Lbl(soloTag, "Text", 220f, 26f, 440f, 50f, "", 28, Dark, TextAnchor.MiddleCenter, true);
-            soloTag.gameObject.SetActive(false);
 
-            // 下：左右の燃える穴の札と、ソロまでの印
-            for (int i = 0; i < 2; i++)
-            {
-                float cx = i == 0 ? 24f + 150f : W - 24f - 150f;
-                sideBoxes[i] = Img(Screen, $"Side{i}", cx, 480f, 300f, 64f, new Color(1f, 1f, 1f, 0.08f), MonitorDisplay.ScreenShape.Pill);
-                sideTexts[i] = Lbl(Screen, $"SideText{i}", cx, 480f, 300f, 64f, "", 24, Ink);
-            }
-            for (int i = 0; i < hitsForSolo; i++)
-                pips.Add(Img(Screen, $"Pip{i}", W * 0.5f + (i - (hitsForSolo - 1) * 0.5f) * 40f, 480f, 26f, 26f, new Color(1f, 1f, 1f, 0.15f), MonitorDisplay.ScreenShape.Circle));
-            Lbl(Screen, "PipLabel", W * 0.5f, 515f, 260f, 26f, "ソロまで", 16, Mute);
-            statusText = Lbl(Screen, "Status", 24f, 570f, W - 48f, 36f, "", 20, Ink, TextAnchor.MiddleLeft);
-        }
-
-        protected override void UpdateScreen(float dt)
-        {
             float t = Time.time;
-            for (int i = 0; i < bgFlames.Count; i++)
+            if (multText != null)
             {
-                bool left = i < bgFlames.Count / 2;
-                bool hot = Solo || (fireSide == -1 && left) || (fireSide == 1 && !left);
-                float h = (hot ? 260f : 70f) * (0.6f + 0.4f * Mathf.PerlinNoise(t * 3f, i * 0.7f)) + 60f * dropPulse;
-                var rt = bgFlames[i].rectTransform;
-                rt.sizeDelta = new Vector2(rt.sizeDelta.x, h);
+                multText.gameObject.SetActive(Active);
+                float mult = Solo ? soloMultiplier : centerMultiplier;
+                multText.text = Solo ? $"SOLO ×{mult:0.#}" : $"×{mult:0.#}";
+                multText.Color = Solo ? Color.Lerp(Ink, FireYellow, 0.5f + 0.5f * Mathf.Sin(t * 12f)) : Ink;
+                multText.Scale = 1f + 0.12f * dropPulse;
             }
-            float mult = Solo ? soloMultiplier : centerMultiplier;
-            multText.text = $"×{mult:0.#}";
-            multText.color = Solo ? Color.Lerp(Ink, FireYellow, 0.5f + 0.5f * Mathf.Sin(t * 12f)) : Ink;
-            Scale(multGroup, 1f + 0.08f * dropPulse);
-            if (soloTag.gameObject.activeSelf != Solo) soloTag.gameObject.SetActive(Solo);
-            if (Solo) soloText.text = $"GUITAR SOLO ×{soloMultiplier:0.#}  {Mathf.CeilToInt(soloTimer)}";
-
-            for (int i = 0; i < 2; i++)
+            if (pipText != null)
             {
-                int side = i == 0 ? -1 : 1;
-                bool burning = fireSide == side;
-                sideBoxes[i].color = burning ? Color.Lerp(Fire, FireYellow, 0.5f + 0.5f * Mathf.Sin(t * 10f)) : new Color(1f, 1f, 1f, 0.08f);
-                sideTexts[i].text = burning ? $"{(side < 0 ? "左" : "右")}の穴が燃えている  {fireTimer:0.0}" : $"{(side < 0 ? "左" : "右")}の穴";
-                sideTexts[i].color = burning ? Dark : Mute;
+                pipText.gameObject.SetActive(Active);
+                if (Solo) pipText.text = $"残り {Mathf.CeilToInt(soloTimer)}秒";
+                else
+                {
+                    var sb = new System.Text.StringBuilder("ソロまで ");
+                    for (int i = 0; i < hitsForSolo; i++) sb.Append(i < hits ? "●" : "○");
+                    pipText.text = sb.ToString();
+                }
             }
-            for (int i = 0; i < pips.Count; i++) pips[i].color = i < hits ? Fire : new Color(1f, 1f, 1f, 0.15f);
-
-            statusText.text = Solo
-                ? $"<color=#FFD03A>ギターソロ！</color>  中央の穴 ×{soloMultiplier:0.#}  残り {Mathf.CeilToInt(soloTimer)}秒"
-                : fireSide != 0
-                    ? $"燃えている{(fireSide < 0 ? "左" : "右")}の端の穴に入れると +{fireBonus}pt！（{hitsForSolo}回でギターソロ）"
-                    : $"中央の穴 ×{centerMultiplier:0.#}  次の燃える穴まで {Mathf.CeilToInt(nextFire)}秒";
         }
     }
 }

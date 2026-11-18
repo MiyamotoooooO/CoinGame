@@ -1,20 +1,22 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace MedalPusher
 {
     /// <summary>
-    /// N007 テクノ「レーザー・スイッチ」。効果の発動中（曲1曲分）だけ動く。
+    /// N007 テクノ「レーザー・スイッチ」：高速・連続型。効果の発動中（曲1曲分）だけ動く。モニターはふだんの画面のまま（盤面だけで見せる）。
     ///
-    /// ・盤面：中央の穴の左半分・右半分の上に、レーザーのゲートが立つ。ON のゲートは緑に光り、OFF は赤く暗い。
-    ///   盤面をレーザーの線がビートに合わせて横切る
-    /// ・モニター：16マスのシーケンサー（ビートで光が進む）。下に左右のゲートの ON/OFF と、BUILD のメーター
-    /// ・ルール：
-    ///   発動中は、プッシャーの速さ ×pusherSpeed（CSV のとおり）
-    ///   switchSeconds 秒ごとに、ON のゲートが左右で入れかわる。ON の側の半分に落ちると +onBonus pt、BUILD +1
-    ///   BUILD が buildToDrop たまると「DROP!」：dropSeconds 秒のあいだ、両方のゲートが ON、プッシャー ×dropPusherSpeed
-    /// ・ON の側の発射口をえらんでねらう遊び
+    /// ・ふだん：
+    ///   盤面の上に円盤の装置が浮かび、左右にゆらゆら動く。beatsPerShot 拍ごとに、緑のレーザーを盤面のメダルに撃ちこむ
+    ///   レーザーが当たったメダルは「光るメダル」（緑に光る）に変わる。光るメダルが中央の穴に落ちると +glowBonus pt
+    ///   プッシャーの速さは ×pusherSpeed（速く押して、連続で落とす）
+    ///   ビートに合わせて、手前のふちの16マスのライトが進み、盤面を横切るレーザーの線が流れる
+    /// ・大技「ベースドロップ」：光るメダルが中央の穴に glowForDrop 枚落ちると発動
+    ///   盤面のまん中から、メダルの柱がらせんに噴き上がり、ビートに合わせて回る。まわりのメダルが柱の方へ寄ってくる
+    ///   円盤がビートごとに柱へレーザーを撃ちこむ。最後に柱が崩れて、メダルが周りへ散らばる
+    ///   柱のメダルの数は、dropMedals 枚＋前のベースドロップから押し出された（穴に落ちた）分（最大 pushedCap 枚）
+    ///   柱が立っている間は、プッシャーが ×dropPusherSpeed
+    /// ・盤面のメダルが多すぎる時（RecordScriptBase.MedalSoftCap より多い）は、柱のメダルを半分にする
     ///
     /// 見た目と音はコードで作る仮のもの。「差し替え用」に入れると、そちらを使う。
     /// シーンに置かなくても、RecordEffectSystem があれば再生時に自動で付く。CSV の「効果の型」は Scripted にする。
@@ -24,211 +26,237 @@ namespace MedalPusher
     {
         public static TechnoRecord Instance { get; private set; }
 
-        [Header("プッシャー")]
-        [Tooltip("発動中のプッシャーの速さ（CSV の ×2）")]
-        [Range(0.2f, 5f)] public float pusherSpeed = 2f;
-
-        [Header("レーザーのゲート")]
-        [Tooltip("ON の側が入れかわる秒数")]
-        [Range(1f, 30f)] public float switchSeconds = 7.5f;
-        [Tooltip("ON の側の半分に落ちた時のポイント")]
-        [Range(0, 100)] public int onBonus = 8;
-
-        [Header("DROP（BUILD が満タン）")]
-        [Range(1, 30)] public int buildToDrop = 8;
-        [Range(1f, 30f)] public float dropSeconds = 6f;
-        [Range(0.2f, 6f)] public float dropPusherSpeed = 3f;
-
-        [Header("見せ方")]
-        [Tooltip("ビートの速さ（BPM）。レーザーとシーケンサーが合わせて動く")]
+        [Header("ふだん")]
+        [Tooltip("発動中のプッシャーの速さ")]
+        [Range(0.2f, 5f)] public float pusherSpeed = 1.5f;
+        [Tooltip("ビートの速さ（BPM）。レーザーとライトが合わせて動く")]
         [Range(60f, 200f)] public float bpm = 128f;
+        [Tooltip("何拍ごとにレーザーを撃つか")]
+        [Range(1, 8)] public int beatsPerShot = 2;
+        [Tooltip("光るメダルが中央の穴に落ちた時のポイント")]
+        [Range(0, 100)] public int glowBonus = 8;
+
+        [Header("大技：ベースドロップ")]
+        [Tooltip("光るメダルが中央の穴に何枚落ちると発動するか")]
+        [Range(1, 30)] public int glowForDrop = 8;
+        [Tooltip("柱に足すメダルの枚数")]
+        [Range(0, 60)] public int dropMedals = 20;
+        [Tooltip("押し出された分として柱に足す最大の枚数")]
+        [Range(0, 60)] public int pushedCap = 20;
+        [Tooltip("柱が積み上がる秒数")]
+        [Range(0.2f, 5f)] public float buildSeconds = 1.2f;
+        [Tooltip("柱が立って回っている秒数")]
+        [Range(0.5f, 10f)] public float holdSeconds = 2.5f;
+        [Range(0.2f, 6f)] public float dropPusherSpeed = 2.5f;
 
         [Header("音")]
         [Range(0f, 1f)] public float volume = 0.8f;
 
-        [Header("差し替え用（空なら仮の見た目・音）")]
-        public AudioClip gateHitSound;
-        public AudioClip switchSound;
+        [Header("差し替え用（空なら仮の音）")]
+        public AudioClip laserSound;
+        public AudioClip glowSound;
         public AudioClip dropSound;
+        public AudioClip collapseSound;
 
         protected override string DefaultKey => "Techno";
         protected override string ScreenTitle => "TECHNO";
         protected override string ScreenSubtitle => "レーザー・スイッチ";
         protected override float RecordSoundVolume => volume;
+        protected override bool UseMonitor => false;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoAttach() => Attach<TechnoRecord>();
         protected override void OnAwake() => Instance = this;
         protected override void OnDestroyed() { if (Instance == this) Instance = null; }
 
-        static readonly Color On = new Color32(0x3c, 0xff, 0x8a, 0xff);
-        static readonly Color Off = new Color32(0xff, 0x3c, 0x5a, 0xff);
-        static readonly Color Laser = new Color32(0x3f, 0xe0, 0xff, 0xff);
+        const string GlowKind = "TechnoGlow";
+        const string BassKind = "TechnoBass";
+        const int Cells = 16;
+        static readonly Color Laser = new Color32(0x4c, 0xff, 0x6a, 0xff);
+        static readonly Color GlowGreen = new Color32(0x1c, 0xd8, 0x3c, 0xff);   // 光るメダルの色（濃いめの緑。明るすぎると白っぽく見える）
+        static readonly Color Cyan = new Color32(0x3f, 0xe0, 0xff, 0xff);
         static readonly Color Magenta = new Color32(0xff, 0x3c, 0xd2, 0xff);
-        static readonly Color Ink = new Color32(0xf4, 0xf4, 0xf6, 0xff);
-        static readonly Color Mute = new Color32(0x9c, 0x9e, 0xae, 0xff);
-        static readonly Color Dark = new Color32(0x14, 0x14, 0x1a, 0xff);
+        static readonly Color CellOff = new Color32(0x20, 0x20, 0x2c, 0xff);
+        static readonly Color DiscBody = new Color32(0x30, 0x34, 0x40, 0xff);
 
-        int onSide;              // ON の側（-1 左、1 右）
-        float switchTimer, dropTimer, hitPulse;
-        int build;
+        int glowCount;
+        float dropTimer = -1f;   // 柱が立っている残り（負なら無し）
+        int lastBeat = -1;
+        float beatFlash;
+        Vector3 dropCenter;
         bool Dropping => dropTimer > 0f;
         float Beat => Elapsed * bpm / 60f;
 
-        readonly GameObject[] gates = new GameObject[2];
-        readonly Material[] gateMaterials = new Material[2];
+        Transform disc;
+        Material discRing, discEye;
         readonly List<Transform> lasers = new List<Transform>();
         Material laserMaterial;
-        ParticleSystem sparks;
+        readonly List<Material> cellMats = new List<Material>();
+        AudioClip madeLaser, madeGlow, madeDrop, madeCollapse;
 
-        readonly List<Image> steps = new List<Image>();
-        readonly Image[] gateBoxes = new Image[2];
-        readonly Text[] gateTexts = new Text[2];
-        Image buildFill;
-        Text buildText, statusText, bigText;
-        AudioClip madeHit, madeSwitch, madeDrop;
+        Vector3 DiscPos(float t)
+        {
+            float x = Mathf.Sin(t * 0.7f) * HalfW * 0.6f;
+            float z = Mathf.Lerp(FrontZ, PusherFrontZ, 0.75f) + Mathf.Sin(t * 1.3f) * D * 0.8f;
+            return new Vector3(x, SkyY + D * 0.5f + Mathf.Sin(t * 2.1f) * D * 0.15f, z);
+        }
+        Vector3 DiscEye => disc != null ? disc.position - Vector3.up * D * 0.25f : Vector3.zero;
 
         protected override void BuildBoard()
         {
-            for (int i = 0; i < 2; i++)
-            {
-                int side = i == 0 ? -1 : 1;
-                gateMaterials[i] = Glow(Off, 1f);
-                gates[i] = Cube(side < 0 ? "GateLeft" : "GateRight", Board,
-                                new Vector3(side * HoleHalf * 0.5f, D * 0.9f, FrontZ - D * 0.1f),
-                                new Vector3(HoleHalf * 0.9f, D * 0.05f, D * 0.05f), gateMaterials[i]);
-            }
-            laserMaterial = Glow(Laser, 3f);
+            // 円盤の装置（上空）
+            disc = new GameObject("LaserDisc").transform;
+            disc.SetParent(Board, false);
+            Shape(PrimitiveType.Cylinder, "Body", disc, Vector3.zero, new Vector3(D * 2.6f, D * 0.12f, D * 2.6f), Glow(DiscBody, 0.1f));
+            Shape(PrimitiveType.Sphere, "Dome", disc, new Vector3(0f, D * 0.12f, 0f), new Vector3(D * 1.2f, D * 0.6f, D * 1.2f), Glow(new Color(0.5f, 0.9f, 1f), 0.6f));
+            discRing = Glow(Laser, 2f);
+            Shape(PrimitiveType.Cylinder, "Ring", disc, new Vector3(0f, -D * 0.02f, 0f), new Vector3(D * 2.8f, D * 0.04f, D * 2.8f), discRing);
+            discEye = Glow(Laser, 3f);
+            Shape(PrimitiveType.Sphere, "Eye", disc, new Vector3(0f, -D * 0.15f, 0f), Vector3.one * D * 0.45f, discEye);
+
+            // 盤面を横切るレーザーの線
+            laserMaterial = Glow(Cyan, 3f);
             for (int i = 0; i < 4; i++)
+                lasers.Add(Cube($"Laser{i}", Board, new Vector3(0f, D * 0.08f, FrontZ + D * (0.8f + i * 0.7f)), new Vector3(HalfW * 2f, D * 0.015f, D * 0.015f), laserMaterial).transform);
+
+            // 手前のふちの16マスのライト
+            float cw = HalfW * 2f / Cells;
+            for (int i = 0; i < Cells; i++)
             {
-                var l = Cube($"Laser{i}", Board, new Vector3(0f, D * 0.08f, FrontZ + D * (0.8f + i * 0.7f)), new Vector3(Layout.boardWidth, D * 0.015f, D * 0.015f), laserMaterial);
-                lasers.Add(l.transform);
+                var m = Glow(CellOff, 0.2f);
+                Cube($"Cell{i}", Board, new Vector3(-HalfW + cw * (i + 0.5f), D * 0.02f, FrontZ + D * 0.12f), new Vector3(cw * 0.8f, D * 0.04f, D * 0.18f), m);
+                cellMats.Add(m);
             }
-            sparks = Particles("Sparks", Board, Vector3.up, D * 3f, D * 0.07f, 0.6f, 0.6f, 35f);
+
+            MedalMarks.RegisterEffect(GlowKind, OnGlowMedalDropped);
+        }
+
+        void OnGlowMedalDropped(Medal medal, DropZoneType type)
+        {
+            if (type != DropZoneType.Center) return;
+            AddPoints(glowBonus);
+            BoardPop($"+{CenterPoints + glowBonus}", Laser, new Vector3(medal.transform.position.x, D * 1.2f, FrontZ + D * 0.5f), D * 0.6f);
+            if (!Active || Dropping) return;
+            glowCount++;
+            Play(glowSound, ref madeGlow, () => RecordSynth.Notes("TechnoGlow", new[] { 880f, 1320f }, 0.04f, 0.12f, 0.22f, RecordSynth.Wave.Square), 0.6f);
+            if (glowCount >= glowForDrop)
+            {
+                glowCount = 0;
+                StartBassDrop();
+            }
         }
 
         protected override void OnBegin()
         {
-            onSide = Random.value < 0.5f ? -1 : 1;
-            switchTimer = switchSeconds;
-            dropTimer = 0f;
-            build = 0;
+            glowCount = 0;
+            dropTimer = -1f;
+            lastBeat = -1;
+            TakePushed(0);   // 数え直し
+        }
+
+        protected override void OnEnd()
+        {
+            dropTimer = -1f;
         }
 
         protected override void Tick(float dt, bool running)
         {
-            hitPulse = Mathf.MoveTowards(hitPulse, 0f, dt * 3f);
+            beatFlash = Mathf.MoveTowards(beatFlash, 0f, dt * 4f);
             PusherSpeedScale = Dropping ? dropPusherSpeed : pusherSpeed;
+            if (Dropping) dropTimer -= dt;
             if (!running) return;
+            WatchPushed(0.5f);   // 流している間に落ちたメダルは「押し出した分」として数える
+
+            int beat = Mathf.FloorToInt(Beat);
+            if (beat == lastBeat) return;
+            lastBeat = beat;
+            beatFlash = 1f;
             if (Dropping)
             {
-                dropTimer -= dt;
+                // 柱へレーザーを撃ちこむ
+                Beam(DiscEye, dropCenter + Vector3.up * D * Random.Range(0.5f, 3f), Magenta, 0.2f, D * 0.25f);
+                SparkAt(dropCenter + Vector3.up * D, Magenta, 12);
+                Play(laserSound, ref madeLaser, () => RecordSynth.Sweep("TechnoLaser", 1800f, 300f, 0.15f, 0.2f, RecordSynth.Wave.Square), 0.5f);
                 return;
             }
-            switchTimer -= dt;
-            if (switchTimer <= 0f)
-            {
-                switchTimer = switchSeconds;
-                onSide = -onSide;
-                Play(switchSound, ref madeSwitch, () => RecordSynth.Sweep("TechnoSwitch", 220f, 880f, 0.25f, 0.25f, RecordSynth.Wave.Square));
-            }
+            if (beat % Mathf.Max(1, beatsPerShot) == 0) ShootLaser();
         }
 
-        protected override void OnDrop(Medal medal, DropZoneType type)
+        void ShootLaser()
         {
-            if (type != DropZoneType.Center) return;
-            int side = medal.transform.position.x < 0f ? -1 : 1;
-            if (!Dropping && side != onSide) return;
-
-            AddPoints(onBonus);
-            hitPulse = 1f;
-            Emit(sparks, new Vector3(side * HoleHalf * 0.5f, D * 0.9f, FrontZ), Dropping ? Magenta : On, 18);
-            Play(gateHitSound, ref madeHit, () => RecordSynth.Notes("TechnoHit", new[] { 880f, 1320f }, 0.04f, 0.12f, 0.25f, RecordSynth.Wave.Square), 0.7f);
-            Pop($"ON +{onBonus}", Dropping ? Magenta : On, new Vector2(side < 0 ? BodyW * 0.3f : BodyW * 0.7f, 430f));
-            if (Dropping) return;
-            build++;
-            if (build >= buildToDrop)
-            {
-                build = 0;
-                dropTimer = dropSeconds;
-                Play(dropSound, ref madeDrop, () => RecordSynth.Thud("TechnoDrop", 55f, 0.8f, 0.9f));
-                PopCenter("DROP!", Magenta);
-                Shake(0.05f, 0.5f);
-                Speaker(1f, 16, Magenta);
-            }
+            var m = PickPlainFloorMedal();
+            if (m == null) return;
+            var hit = m.transform.position;
+            Beam(DiscEye, hit, Laser, 0.25f);
+            SparkAt(hit + Vector3.up * D * 0.1f, Laser, 18);
+            MarkMedal(m, GlowKind, GlowGreen, 1f, 1.1f);
+            Play(laserSound, ref madeLaser, () => RecordSynth.Sweep("TechnoLaser", 1800f, 300f, 0.15f, 0.2f, RecordSynth.Wave.Square), 0.5f);
         }
 
-        protected override bool KeepBoardVisible() => sparks != null && sparks.particleCount > 0;
+        void StartBassDrop()
+        {
+            int count = Budget(dropMedals + TakePushed(pushedCap));
+            dropCenter = FloorCenter(0.5f);
+            dropTimer = buildSeconds + holdSeconds;
+            BoardPop("BASS DROP!", Magenta, dropCenter + Vector3.up * D * 3f, D * 1.3f);
+            Play(dropSound, ref madeDrop, () => RecordSynth.Thud("TechnoDrop", 55f, 0.8f, 0.9f));
+            Speaker(1f, 16, Magenta);
+            Shake(0.04f, 0.4f);
+            float spin = 360f * bpm / 60f / 4f;   // 4拍で1回転
+            ColumnRoutine(dropCenter, count, buildSeconds, holdSeconds, spin, D * 3f,
+                m => MedalMarks.Set(m, BassKind, Magenta, 1.1f),
+                () =>
+                {
+                    Play(collapseSound, ref madeCollapse, () => RecordSynth.Noise("TechnoCollapse", 0.8f, 0.2f, 0.01f, 0.5f, 0.9f, 7));
+                    Shake(0.06f, 0.4f);
+                    Speaker(1f, 12, Laser);
+                });
+        }
+
+        protected override bool KeepBoardVisible() => Dropping;
 
         protected override void UpdateBoard(float dt)
         {
+            float t = Time.time;
+            if (disc != null)
+            {
+                disc.position = DiscPos(t);
+                disc.rotation = Quaternion.Euler(Mathf.Sin(t * 1.3f) * 6f, t * 90f, Mathf.Cos(t * 1.1f) * 6f);
+                disc.localScale = Vector3.one * Ease.OutBack(BoardShown);
+            }
+            Color main = Dropping ? Magenta : Laser;
+            SetGlow(discRing, main, (1.5f + 2.5f * beatFlash) * BoardShown);
+            SetGlow(discEye, main, (2f + 3f * beatFlash) * BoardShown);
+
             float beatFrac = Beat - Mathf.Floor(Beat);
             float flash = 1f - beatFrac;
-            for (int i = 0; i < 2; i++)
-            {
-                int side = i == 0 ? -1 : 1;
-                bool on = Active && (Dropping || side == onSide);
-                Color c = Dropping ? Color.Lerp(Magenta, Laser, 0.5f + 0.5f * Mathf.Sin(Time.time * 10f)) : on ? On : Off;
-                SetGlow(gateMaterials[i], c, (on ? 2f + 2f * flash + 2f * hitPulse : 0.4f) * BoardShown);
-            }
             for (int i = 0; i < lasers.Count; i++)
             {
-                float z = Mathf.Lerp(FrontZ + D * 0.5f, PusherFrontZ, Mathf.Repeat(Beat * 0.25f + i / (float)lasers.Count, 1f));
+                float speed = Dropping ? 0.5f : 0.25f;
+                float z = Mathf.Lerp(FrontZ + D * 0.5f, PusherFrontZ, Mathf.Repeat(Beat * speed + i / (float)lasers.Count, 1f));
                 var p = lasers[i].localPosition;
                 lasers[i].localPosition = new Vector3(p.x, p.y, z);
-                lasers[i].localScale = new Vector3(Layout.boardWidth * BoardShown, D * 0.015f, D * 0.015f);
+                lasers[i].localScale = new Vector3(HalfW * 2f * BoardShown, D * 0.015f, D * 0.015f);
             }
-            SetGlow(laserMaterial, Dropping ? Magenta : Laser, 1.5f + 2.5f * flash);
-        }
+            SetGlow(laserMaterial, Dropping ? Magenta : Cyan, (1.5f + 2.5f * flash) * BoardShown);
 
-        protected override void BuildScreen()
-        {
-            steps.Clear();
-            float W = BodyW;
-            var panel = Panel(Screen, "Seq", W * 0.5f, 180f, W - 48f, 300f, Dark);
-            float pw = W - 48f;
-            bigText = Lbl(panel, "Big", pw * 0.5f, 70f, pw, 100f, "", 64, Ink, TextAnchor.MiddleCenter, true);
-            float cell = (pw - 40f) / 16f;
-            for (int i = 0; i < 16; i++)
-                steps.Add(Img(panel, $"Step{i}", 20f + cell * (i + 0.5f), 190f, cell - 8f, 70f, new Color(1f, 1f, 1f, 0.08f)));
-            Lbl(panel, "Bpm", pw - 16f, 270f, 300f, 30f, $"{bpm:0} BPM", 18, Mute, TextAnchor.MiddleRight, true);
-
-            for (int i = 0; i < 2; i++)
+            // 16マス：ビートで光が進む。光るメダルの数だけ左から緑に埋まる。ベースドロップの間は一斉に点滅
+            int cursor = Mathf.FloorToInt(Beat * 2f) % Cells;
+            int filled = Mathf.RoundToInt(Cells * glowCount / (float)Mathf.Max(1, glowForDrop));
+            for (int i = 0; i < cellMats.Count; i++)
             {
-                float cx = i == 0 ? W * 0.3f : W * 0.7f;
-                gateBoxes[i] = Img(Screen, $"Gate{i}", cx, 400f, W * 0.36f, 70f, Off, MonitorDisplay.ScreenShape.Pill);
-                gateTexts[i] = Lbl(Screen, $"GateText{i}", cx, 400f, W * 0.36f, 70f, "", 28, Dark, TextAnchor.MiddleCenter, true);
+                Color c;
+                float g;
+                if (Dropping)
+                {
+                    c = (i + Mathf.FloorToInt(Beat * 2f)) % 2 == 0 ? Magenta : Cyan;
+                    g = 1.5f + 2.5f * flash;
+                }
+                else if (i == cursor) { c = Cyan; g = 3f; }
+                else if (i < filled) { c = Laser; g = 1.6f; }
+                else { c = CellOff; g = 0.2f; }
+                SetGlow(cellMats[i], c, g * BoardShown);
             }
-            Lbl(Screen, "BuildLabel", 24f, 490f, 120f, 30f, "BUILD", 20, Ink, TextAnchor.MiddleLeft, true);
-            buildFill = Bar(Screen, "Build", 140f, 490f, W - 260f, 20f, Laser);
-            buildText = Lbl(Screen, "BuildText", W - 24f, 490f, 100f, 30f, "", 22, Ink, TextAnchor.MiddleRight, true);
-            statusText = Lbl(Screen, "Status", 24f, 560f, W - 48f, 36f, "", 20, Ink, TextAnchor.MiddleLeft);
-        }
-
-        protected override void UpdateScreen(float dt)
-        {
-            int beat = Mathf.FloorToInt(Beat) % 16;
-            for (int i = 0; i < steps.Count; i++)
-            {
-                bool accent = i % 4 == 0;
-                Color c = i == beat ? (Dropping ? Magenta : Laser) : accent ? new Color(1f, 1f, 1f, 0.22f) : new Color(1f, 1f, 1f, 0.08f);
-                steps[i].color = c;
-            }
-            bigText.text = Dropping ? $"DROP!  {Mathf.CeilToInt(dropTimer)}" : $"PUSHER ×{pusherSpeed:0.#}";
-            bigText.color = Dropping ? Magenta : Ink;
-            for (int i = 0; i < 2; i++)
-            {
-                int side = i == 0 ? -1 : 1;
-                bool on = Dropping || side == onSide;
-                gateBoxes[i].color = on ? Color.Lerp(Dropping ? Magenta : On, Color.white, hitPulse * 0.4f) : new Color(Off.r, Off.g, Off.b, 0.35f);
-                gateTexts[i].text = $"{(side < 0 ? "LEFT" : "RIGHT")}  {(on ? "ON" : "OFF")}";
-            }
-            buildFill.fillAmount = Dropping ? dropTimer / Mathf.Max(0.1f, dropSeconds) : build / (float)Mathf.Max(1, buildToDrop);
-            buildFill.color = Dropping ? Magenta : Laser;
-            buildText.text = Dropping ? "DROP" : $"{build}/{buildToDrop}";
-            statusText.text = Dropping
-                ? $"<color=#FF3CD2>DROP!</color>  両方のゲートが ON・プッシャー ×{dropPusherSpeed:0.#}"
-                : $"ON の側（{(onSide < 0 ? "左" : "右")}）の半分に落とすと +{onBonus}pt  入れかわりまで {Mathf.CeilToInt(switchTimer)}秒";
         }
     }
 }

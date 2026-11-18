@@ -36,6 +36,8 @@ namespace MedalPusher
         [Range(0.4f, 1f)] public float uiScale = 0.7f;
         [Tooltip("棚の上はしの位置（画面の高さに対する、上からの割合）。棚はここから画面の下はしまで伸びる")]
         [Range(0f, 0.8f)] public float topRatio = 0.28f;
+        [Tooltip("つまみ（閉じている時の細いバー）の上下の位置。0 で棚の上はし、1 で画面の下はし。再生中に変えても反映する")]
+        [Range(0f, 1f)] public float tabPosition = 1f;
         [Tooltip("遊び始めてから「E キーで開く」の札を出しておく秒数")]
         public float hintSeconds = 10f;
 
@@ -64,6 +66,7 @@ namespace MedalPusher
         const float ItemGap = 12f;
         const int ListColumns = 2;
         float panelH = 1080f;             // 棚の高さ（画面の上から下まで。毎フレーム合わせる）
+        float appliedTabPosition = -1f;   // 最後に合わせた tabPosition
         RectTransform panelFace, listFrame, listView;
 
         // 色（明るい枠に、濃い文字。プレーヤーは木と黒）
@@ -444,14 +447,16 @@ namespace MedalPusher
         void ApplyLayout()
         {
             float h = canvasRect.rect.height * (1f - Mathf.Clamp(topRatio, 0f, 0.8f)) / Mathf.Max(0.01f, uiScale);
-            if (Mathf.Abs(h - panelH) < 0.5f) return;
+            if (Mathf.Abs(h - panelH) < 0.5f && Mathf.Approximately(appliedTabPosition, tabPosition)) return;
             panelH = h;
+            appliedTabPosition = tabPosition;
             rackRoot.sizeDelta = new Vector2(TabW + PanelW, h);
-            // つまみは棚の上の方に置く（棚が短い時は棚に収まる高さに）
+            // つまみは tabPosition の高さに置く（0 で棚の上はし、1 で下はし。棚が短い時は棚に収まる高さに）
             float tabH = Mathf.Min(TabH, h - 40f);
+            float tabTop = Mathf.Lerp(20f, h - 20f - tabH, Mathf.Clamp01(tabPosition));
             tabRect.sizeDelta = new Vector2(TabW, tabH);
-            tabRect.anchoredPosition = new Vector2(TabW * 0.5f, -(20f + tabH * 0.5f));
-            hintRoot.anchoredPosition = new Vector2(hintRoot.anchoredPosition.x, -(20f + 66f));
+            tabRect.anchoredPosition = new Vector2(TabW * 0.5f, -(tabTop + tabH * 0.5f));
+            hintRoot.anchoredPosition = new Vector2(hintRoot.anchoredPosition.x, -(tabTop + 66f));
             panel.sizeDelta = new Vector2(PanelW, h);
             panel.anchoredPosition = new Vector2(TabW + PanelW * 0.5f, -h * 0.5f);
             panelFace.sizeDelta = new Vector2(PanelW - 8f, h - 8f);

@@ -79,6 +79,8 @@ namespace MedalPusher
         public bool boardColliders = true;
         [Tooltip("レコードごとの置き場所。無いレコードは、左右の奥のどちらか（キーで決まる）")]
         public List<BoardSpot> boardSpots = new List<BoardSpot>();
+        [Tooltip("この演出（主役のモデル・タイトルカード）を出さないレコードのキー。レコードのスクリプトが自分で主役と盤面の演出を出すレコード")]
+        public List<string> skipKeys = new List<string> { "Techno", "Sea", "Shooting", "Train" };
 
         /// <summary>盤面に置く場所（レコードごと）</summary>
         [Serializable]
@@ -572,6 +574,12 @@ namespace MedalPusher
             if (!spectacleEnabled || RecordData.IsNullOrEmpty(record)) return;
             if (record != previewRecord) { previewRecord = null; previewTimer = -1f; }
             HideAll();
+            if (skipKeys != null && skipKeys.Contains(record.key))
+            {
+                current = null;
+                currentRecord = null;
+                return;
+            }
             var sp = GetSpectacle(record.key);
             current = sp;
             currentRecord = record;
