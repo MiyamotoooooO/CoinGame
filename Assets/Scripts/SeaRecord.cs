@@ -119,7 +119,52 @@ namespace MedalPusher
         const string SeaKind = "SeaWater";
         static readonly Color Water = new Color32(0x3c, 0xb4, 0xff, 0xff);
         static readonly Color Foam = new Color32(0xe8, 0xf8, 0xff, 0xff);
+        static readonly Color WhaleColor = new Color32(0x2c, 0x4c, 0x8c, 0xff);
+        static readonly Color HoleColor = new Color32(0x06, 0x10, 0x22, 0xff);
+        static readonly Color DeepWater = new Color32(0x14, 0x40, 0x80, 0xff);
 
+        // 潮吹きの流れ（秒）：穴が開く → 顔を出す → 噴く → 沈む → 穴が閉じる
+        const float SpoutOpen = 0.3f, SpoutRise = 0.5f, SpoutBlow = 1.8f, SpoutSink = 0.5f, SpoutClose = 0.3f;
+        const float BigSpoutBlow = 2.6f;
+        float SpoutTotal => SpoutOpen + SpoutRise + curBlow + SpoutSink + SpoutClose;
+        bool spoutBig;                 // 今の潮吹きが大潮吹きか
+        float curScale = 1f, curBlow = SpoutBlow;
+        bool finalePending;            // 大波のあと、大潮吹きを待っている
+        // 大波の流れ（秒）：穴が開く → 出てくる → 後ろを向く → 尻尾を振る（大波） → もどる → 穴が閉じる
+        const float BigOpen = 0.4f, BigOut = 1f, BigTurn = 0.9f, BigTail = 1.2f, BigBack = 1f, BigClose = 0.4f;
+        float BigTotal => BigOpen + BigOut + BigTurn + BigTail + Mathf.Max(BigBack, bigWaveSeconds) + BigClose;
+
+        float spoutTimer, bigTimer;
+        float spoutT = -1f, bigT = -1f, waveT = -1f, windowTimer;
+        float spoutPulse;
+        bool rainDone;
+        int waveCaught;
+        readonly HashSet<Medal> touched = new HashSet<Medal>();
+
+        /// <summary>水に乗って運ばれているメダル</summary>
+        class Rider
+        {
+            public Medal m;
+            public Vector3 start;
+            public float phase, height, t;
+        }
+        readonly List<Rider> spoutRiders = new List<Rider>();
+        readonly List<Rider> waveRiders = new List<Rider>();
+
+        readonly List<Transform> caustics = new List<Transform>();
+        readonly List<Material> causticMats = new List<Material>();
+        Transform floorHole, wallHole, smallWhale, bigWhale, smallTail, bigTail, column, waveBody;
+        Material columnMat, waveMat, crestMat;
+        ParticleSystem spray;
+        Light seaLight;
+        float floorY;
+        AudioClip madeSpout, madeWave, madeWhale, madeSplash;
+
+        float holeX, holeDepth = 0.4f;   // 今の潮吹きの穴の場所（潮吹きのたびにランダムで決める）
+        Vector3 HolePos => new Vector3(holeX, floorY, Mathf.Lerp(FrontZ, PusherFrontZ, holeDepth)) + spoutOffset;
+        float UpperY => Layout.pusherHeight;
+        Vector3 WallHolePos => new Vector3(0f, UpperY + D * wallHoleHeight, BackZ - D * wallHoleForward);
+        float ColumnH => D * 3f * curScale;
 
         /// <summary>下の段の床の高さ（クジラの穴の高さに合わせる）</summary>
         float LowerFloorY => floorY + spoutOffset.y;
@@ -196,7 +241,63 @@ namespace MedalPusher
             float seg = 2f * Mathf.PI * radius / n * 1.15f;
             for (int i = 0; i < n; i++)
             {
+                float a = i / (float)n * Mathf.PI * 2f;
+                var c = Cube($"Seg{i}", root, new Vector3(Mathf.Cos(a) * radius, Mathf.Sin(a) * radius, 0f), new Vector3(seg, D * 0.16f, D * 0.16f), ringMat);
+                c.transform.localRotation = Quaternion.Euler(0f, 0f, a * Mathf.Rad2Deg + 90f);
+                ringSegments.Add(c.transform);
+            }
+            // 中の暗い面（円柱を立てて、面をこちらに向ける）
+            var dark = Shape(PrimitiveType.Cylinder, "Dark", root, new Vector3(0f, 0f, D * 0.02f), new Vector3(radius * 2f, D * 0.01f, radius * 2f), Glow(HoleColor, 0f));
+            dark.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            root.gameObject.SetActive(false);
+            return root;
+        }
 
+        Transform MakeHole(string name, float size)
+        {
+            var root = new GameObject(name).transform;
+            root.SetParent(Board, false);
+            Shape(PrimitiveType.Cylinder, "Rim", root, Vector3.zero, new Vector3(size * 1.15f, D * 0.01f, size * 1.15f), Glow(Water, 1.2f));
+            Shape(PrimitiveType.Cylinder, "Dark", root, new Vector3(0f, D * 0.005f, 0f), new Vector3(size, D * 0.012f, size), Glow(HoleColor, 0f));
+            root.gameObject.SetActive(false);
+            return root;
+        }
+
+        /// <summary>クジラ（頭が +Z。大きさ 1 で長さ 2.6 くらい）。尻尾は振れるように別の入れ物</summary>
+        Transform BuildWhale(string name, out Transform tail)
+        {
+            var root = new GameObject(name).transform;
+            root.SetParent(Board, false);
+            var body = Glow(WhaleColor, 0.25f);
+            var belly = Glow(new Color(0.9f, 0.93f, 0.97f), 0.15f);
+            var black = Glow(new Color(0.02f, 0.02f, 0.04f), 0f);
+            Shape(PrimitiveType.Sphere, "Body", root, Vector3.zero, new Vector3(1.4f, 1.1f, 2.6f), body);
+            Shape(PrimitiveType.Sphere, "Belly", root, new Vector3(0f, -0.33f, 0.15f), new Vector3(1.2f, 0.6f, 2.2f), belly);
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Shape(PrimitiveType.Sphere, "Eye", root, new Vector3(s * 0.5f, 0.12f, 0.98f), Vector3.one * 0.16f, black);
+                Shape(PrimitiveType.Sphere, "Shine", root, new Vector3(s * 0.52f, 0.16f, 1.04f), Vector3.one * 0.06f, Glow(Color.white, 1f));
+                var fin = Shape(PrimitiveType.Sphere, "Fin", root, new Vector3(s * 0.75f, -0.3f, 0.3f), new Vector3(0.7f, 0.1f, 0.35f), body);
+                fin.transform.localRotation = Quaternion.Euler(0f, 0f, s * -25f);
+            }
+            Cube("Mouth", root, new Vector3(0f, -0.2f, 1.18f), new Vector3(0.7f, 0.04f, 0.1f), black);
+            Shape(PrimitiveType.Sphere, "Blowhole", root, new Vector3(0f, 0.55f, 0.55f), new Vector3(0.18f, 0.05f, 0.12f), black);
+            tail = new GameObject("TailPivot").transform;
+            tail.SetParent(root, false);
+            tail.localPosition = new Vector3(0f, 0.1f, -1.15f);
+            Cube("Stem", tail, new Vector3(0f, 0f, -0.35f), new Vector3(0.35f, 0.3f, 0.8f), body);
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var fluke = Shape(PrimitiveType.Sphere, "Fluke", tail, new Vector3(s * 0.42f, 0.05f, -0.8f), new Vector3(0.8f, 0.12f, 0.42f), body);
+                fluke.transform.localRotation = Quaternion.Euler(0f, s * 20f, 0f);
+            }
+            root.gameObject.SetActive(false);
+            return root;
+        }
+
+        // ================================================================
+        // 流れ
+        // ================================================================
 
         protected override void OnBegin()
         {
@@ -574,7 +675,25 @@ namespace MedalPusher
 
         protected override void UpdateBoard(float dt)
         {
-
+            float t = Time.time;
+            for (int i = 0; i < caustics.Count; i++)
+            {
+                float x = Mathf.Sin(i * 2.3f + t * (0.3f + i * 0.03f)) * HalfW * 0.85f;
+                float z = Mathf.Lerp(FrontZ, PusherFrontZ, 0.1f + 0.85f * Mathf.Repeat(i * 0.29f + t * 0.05f, 1f));
+                caustics[i].position = new Vector3(x, floorY + D * 0.02f, z);
+                float s = D * (0.8f + 0.4f * Mathf.Sin(t * 1.5f + i));
+                caustics[i].localScale = new Vector3(s * 1.4f, D * 0.003f, s);
+                SetGlow(causticMats[i], Color.Lerp(DeepWater, Water, 0.5f + 0.5f * Mathf.Sin(t * 2f + i)), (0.15f + 0.1f * Mathf.Sin(t * 3f + i * 1.7f)) * BoardShown);
+                caustics[i].gameObject.SetActive(BoardShown > 0.01f);
+            }
+            if (seaLight != null)
+            {
+                seaLight.intensity = BoardShown * (1.2f + 0.3f * Mathf.Sin(t * 1.3f));
+                seaLight.enabled = seaLight.intensity > 0.001f;
+            }
+            UpdateSpoutLook(t);
+            UpdateBigLook(t);
+            UpdateWaveLook(t);
         }
 
         void UpdateSpoutLook(float t)
