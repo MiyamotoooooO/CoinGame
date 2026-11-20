@@ -13,6 +13,7 @@ namespace MedalPusher
     ///   穴の場所は、潮吹きのたびに下の段のどこかにランダムで決まる（holeDepthMin〜Max、holeSideRange）
     ///   潮吹きと同時に、噴水のてっぺんからメダル（ふつうの黄色）が spoutMedals 枚、次々に噴き出して穴のまわりに降る。
     ///   ふだんはこうして盤面にメダルがたまっていき、大技の大波でまとめて流す（たまる → 流す、のくり返し）
+    ///   クジラが出ている間は、穴のまわりのメダルをどかし続ける（メダルの山にうもれない）
     ///   噴水の近くのメダル（最大 spoutRideMax 枚）は巻き込まれて、水の柱に乗ってぐるぐる回りながら上がっていき、
     ///   噴水が止まると周りへ散らばる
     ///   潮吹きのあと spoutWindow 秒のあいだに中央の穴に落ちると、1枚 +waveBonus pt
@@ -24,6 +25,7 @@ namespace MedalPusher
     ///   上の段：波が通ったメダルは波の上に乗って（最大 waveRideMax 枚）いっしょに運ばれ、手前のふちで投げ出される（全部流れる）
     ///   下の段：段差を落ちた波は少しずつ弱まる。手前のふちに近いメダルほど強く押され（ふち近くの1〜2列が落ちる）、
     ///           奥のメダルは少し前へずれるだけ（押す強さは lowerPushMin〜1 倍。手前ほど強い）
+    ///   押す強さと波に乗せる枚数には、盤面を前後に伸ばした倍率（DepthScale）をかける
     ///   最後に「大潮吹き」：下の段のまん中から大きなクジラが顔を出し、太くて高い潮を吹いて、
     ///   押し流して落ちた分（最大 pushedCap 枚）＋bigMedals 枚のメダルを噴き出す。メダルは下の段と上の段の両方に降る（上の段へ upperShare の割合）
     ///   大波が巻き込んだメダル1枚ごとにゲージ +gaugePerMedal（最大 gaugeCap 枚ぶん）
@@ -44,10 +46,15 @@ namespace MedalPusher
         [Range(0.05f, 0.95f)] public float holeDepthMax = 0.6f;
         [Tooltip("床の穴の左右の範囲（盤面の幅の半分に対する割合）。この範囲のどこかにランダムで開く")]
         [Range(0f, 0.9f)] public float holeSideRange = 0.6f;
-        [Tooltip("床の穴とクジラの場所のずれ（ワールド）。穴・クジラ・噴水がまとめて動く")]
-        public Vector3 spoutOffset = new Vector3(0f, -0.438f, 0.572f);
+        [Tooltip("床の穴とクジラの場所のずれ。穴・クジラ・噴水がまとめて動く。Y は床の面からの高さ（穴の場所の床は、盤面のモデルから毎回調べる）。" +
+                 "Z は盤面を前後に伸ばす前の値で、伸ばした倍率を自動でかける")]
+        public Vector3 spoutOffset = new Vector3(0f, 0f, 0.572f);
         [Tooltip("噴水がメダルを巻き込む半径（メダルの直径に対する倍率）")]
         [Range(0.5f, 6f)] public float spoutRadius = 2.2f;
+        [Tooltip("クジラが出ている間、穴のまわりのメダルをどかし続ける半径（クジラの大きさに対する倍率）。メダルにうもれないように")]
+        [Range(0.5f, 3f)] public float clearRadius = 1.5f;
+        [Tooltip("穴のまわりのメダルをどかす強さ")]
+        [Range(0f, 5f)] public float clearPush = 1.2f;
         [Tooltip("噴水がメダルを飛ばす強さ")]
         [Range(0f, 10f)] public float spoutPower = 3f;
         [Tooltip("噴水に乗って巻き上げられるメダルの最大の枚数")]
@@ -75,6 +82,10 @@ namespace MedalPusher
         [Range(1f, 3f)] public float bigSpoutScale = 1.6f;
         [Tooltip("大潮吹きで、上の段へ飛ばすメダルの割合")]
         [Range(0f, 1f)] public float upperShare = 0.4f;
+        [Tooltip("大潮吹きのメダルが飛ぶ時間（秒）＝ arcTimeBase ＋ 距離（m）× arcTimePerMeter（最大 arcTimeMax）。長いほど高く上がる")]
+        [Range(0.1f, 1f)] public float arcTimeBase = 0.3f;
+        [Range(0f, 0.5f)] public float arcTimePerMeter = 0.12f;
+        [Range(0.3f, 1.5f)] public float arcTimeMax = 1f;
         [Tooltip("大波（上の段）に乗って運ばれるメダルの最大の枚数")]
         [Range(0, 80)] public int waveRideMax = 40;
         [Tooltip("大波のあとに降ってくるメダルの枚数（押し流した分とは別に足す）")]
@@ -161,7 +172,18 @@ namespace MedalPusher
         AudioClip madeSpout, madeWave, madeWhale, madeSplash;
 
         float holeX, holeDepth = 0.4f;   // 今の潮吹きの穴の場所（潮吹きのたびにランダムで決める）
-        Vector3 HolePos => new Vector3(holeX, floorY, Mathf.Lerp(FrontZ, PusherFrontZ, holeDepth)) + spoutOffset;
+        Vector3 HolePos
+        {
+            get
+            {
+                var p = new Vector3(holeX, floorY, Mathf.Lerp(FrontZ, PusherFrontZ, holeDepth)) + SpoutOffset;
+                // プッシャーの下にもぐらないように、プッシャーの前までに収める
+                p.z = Mathf.Min(p.z, PusherFrontZ - D * smallWhaleSize * curScale * 1.3f);
+                return p;
+            }
+        }
+        /// <summary>spoutOffset の Z を、盤面を前後に伸ばした倍率に合わせたもの</summary>
+        Vector3 SpoutOffset => new Vector3(spoutOffset.x, spoutOffset.y, spoutOffset.z * DepthScale);
         float UpperY => Layout.pusherHeight;
         Vector3 WallHolePos => new Vector3(0f, UpperY + D * wallHoleHeight, BackZ - D * wallHoleForward);
         float ColumnH => D * 3f * curScale;
@@ -176,13 +198,36 @@ namespace MedalPusher
             ? smallWhale.TransformPoint(new Vector3(0f, 0.55f, 0.55f))
             : HolePos + Vector3.up * D * smallWhaleSize * curScale;
 
+        /// <summary>
+        /// その場所の、下の段の床の高さ。盤面のモデル（Playfield）の当たり判定だけを見て、上から下へ調べる
+        /// （プッシャー・メダル・ほかの物には当たらない）。見つからない時は、前の調べ方（FloorY から 0.438 下）
+        /// </summary>
+        float LowerFloorAt(float x, float z)
+        {
+            var hits = Physics.RaycastAll(new Vector3(x, 5f, z), Vector3.down, 20f, ~0, QueryTriggerInteraction.Ignore);
+            float best = float.NegativeInfinity;
+            foreach (var h in hits)
+            {
+                if (!UnderPlayfield(h.collider.transform)) continue;
+                if (h.point.y > best) best = h.point.y;
+            }
+            return float.IsNegativeInfinity(best) ? FloorY(x, z) - 0.438f : best;
+        }
+
+        static bool UnderPlayfield(Transform t)
+        {
+            for (; t != null; t = t.parent)
+                if (t.name == "Playfield") return true;
+            return false;
+        }
+
         // ================================================================
         // 作る
         // ================================================================
 
         protected override void BuildBoard()
         {
-            floorY = FloorY(0f, Mathf.Lerp(FrontZ, PusherFrontZ, holeDepth));
+            floorY = LowerFloorAt(0f, Mathf.Lerp(FrontZ, PusherFrontZ, holeDepth));
 
             // 水面の光
             for (int i = 0; i < 10; i++)
@@ -303,6 +348,7 @@ namespace MedalPusher
         {
             spoutTimer = 2f;
             bigTimer = bigInterval;
+            floorY = LowerFloorAt(0f, Mathf.Lerp(FrontZ, PusherFrontZ, holeDepth));
             spoutT = -1f;
             bigT = -1f;
             waveT = -1f;
@@ -336,6 +382,7 @@ namespace MedalPusher
                 float before = spoutT;
                 spoutT += dt;
                 UpdateSpout(before);
+                ClearHole(dt);
                 MoveSpoutRiders(dt);
                 if (spoutT >= SpoutTotal)
                 {
@@ -402,15 +449,45 @@ namespace MedalPusher
                 holeX = Random.Range(-1f, 1f) * HalfW * holeSideRange;
                 holeDepth = Random.Range(Mathf.Min(holeDepthMin, holeDepthMax), Mathf.Max(holeDepthMin, holeDepthMax));
             }
+            floorY = 0f;
+            floorY = LowerFloorAt(HolePos.x, HolePos.z);   // 穴の場所の、下の段の床の高さ
             spoutT = 0f;
             // 穴の上のメダルを押しのける
-            Blast(HolePos, D * smallWhaleSize * curScale * 1.2f, D * 2.5f, 0.3f);
+            Blast(HolePos, D * smallWhaleSize * curScale * clearRadius + D * 0.5f, D * 2.5f, 0.3f);
+            clearTimer = 0f;
             if (big)
             {
                 BoardPop("大潮吹き！", Water, HolePos + Vector3.up * D * 4f, D * 1.1f);
                 Speaker(1f, 12, Water);
             }
             Play(splashSound, ref madeSplash, () => RecordSynth.Noise("SeaSplash", 0.5f, 0.2f, 0.01f, 0.3f, 0.7f, 3), 0.6f);
+        }
+
+        float clearTimer;
+
+        /// <summary>
+        /// クジラが出ている間（穴が開いてから沈み終わるまで）、穴のまわりのメダルを外へどかし続ける。
+        /// メダルが山になっている所でも、クジラがうもれないようにする。水の柱に乗っているメダル（止めてある物）と、
+        /// 上を飛んでいるメダルはどかさない
+        /// </summary>
+        void ClearHole(float dt)
+        {
+            if (spoutT < 0f || spoutT > SpoutOpen + SpoutRise + curBlow + SpoutSink) return;
+            clearTimer -= dt;
+            if (clearTimer > 0f) return;
+            clearTimer = 0.08f;
+            var c = HolePos;
+            float radius = D * smallWhaleSize * curScale * clearRadius + D * 0.5f;
+            foreach (var m in MedalsNear(c, radius))
+            {
+                if (m.Body == null || m.Body.isKinematic) continue;
+                if (m.transform.position.y > c.y + D * 1.5f) continue;   // 上を飛んでいる
+                Vector3 d = m.transform.position - c;
+                d.y = 0f;
+                Vector3 dir = d.sqrMagnitude > 0.0001f ? d.normalized : new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized;
+                float k = 1f - Mathf.Clamp01(d.magnitude / radius);   // 穴に近いほど強く
+                Push(m, (dir + Vector3.up * 0.25f) * D * clearPush * (0.5f + k));
+            }
         }
 
         void UpdateSpout(float before)
@@ -497,7 +574,11 @@ namespace MedalPusher
                     float z = Mathf.Lerp(FrontZ, PusherFrontZ, Random.Range(0.15f, 0.85f));
                     target = new Vector3(Random.Range(-HalfW, HalfW) * 0.85f, LowerFloorY + D * 0.2f, z);
                 }
-                LaunchArc(top, target, Random.Range(0.8f, 1.2f));
+                // 飛ぶ時間は、遠いほど少し長く。長すぎると高く上がりすぎて天井（BoardFence）に当たるので、短めにおさえる
+                Vector3 flat = target - top;
+                flat.y = 0f;
+                float flight = Mathf.Clamp(arcTimeBase + flat.magnitude * arcTimePerMeter, 0.35f, arcTimeMax) * Random.Range(0.9f, 1.1f);
+                LaunchArc(top, target, flight);
                 Emit(spray, top, Foam, 4);
                 if (step > 0f) yield return new WaitForSeconds(step);
             }
@@ -568,6 +649,11 @@ namespace MedalPusher
             }
         }
 
+        /// <summary>大波の押す強さ（盤面を前後に伸ばした倍率をかける。盤面が長いほど強く押して、ふちまで届かせる）</summary>
+        float WavePush => bigWavePush * DepthScale;
+        /// <summary>波に乗せる最大の枚数（盤面を前後に伸ばした倍率をかける。上の段が広いほど多く乗せる）</summary>
+        int WaveRideMax => Mathf.RoundToInt(waveRideMax * DepthScale);
+
         /// <summary>大波の頭が通った所のメダルを、手前へ押し流す（上の段も下の段も。1回の波で1枚1回）</summary>
         void PushWithWave()
         {
@@ -582,7 +668,7 @@ namespace MedalPusher
                 waveCaught++;
                 if (Random.value < 0.2f) Emit(spray, p, Foam, 3);
                 bool upper = p.y > LowerFloorY + Layout.pusherHeight * 0.6f;
-                if (upper && waveRiders.Count < waveRideMax)
+                if (upper && waveRiders.Count < WaveRideMax)
                 {
                     // 上の段：波に乗せる
                     Hold(m);
@@ -592,7 +678,7 @@ namespace MedalPusher
                 // 下の段：手前のふちに近いほど強く押す（奥は少しずれるだけ）
                 float k = upper ? 1f : Mathf.InverseLerp(PusherFrontZ, FrontZ, p.z);
                 float power = upper ? 1f : Mathf.Lerp(lowerPushMin, 1f, k * k);
-                Push(m, new Vector3(Random.Range(-0.15f, 0.15f), 0.45f, -1f) * D * bigWavePush * power);
+                Push(m, new Vector3(Random.Range(-0.15f, 0.15f), 0.45f, -1f) * D * WavePush * power);
             }
         }
 
@@ -627,7 +713,7 @@ namespace MedalPusher
         void ReleaseWaveRiders()
         {
             foreach (var r in waveRiders)
-                if (r.m != null) Release(r.m, new Vector3(Random.Range(-0.3f, 0.3f), 0.4f, -1.6f) * D * bigWavePush * 0.7f);
+                if (r.m != null) Release(r.m, new Vector3(Random.Range(-0.3f, 0.3f), 0.4f, -1.6f) * D * WavePush * 0.7f);
             waveRiders.Clear();
         }
 

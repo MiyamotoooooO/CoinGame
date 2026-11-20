@@ -10,6 +10,7 @@ namespace MedalPusher
     /// ・BoardPop：盤面の上に文字を弾けさせる（ふわっと上がって消える）
     /// ・BoardLabel：盤面の上に置いておく文字（中身はあとから .text で変える）
     /// ・どちらもいつもカメラの方を向き、黒い影が付く（明るい盤面でも読める）
+    /// ・どちらもモニターより手前に映す（DrawOverMonitor。モニターに隠れない）
     /// </summary>
     public abstract partial class RecordScriptBase
     {
@@ -38,6 +39,7 @@ namespace MedalPusher
             go.transform.position = worldPos;
             var bt = go.AddComponent<BoardText>();
             bt.Setup(BoardFont, text, height, color);
+            DrawOverMonitor(go.transform);
             return bt;
         }
 
@@ -49,6 +51,7 @@ namespace MedalPusher
             go.transform.position = worldPos;
             var bt = go.AddComponent<BoardText>();
             bt.Setup(BoardFont, text, height, color);
+            DrawOverMonitor(go.transform);
             bt.PopAndFade(D * 1.6f, 1.1f);
         }
     }
