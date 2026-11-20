@@ -19,7 +19,7 @@ namespace MedalPusher
     public static class OpeningMovieBuilder
     {
         private const string JsonPath = "Assets/sprite/OpeningAssets/OpeningAssets/opening_cuts.json";
-        private const string LogoPath = "Assets/Model/Title/TitleUI/RecordDrop_Logo_2x.png";
+        private const string LogoPath = LogoSwapTool.LogoPath;   // 新しいロゴ（レコードが回る）
         private const string FontPath = "Assets/Font/NotoSansJP-ExtraBold SDF.asset";
         private const string RootName = "OpeningMovie";
 
@@ -70,7 +70,7 @@ namespace MedalPusher
                 // ---------- 3. 画像を「Sprite」として使えるように設定する ----------
                 EditorUtility.DisplayProgressBar("オープニング", "画像の設定を確認しています…", 0.05f);
                 PrepareSprites(CollectImagePaths(data, folder), true);
-                if (File.Exists(LogoPath)) PrepareSprites(new List<string> { LogoPath }, false);
+                if (File.Exists(LogoPath)) LogoSwapTool.PrepareSprites();
 
                 // ---------- 4. シーンに並べる ----------
                 BuildScene(data, folder);
@@ -358,6 +358,7 @@ namespace MedalPusher
             img.sprite = logo;
             img.preserveAspect = true;
             img.raycastTarget = false;
+            LogoSwapTool.AttachSpinner(img);   // ロゴのレコードを回す
 
             view.layers.Add(new OpeningLayerView
             {

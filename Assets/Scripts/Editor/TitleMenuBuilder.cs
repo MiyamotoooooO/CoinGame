@@ -19,7 +19,7 @@ namespace MedalPusher
     public static class TitleMenuBuilder
     {
         private const string UiFolder = "Assets/Model/Title/TitleUI_v2";
-        private const string LogoPath = "Assets/Model/Title/TitleUI/RecordDrop_Logo_2x.png";
+        private const string LogoPath = LogoSwapTool.LogoPath;   // 新しいロゴ（レコードが回る）
         private const string SettingsIconPath = "Assets/Model/Title/TitleUI/Icon_Settings.png";
         private const string FontPath = "Assets/Font/NotoSansJP-ExtraBold SDF.asset";
         private const string RootName = "TitleMenu";
@@ -56,8 +56,8 @@ namespace MedalPusher
                 paths.Add(AssetDatabase.GUIDToAssetPath(guid));
             }
             paths.Add(SettingsIconPath);
-            paths.Add(LogoPath);
             MakeSprites(paths);
+            LogoSwapTool.PrepareSprites();
 
             TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
             if (font == null) font = TMP_Settings.defaultFontAsset;
@@ -106,7 +106,8 @@ namespace MedalPusher
             Sprite logoSprite = AssetDatabase.LoadAssetAtPath<Sprite>(LogoPath);
             Image logo = MakeImage("Logo", panel, logoSprite, Color.white, false);
             logo.preserveAspect = true;
-            SetTopLeft(logo.rectTransform, new Vector2(90f, -50f), FitSize(logoSprite, 470f, 420f));
+            SetTopLeft(logo.rectTransform, new Vector2(90f, -50f), FitSize(logoSprite, 620f, 420f));
+            LogoSwapTool.AttachSpinner(logo);   // ロゴのレコードを回す
             menu.logo = logo.rectTransform;
             menu.logoGroup = logo.gameObject.AddComponent<CanvasGroup>();
 

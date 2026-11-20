@@ -1,22 +1,24 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace MedalPusher
 {
     /// <summary>
     /// N016 ボウリング「ストライク・レーン」。効果の発動中（曲1曲分）だけ動く。
     ///
-    /// ・盤面：ballInterval 秒ごとに、盤面の横から炎をまとったボウリングの球が全速力で転がってきて、通り道のメダルを吹き飛ばす（本物の物理の球）。
-    ///   球は反対側の壁にぶつかると爆発して、まわりのメダルをはじく。左右から2つ来た時は、まん中でぶつかって大爆発
-    ///   球が出る前に、床に転がる道の矢印が光る
-    /// ・モニター：ボウリングのレーンと10本のピン。次の球の向き（左から・両方・右から）、カウントダウン、今の投球で落ちた枚数、スコア表
-    /// ・ルール：
-    ///   球の向きは、球が出る直前の laneDecideSeconds 秒の間に投入した発射口で決まる（左だけ→左から、右だけ→右から、両方→左右から2つ）
-    ///   球はメダルが一番多い横の列を転がる
-    ///   球が出てから countSeconds 秒の間に穴に落ちたメダルを数える。strikeCount 枚以上で STRIKE（+strikeBonus pt）、
-    ///   spareCount 枚以上で SPARE（+spareBonus pt）
-    /// ・投入する側をえらんで、球の向きを決める遊び
+    /// ・流れ（1回分）：
+    ///   1. 準備：プッシャーが止まる。中央の穴の手前の床から、1段4枚 × 20段のメダルのタワーがニョキニョキ生えてくる
+    ///      （メダルは平らに重ねる。1段4枚を 2×2 にならべて20段。柱の数は columns、段の数は towerLevels で変えられる）。
+    ///      同時に、モニターの上からボウリング用のモニターが下りてきて、モニターのまん中あたりで止まる（両方同じ時間で定位置へ）
+    ///   2. ボウリング用のモニターに「READY?」→「GO!!」
+    ///   3. GO と同時に、モニターの下あたりから大きなボウリングの球が飛び出し、勢いよく転がってタワーに突っこむ
+    ///      （球にふれたメダルは必ず吹き飛ぶ）
+    ///   4. 【効果】タワーが倒れて、メダルが大量に中央の穴へ落ちる
+    ///   5. ボウリング用のモニターに「STRIKE!!」。その1.5秒後に、モニターは上へ帰っていく。プッシャーも動き出す
+    ///   6. クールタイム（cooldownSeconds 秒）：待ってから、また 1 にもどる（曲が流れている間くりかえす）
+    /// ・タワーのメダルは本物のメダル（新しく出す）。倒れるまでは物理を止めて、きれいに積んだまま立たせておく
+    /// ・ボウリング用のモニターは、いつものモニターより手前に描く（設定の frontEffectsLayer）
+    /// ・いつものモニターの画面は変えない（UseMonitor = false）
     ///
     /// 見た目と音はコードで作る仮のもの。「差し替え用」に入れると、そちらを使う。
     /// シーンに置かなくても、RecordEffectSystem があれば再生時に自動で付く。CSV の「効果の型」は Scripted にする。
@@ -26,81 +28,122 @@ namespace MedalPusher
     {
         public static BowlingRecord Instance { get; private set; }
 
-        [Header("球")]
-        [Range(3f, 60f)] public float ballInterval = 10f;
-        [Tooltip("球の大きさ（メダルの直径に対する倍率）")]
-        [Range(0.5f, 3f)] public float ballSize = 1.3f;
-        [Tooltip("球の重さ（メダルの何倍か）")]
-        [Range(1f, 80f)] public float ballMass = 30f;
-        [Tooltip("球の転がる速さ（メダルの直径 / 秒）")]
-        [Range(0.5f, 30f)] public float ballSpeed = 11f;
-        [Tooltip("通り道のメダルを吹き飛ばす強さ（メダルの直径 / 秒）")]
-        [Range(0f, 30f)] public float hitStrength = 7f;
-        [Tooltip("壁にぶつかった時・球どうしがぶつかった時の爆発の強さ")]
-        [Range(0f, 30f)] public float blastStrength = 6f;
-        [Tooltip("レーンを決める時間（球が出る直前の何秒か）")]
-        [Range(0.5f, 10f)] public float laneDecideSeconds = 3f;
+        [Header("流れ（秒）")]
+        [Tooltip("曲が始まってから、最初のタワーが出るまで")]
+        [Range(0f, 10f)] public float firstDelay = 1f;
+        [Tooltip("タワーが生えてくる時間と、ボウリング用モニターが下りてくる時間（同じ）")]
+        [Range(0.3f, 5f)] public float riseSeconds = 1.6f;
+        [Tooltip("「READY?」を出しておく時間")]
+        [Range(0.2f, 5f)] public float readySeconds = 1.1f;
+        [Tooltip("「STRIKE!!」を出してから、モニターが上へ帰るまで")]
+        [Range(0f, 10f)] public float strikeHold = 1.5f;
+        [Tooltip("クールタイム：モニターが帰ってから、次のタワーが出るまで（仮で30秒）")]
+        [Range(0f, 120f)] public float cooldownSeconds = 30f;
+        [Tooltip("ON：曲が流れている間、クールタイムごとにくりかえす。OFF：1曲で1回だけ")]
+        public bool repeat = true;
 
-        [Header("STRIKE / SPARE")]
-        [Range(1f, 10f)] public float countSeconds = 4f;
-        [Range(1, 50)] public int strikeCount = 10;
-        [Range(0, 500)] public int strikeBonus = 100;
-        [Range(1, 50)] public int spareCount = 5;
-        [Range(0, 300)] public int spareBonus = 30;
+        [Header("タワー")]
+        [Range(1, 60)] public int towerLevels = 20;
+        [Tooltip("中央の穴（手前のふち）から、タワーのまん中までの距離（メダルの直径に対する倍率）")]
+        [Range(0.6f, 5f)] public float towerDistance = 1.6f;
+        [Tooltip("メダルを平らに重ねる柱の数（1段4枚を、この本数に分けて積む）。1 = 1本の柱（いちばん高い）、2 = 2本の柱、4 = 2×2（いちばん低い）")]
+        [Range(1, 4)] public int columns = 4;
+        [Tooltip("倒れる時に、下の段から順にくずれる間隔（秒）")]
+        [Range(0f, 0.2f)] public float collapseStep = 0.02f;
+
+        [Header("ボウリングの球")]
+        [Tooltip("球の大きさ（半径。メダルの直径に対する倍率）")]
+        [Range(0.3f, 3f)] public float ballRadius = 0.8f;
+        [Tooltip("床を転がる速さ（メダルの直径 / 秒）")]
+        [Range(2f, 60f)] public float ballSpeed = 16f;
+        [Tooltip("モニターの下から床に着くまでの時間（秒）")]
+        [Range(0.1f, 3f)] public float dropSeconds = 0.55f;
+
+        [Header("効果（吹き飛ばす強さ。メダルの直径 / 秒）")]
+        [Tooltip("球にふれたメダルを、前へ飛ばす強さ（球の速さに対する倍率）")]
+        [Range(0.5f, 3f)] public float hitForward = 1.2f;
+        [Tooltip("球にふれたメダルを、横へ飛ばす強さ")]
+        [Range(0f, 20f)] public float hitSide = 4f;
+        [Tooltip("球にふれたメダルを、上へ飛ばす強さ")]
+        [Range(0f, 20f)] public float hitUp = 3.5f;
+        [Tooltip("タワーのメダルを、くずれる時に上へはね上げる強さ（どの高さのメダルも、中央の穴に落ちるように飛ぶ向きを計算する）")]
+        [Range(0f, 30f)] public float towerBlast = 6.5f;
 
         [Header("音")]
         [Range(0f, 1f)] public float volume = 0.8f;
 
-        [Header("差し替え用（空なら仮の見た目・音）")]
+        [Header("差し替え用（空なら仮の音）")]
+        public AudioClip riseSound;
+        public AudioClip readySound;
         public AudioClip rollSound;
         public AudioClip strikeSound;
-        public AudioClip crashSound;
-        public GameObject ballPrefab;
 
         protected override string DefaultKey => "Bowling";
         protected override string ScreenTitle => "BOWLING";
         protected override string ScreenSubtitle => "ストライク・レーン";
         protected override float RecordSoundVolume => volume;
+        protected override bool UseMonitor => false;   // いつものモニターの画面は変えない
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoAttach() => Attach<BowlingRecord>();
         protected override void OnAwake() => Instance = this;
-        protected override void OnDestroyed() { if (Instance == this) Instance = null; }
-
-        static readonly Color BallColor = new Color32(0x3a, 0x2c, 0xc8, 0xff);
-        static readonly Color Lane = new Color32(0xe8, 0xc8, 0x8a, 0xff);
-        static readonly Color Pin = new Color32(0xf8, 0xf8, 0xf8, 0xff);
-        static readonly Color Strike = new Color32(0xff, 0x4d, 0x6d, 0xff);
-        static readonly Color Fire = new Color32(0xff, 0x8a, 0x2a, 0xff);
-        static readonly Color Ink = new Color32(0xf4, 0xf4, 0xf6, 0xff);
-        static readonly Color Mute = new Color32(0x9c, 0x9e, 0xae, 0xff);
-
-        float nextBall, countTimer, leftTime = -99f, rightTime = -99f, rowZ;
-        int lane, knocked, frame, strikes;
-        bool rowChosen;
-        readonly List<string> results = new List<string>();
-
-        class Ball
+        protected override void OnDestroyed()
         {
-            public GameObject go;
-            public Rigidbody body;
-            public int dir;
-            public float life;
-            public readonly HashSet<Medal> hit = new HashSet<Medal>();
+            ReleaseTower(false);
+            if (Instance == this) Instance = null;
         }
-        readonly List<Ball> balls = new List<Ball>();
+
+        static readonly Color Neon = new Color32(0xff, 0x3c, 0xb4, 0xff);
+        static readonly Color Cyan = new Color32(0x3c, 0xe6, 0xff, 0xff);
+        static readonly Color Gold = new Color32(0xff, 0xd2, 0x3f, 0xff);
+        static readonly Color Lane = new Color32(0x0c, 0x0a, 0x1c, 0xff);
+
+        enum Phase { Wait, Rise, Ready, Go, Roll, Strike, Leave, Done }
+
+        Phase phase;
+        float phaseTime, waitSeconds;
+
+        // ---- タワー ----
+        class Piece
+        {
+            public Medal m;
+            public Vector3 home;
+            public int level;
+            public bool kinematicWas, collideWas;
+            public RigidbodyInterpolation interpWas;
+        }
+        readonly List<Piece> tower = new List<Piece>();
+        Vector3 towerPos;
+        bool towerStanding;
+        float towerHeight;
+        float collapseTime = -1f;   // 0 以上なら、くずれている途中
+
+        // ---- 球 ----
+        Transform ball;
+        Rigidbody ballBody;
+        float ballR, ballTime;
+        Vector3 ballStart, ballLand, ballEnd;
+        float rollLength;
+        Vector3 ballPrev;
         readonly List<Medal> near = new List<Medal>();
 
-        readonly GameObject[] arrows = new GameObject[2];
-        Material arrowMaterial, ballMaterial;
-        ParticleSystem pins, flame, sparks, speedLines;
+        // ---- ボウリング用モニター ----
+        Transform panel;
+        TextMesh mainText, headText;
+        Material frameMat;
+        Vector3 panelHome, panelUp;
+        float panelW, panelH;
+        Renderer monitorRenderer;
 
-        readonly List<Image> screenPins = new List<Image>();
-        readonly Image[] laneBoxes = new Image[3];
-        Text countText, knockText, scoreText, statusText;
-        AudioClip madeRoll, madeStrike, madeCrash;
+        ParticleSystem sparks, dust, confetti;
+        AudioClip madeRise, madeReady, madeRoll, madeStrike, madeHit;
+        float lastHitSound;
 
-        static Material Shiny(Color c, float metal, float smooth, float glow)
+        // ================================================================
+        // 部品
+        // ================================================================
+
+        static Material Mat(Color c, float metal = 0.1f, float smooth = 0.6f, float glow = 0.1f)
         {
             var m = ProtoAssets.MakeMaterial(c, metal, smooth);
             m.EnableKeyword("_EMISSION");
@@ -110,316 +153,501 @@ namespace MedalPusher
 
         protected override void BuildBoard()
         {
-            arrowMaterial = Glow(Lane, 1.5f);
-            for (int i = 0; i < 2; i++)
-            {
-                arrows[i] = Cube("Arrow" + i, Board, Vector3.zero, new Vector3(D * 2.6f, D * 0.01f, D * 0.28f), arrowMaterial);
-                arrows[i].SetActive(false);
-            }
-            ballMaterial = Shiny(BallColor, 0.35f, 0.96f, 0.35f);
-            pins = Particles("Pins", Board, Vector3.up, D * 3f, D * 0.12f, 0.9f, 1f, 50f);
-            flame = Particles("Flame", Board, Vector3.up, D * 0.8f, D * 0.32f, 0.45f, -0.3f, 35f);
-            sparks = Particles("Sparks", Board, Vector3.up, D * 4f, D * 0.08f, 0.6f, 0.8f, 60f);
-            speedLines = Particles("Trail", Board, Vector3.up, D * 0.2f, D * 0.05f, 0.3f, 0f, 10f);
+            ballR = D * ballRadius;
+            BuildBall();
+            sparks = Particles("Sparks", Board, Vector3.up, D * 5f, D * 0.08f, 0.6f, 0.8f, 70f);
+            dust = Particles("Dust", Board, Vector3.up, D * 1.2f, D * 0.4f, 0.9f, 0f, 80f);
+            confetti = Particles("Confetti", Board, Vector3.up, D * 4f, D * 0.12f, 1.8f, 0.4f, 45f);
         }
+
+        void BuildBall()
+        {
+            var go = Shape(PrimitiveType.Sphere, "BowlingBall", Board, Vector3.zero, Vector3.one * ballR * 2f, Mat(new Color(0.22f, 0.1f, 0.55f), 0.3f, 0.95f, 0.25f), true);
+            ball = go.transform;
+            var hole = ProtoAssets.MakeMaterial(new Color(0.02f, 0.02f, 0.03f), 0f, 0.9f);
+            var swirl = Mat(Neon, 0.2f, 0.9f, 0.6f);
+            Shape(PrimitiveType.Sphere, "FingerHole", ball, new Vector3(-0.1f, 0.4f, -0.25f), Vector3.one * 0.13f, hole);
+            Shape(PrimitiveType.Sphere, "FingerHole", ball, new Vector3(0.1f, 0.4f, -0.25f), Vector3.one * 0.13f, hole);
+            Shape(PrimitiveType.Sphere, "ThumbHole", ball, new Vector3(0f, 0.25f, -0.4f), Vector3.one * 0.15f, hole);
+            for (int i = 0; i < 6; i++)
+            {
+                float a = i * 60f;
+                var s = Shape(PrimitiveType.Sphere, "Swirl", ball, Quaternion.Euler(0f, a, 20f) * new Vector3(0.49f, 0f, 0f), new Vector3(0.05f, 0.22f, 0.12f), swirl);
+                s.transform.localRotation = Quaternion.Euler(0f, a, 20f);
+            }
+            ballBody = go.AddComponent<Rigidbody>();
+            ballBody.isKinematic = true;
+            ballBody.interpolation = RigidbodyInterpolation.Interpolate;
+            ballBody.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            go.SetActive(false);
+        }
+
+        /// <summary>ボウリング用のモニター（いつものモニターの前に下りてくる板）。いつものモニターの場所がわかってから作る</summary>
+        void BuildPanel()
+        {
+            if (panel != null) return;
+            FindMonitor();
+            Bounds b = monitorRenderer != null ? monitorRenderer.bounds : new Bounds(new Vector3(0f, Layout.wallHeight + D * 1.5f, BackZ), new Vector3(HalfW * 1.6f, D * 2.5f, 0.1f));
+            panelW = b.size.x * 0.5f;
+            panelH = panelW * 0.5f;
+            panelHome = new Vector3(b.center.x, b.center.y, b.min.z - D * 0.25f);
+            panelUp = panelHome + Vector3.up * (b.size.y * 0.5f + panelH + D * 3f);
+
+            panel = new GameObject("BowlingMonitor").transform;
+            panel.SetParent(Board, false);
+            var dark = Mat(new Color(0.08f, 0.08f, 0.1f), 0.6f, 0.8f, 0f);
+            var screen = Mat(Lane, 0f, 0.9f, 0.6f);
+            frameMat = Mat(Neon, 0.1f, 0.8f, 2.5f);
+            var wire = Mat(new Color(0.6f, 0.6f, 0.65f), 0.9f, 0.8f, 0f);
+            float t = D * 0.08f;
+            Cube("Case", panel, new Vector3(0f, 0f, D * 0.06f), new Vector3(panelW + t * 2f, panelH + t * 2f, D * 0.1f), dark);
+            Cube("Screen", panel, new Vector3(0f, 0f, 0f), new Vector3(panelW, panelH, D * 0.02f), screen);
+            // 光るふち
+            Cube("FrameTop", panel, new Vector3(0f, panelH * 0.5f + t * 0.5f, -D * 0.02f), new Vector3(panelW + t * 2f, t, D * 0.04f), frameMat);
+            Cube("FrameBottom", panel, new Vector3(0f, -panelH * 0.5f - t * 0.5f, -D * 0.02f), new Vector3(panelW + t * 2f, t, D * 0.04f), frameMat);
+            Cube("FrameLeft", panel, new Vector3(-panelW * 0.5f - t * 0.5f, 0f, -D * 0.02f), new Vector3(t, panelH + t * 2f, D * 0.04f), frameMat);
+            Cube("FrameRight", panel, new Vector3(panelW * 0.5f + t * 0.5f, 0f, -D * 0.02f), new Vector3(t, panelH + t * 2f, D * 0.04f), frameMat);
+            // つり下げるワイヤー
+            for (int s = -1; s <= 1; s += 2)
+                Shape(PrimitiveType.Cylinder, "Wire", panel, new Vector3(s * panelW * 0.35f, panelH * 0.5f + D * 3f, D * 0.06f), new Vector3(D * 0.03f, D * 3f, D * 0.03f), wire);
+            // 文字（上の小さな文字と、まん中の大きな文字）
+            headText = AddText(panel, "BOWLING", new Vector3(0f, panelH * 0.32f, -D * 0.03f), panelH * 0.16f, Cyan);
+            mainText = AddText(panel, "", new Vector3(0f, -panelH * 0.06f, -D * 0.03f), panelH * 0.42f, Color.white);
+
+            SetLayerAll(panel, FrontLayer);
+            panel.gameObject.SetActive(false);
+        }
+
+        int FrontLayer => game.monitor.effectsInFrontOfMonitor ? Mathf.Clamp(game.monitor.frontEffectsLayer, 0, 31) : 0;
+
+        static void SetLayerAll(Transform t, int layer)
+        {
+            t.gameObject.layer = layer;
+            for (int i = 0; i < t.childCount; i++) SetLayerAll(t.GetChild(i), layer);
+        }
+
+        void FindMonitor()
+        {
+            if (monitorRenderer != null) return;
+            var go = GameObject.Find(game.monitor.screenObjectName);
+            if (go != null) monitorRenderer = go.GetComponentInChildren<Renderer>();
+        }
+
+        static Font textFont;
+
+        TextMesh AddText(Transform parent, string text, Vector3 pos, float size, Color color)
+        {
+            if (textFont == null)
+            {
+                try { textFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { textFont = null; }
+            }
+            var go = new GameObject("Text");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            var tm = go.AddComponent<TextMesh>();
+            if (textFont != null)
+            {
+                tm.font = textFont;
+                go.GetComponent<MeshRenderer>().sharedMaterial = textFont.material;
+            }
+            tm.text = text;
+            tm.fontSize = 96;
+            tm.fontStyle = FontStyle.Bold;
+            tm.characterSize = size / 9.6f;
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.alignment = TextAlignment.Center;
+            tm.color = color;
+            go.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return tm;
+        }
+
+        // ================================================================
+        // 流れ
+        // ================================================================
 
         protected override void OnBegin()
         {
-            nextBall = ballInterval * 0.6f;
-            countTimer = 0f;
-            frame = 0;
-            strikes = 0;
-            rowChosen = false;
-            results.Clear();
+            SetPhase(Phase.Wait, firstDelay);
         }
 
-        protected override void OnEnd() => RemoveBalls();
-
-        void RemoveBalls()
+        protected override void OnEnd()
         {
-            foreach (var b in balls) if (b.go != null) Destroy(b.go);
-            balls.Clear();
+            // 曲が終わったら：立っているタワーはふつうのメダルにもどす。球とモニターは消える
+            ReleaseTower(false);
+            HideBall();
+            if (panel != null) panel.gameObject.SetActive(false);
+            phase = Phase.Done;
         }
 
-        protected override void OnInsert(Medal medal)
+        protected override void OnStateChanged(GameState state)
         {
-            if (medal.transform.position.x < 0f) leftTime = Time.time;
-            else rightTime = Time.time;
-        }
-
-        int DecideLane()
-        {
-            bool left = Time.time - leftTime <= laneDecideSeconds;
-            bool right = Time.time - rightTime <= laneDecideSeconds;
-            if (left && !right) return -1;
-            if (right && !left) return 1;
-            return 0;
-        }
-
-        /// <summary>メダルが一番多い横の列（z）をさがす</summary>
-        float FindRow()
-        {
-            float best = Mathf.Lerp(FrontZ, PusherFrontZ, 0.45f);
-            int bestCount = -1;
-            for (int i = 0; i < 6; i++)
+            bool scoring = state == GameState.Playing || state == GameState.Grace;
+            if (!scoring && Active)
             {
-                float z = Mathf.Lerp(FrontZ, PusherFrontZ, 0.2f + 0.12f * i);
-                int count = 0;
-                foreach (var m in BoardMedals)
-                {
-                    if (m == null || m.Consumed) continue;
-                    if (Mathf.Abs(m.transform.position.z - z) < D * 0.8f) count++;
-                }
-                if (count > bestCount) { bestCount = count; best = z; }
+                ReleaseTower(false);
+                HideBall();
+                if (panel != null) panel.gameObject.SetActive(false);
+                phase = Phase.Done;
             }
-            return best;
+        }
+
+        void SetPhase(Phase p, float wait = 0f)
+        {
+            phase = p;
+            phaseTime = 0f;
+            waitSeconds = wait;
         }
 
         protected override void Tick(float dt, bool running)
         {
-            for (int i = balls.Count - 1; i >= 0; i--)
+            // プッシャーは、タワーが出てから、モニターが帰り始めるまで止める
+            PusherHold = phase == Phase.Rise || phase == Phase.Ready || phase == Phase.Go || phase == Phase.Roll || phase == Phase.Strike;
+            if (!running) return;
+            phaseTime += dt;
+            switch (phase)
             {
-                var b = balls[i];
-                b.life -= dt;
-                if (b.go == null || b.life <= 0f || b.go.transform.position.y < Layout.holeTopY - D)
+                case Phase.Wait:
+                    if (phaseTime >= waitSeconds)
+                    {
+                        BuildPanel();
+                        SpawnTower();
+                        panel.gameObject.SetActive(true);
+                        SetText("", Color.white);
+                        Play(riseSound, ref madeRise, () => RecordSynth.Noise("BowlingRise", 1.4f, 0.05f, 0.3f, 0.6f, 0.8f, 6), 0.8f);
+                        SetPhase(Phase.Rise);
+                    }
+                    break;
+
+                case Phase.Rise:
                 {
-                    if (b.go != null) Destroy(b.go);
-                    balls.RemoveAt(i);
+                    float k = Mathf.Clamp01(phaseTime / Mathf.Max(0.05f, riseSeconds));
+                    UpdateTowerRise(k);
+                    // モニターも同じ時間で下りてくる（最後に少しはずむ）
+                    float e = k < 1f ? 1f - Mathf.Pow(1f - k, 3f) : 1f;
+                    panel.position = Vector3.LerpUnclamped(panelUp, panelHome, e);
+                    if (Random.value < dt * 20f) Emit(dust, towerPos, new Color(0.9f, 0.85f, 0.7f, 0.6f), 2);
+                    if (k >= 1f)
+                    {
+                        Shake(0.02f, 0.2f);
+                        SetText("READY?", Gold);
+                        Play(readySound, ref madeReady, () => RecordSynth.Notes("BowlingReady", new[] { RecordSynth.Note(12), RecordSynth.Note(12) }, 0.18f, 0.2f, 0.3f, RecordSynth.Wave.Square));
+                        SetPhase(Phase.Ready);
+                    }
+                    break;
+                }
+
+                case Phase.Ready:
+                    if (phaseTime >= readySeconds)
+                    {
+                        SetText("GO!!", Cyan);
+                        Play(null, ref madeReady, () => RecordSynth.Notes("BowlingReady", new[] { RecordSynth.Note(12), RecordSynth.Note(12) }, 0.18f, 0.2f, 0.3f, RecordSynth.Wave.Square));
+                        LaunchBall();
+                        SetPhase(Phase.Roll);
+                    }
+                    break;
+
+                case Phase.Roll:
+                    // 球の動きは FixedUpdate。タワーを倒して 0.6秒たったら STRIKE
+                    if (!towerStanding && phaseTime > 0.1f && strikeWait >= 0f)
+                    {
+                        strikeWait += dt;
+                        if (strikeWait >= 0.6f)
+                        {
+                            strikeWait = -1f;
+                            SetText("STRIKE!!", Gold);
+                            Emit(confetti, panel.position + Vector3.down * panelH * 0.5f, Neon, 40);
+                            Emit(confetti, panel.position + Vector3.down * panelH * 0.5f, Gold, 40);
+                            Play(strikeSound, ref madeStrike, () => RecordSynth.Notes("BowlingStrike", new[] { RecordSynth.Note(0), RecordSynth.Note(4), RecordSynth.Note(7), RecordSynth.Note(12), RecordSynth.Note(16) }, 0.07f, 0.6f, 0.3f, RecordSynth.Wave.Square));
+                            PopCenter("STRIKE!!", Gold);
+                            Speaker(1f, 16, Neon);
+                            SetPhase(Phase.Strike);
+                        }
+                    }
+                    break;
+
+                case Phase.Strike:
+                    if (phaseTime >= strikeHold)
+                    {
+                        HideBall();
+                        SetPhase(Phase.Leave);
+                    }
+                    break;
+
+                case Phase.Leave:
+                {
+                    float k = Mathf.Clamp01(phaseTime / 0.8f);
+                    panel.position = Vector3.Lerp(panelHome, panelUp, k * k);
+                    if (k >= 1f)
+                    {
+                        panel.gameObject.SetActive(false);
+                        if (repeat) SetPhase(Phase.Wait, cooldownSeconds);
+                        else SetPhase(Phase.Done);
+                    }
+                    break;
                 }
             }
-            if (!running) return;
-            if (countTimer > 0f)
+        }
+
+        float strikeWait = -1f;
+
+        void SetText(string s, Color c)
+        {
+            if (mainText == null) return;
+            mainText.text = s;
+            mainText.color = c;
+        }
+
+        // ================================================================
+        // タワー（1段4枚 × 10段のメダル。下からニョキニョキ生えてくる）
+        // ================================================================
+
+        float Thick => game.tuning.medalThickness;
+
+        void SpawnTower()
+        {
+            ReleaseTower(false);
+            if (game.Pool == null) return;
+            towerPos = new Vector3(0f, 0f, FrontZ + D * Mathf.Max(towerDistance, 1.1f));
+            float t = Thick;
+            int cols = columns >= 4 ? 4 : columns >= 2 ? 2 : 1;
+            int perCol = 4 / cols;                        // 1段で、1本の柱に重ねる枚数
+            float levelH = t * perCol;                    // 1段の高さ
+            towerHeight = levelH * towerLevels;
+            float o = D * 0.51f;
+            // タワーの場所にいるメダルは、少しわきへよける
+            foreach (var m in MedalsNear(towerPos, D * 1.8f, near))
             {
-                countTimer -= dt;
-                if (countTimer <= 0f) Judge();
+                if (m.Body == null || m.transform.position.y > Layout.pusherHeight * 0.6f) continue;
+                Vector3 d = m.transform.position - towerPos;
+                d.y = 0f;
+                if (d.sqrMagnitude < 1e-4f) d = Vector3.right;
+                Push(m, d.normalized * D * 2.5f + Vector3.up * D * 0.5f);
             }
-            nextBall -= dt;
-            lane = DecideLane();
-            if (nextBall < laneDecideSeconds && !rowChosen)
+            for (int lv = 0; lv < towerLevels; lv++)
+                for (int i = 0; i < 4; i++)
+                {
+                    // メダルは平らに重ねる。1段4枚を cols 本の柱に分ける（2本なら、横にならべた2本の柱に2枚ずつ）
+                    int col = i % cols;
+                    int stack = lv * perCol + i / cols;   // 柱の下から何枚目か
+                    Vector3 off = cols == 1 ? Vector3.zero
+                                : cols == 2 ? new Vector3(col == 0 ? -o : o, 0f, 0f)
+                                : new Vector3(col % 2 == 0 ? -o : o, 0f, col < 2 ? -o : o);
+                    Quaternion rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                    Vector3 home = towerPos + off + Vector3.up * (t * (stack + 0.5f) + D * 0.005f);
+                    var m = game.Pool.Spawn(home + Vector3.down * (towerHeight + D), rot);
+                    if (m == null || m.Body == null) continue;
+                    var p = new Piece { m = m, home = home, level = lv, kinematicWas = m.Body.isKinematic, collideWas = m.Body.detectCollisions, interpWas = m.Body.interpolation };
+                    m.Body.isKinematic = true;
+                    m.Body.interpolation = RigidbodyInterpolation.None;
+                    tower.Add(p);
+                }
+            towerStanding = true;
+            collapseTime = -1f;
+            strikeWait = -1f;
+        }
+
+        void UpdateTowerRise(float k)
+        {
+            // 下の段から順に、床からニョキニョキ出てくる（上の段ほど少し遅れて、全部 k = 1 でそろう）
+            float drop = towerHeight + D * 0.5f;
+            foreach (var p in tower)
             {
-                rowZ = FindRow();
-                rowChosen = true;
-            }
-            if (nextBall <= 0f)
-            {
-                nextBall = ballInterval;
-                if (!rowChosen) rowZ = FindRow();
-                rowChosen = false;
-                Roll();
+                if (p.m == null || p.m.Body == null) continue;
+                float lv = (p.home.y - towerPos.y) / Mathf.Max(0.001f, towerHeight);   // 0 下 〜 1 上
+                float kk = Mathf.Clamp01(k * 1.25f - (1f - lv) * 0.25f);
+                kk = 1f - (1f - kk) * (1f - kk);
+                Vector3 pos = p.home + Vector3.down * drop * (1f - kk);
+                p.m.Body.position = pos;
+                p.m.transform.position = pos;
             }
         }
 
-        void Roll()
+        /// <summary>タワーのメダルを、全部ふつうのメダルにもどす。blast が true なら、中央の穴の方へ吹き飛ばす</summary>
+        void ReleaseTower(bool blast)
         {
-            RemoveBalls();
-            if (lane <= 0) SpawnBall(1);    // 左から右へ
-            if (lane >= 0) SpawnBall(-1);   // 右から左へ
-            knocked = 0;
-            countTimer = countSeconds;
-            Play(rollSound, ref madeRoll, () => RecordSynth.Noise("BowlingRoll", 1.5f, 0.03f, 0.2f, 1f, 1.2f, 7));
-            Shake(0.02f, 0.3f);
-            Pop(lane == 0 ? "ダブル・ボール！" : "ゴーッ！", Fire, new Vector2(BodyW * 0.5f, 300f));
+            foreach (var p in tower) ReleasePiece(p, blast);
+            tower.Clear();
+            towerStanding = false;
+            collapseTime = -1f;
         }
 
-        void SpawnBall(int dir)
+        /// <summary>球が当たった：下の段から順にくずす（FixedUpdate で進める）</summary>
+        void StartCollapse()
         {
-            float size = D * ballSize;
-            var start = new Vector3(-dir * (HalfW - size * 0.7f), size * 0.55f, rowZ);
-            GameObject go;
-            if (ballPrefab != null) go = Instantiate(ballPrefab, start, Quaternion.identity);
-            else
+            towerStanding = false;
+            collapseTime = 0f;
+        }
+
+        void UpdateCollapse(float dt)
+        {
+            if (collapseTime < 0f) return;
+            collapseTime += dt;
+            int upTo = collapseStep > 0f ? Mathf.FloorToInt(collapseTime / collapseStep) : towerLevels;
+            for (int i = tower.Count - 1; i >= 0; i--)
             {
-                go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                go.name = "BowlingBall";
-                go.transform.position = start;
-                go.GetComponent<Renderer>().sharedMaterial = ballMaterial;
-                // 指の穴
-                var holeMat = ProtoAssets.MakeMaterial(new Color(0.03f, 0.03f, 0.05f), 0f, 0.2f);
-                Shape(PrimitiveType.Sphere, "FingerHole", go.transform, new Vector3(-0.1f, 0.4f, -0.25f), Vector3.one * 0.13f, holeMat);
-                Shape(PrimitiveType.Sphere, "FingerHole", go.transform, new Vector3(0.1f, 0.4f, -0.25f), Vector3.one * 0.13f, holeMat);
-                Shape(PrimitiveType.Sphere, "ThumbHole", go.transform, new Vector3(0f, 0.25f, -0.4f), Vector3.one * 0.15f, holeMat);
-                var lgo = new GameObject("FireLight");
-                lgo.transform.SetParent(go.transform, false);
-                var fireLight = lgo.AddComponent<Light>();
-                fireLight.type = LightType.Point;
-                fireLight.color = Fire;
-                fireLight.range = D * 4f;
-                fireLight.intensity = 2.5f;
-                fireLight.shadows = LightShadows.None;
+                if (tower[i].level > upTo) continue;
+                ReleasePiece(tower[i], true);
+                tower.RemoveAt(i);
             }
-            go.transform.localScale = Vector3.one * size;
-            if (go.GetComponent<Collider>() == null) go.AddComponent<SphereCollider>();
-            var body = go.GetComponent<Rigidbody>();
-            if (body == null) body = go.AddComponent<Rigidbody>();
-            body.mass = game.tuning.medalMass * ballMass;
-            body.interpolation = RigidbodyInterpolation.Interpolate;
-            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            body.velocity = new Vector3(dir * ballSpeed * D, 0f, -D * 0.3f);
-            body.angularVelocity = new Vector3(0f, 0f, -dir * ballSpeed * 2f);
-            balls.Add(new Ball { go = go, body = body, dir = dir, life = 6f });
-            Emit(flame, start, Fire, 30);
+            if (tower.Count == 0) collapseTime = -1f;
+        }
+
+        void ReleasePiece(Piece p, bool blast)
+        {
+            var m = p.m;
+            if (m == null || m.Body == null) return;
+            m.Body.isKinematic = p.kinematicWas;
+            m.Body.detectCollisions = p.collideWas;
+            m.Body.interpolation = p.interpWas;
+            if (!m.gameObject.activeInHierarchy || m.Consumed) return;
+            m.Body.WakeUp();
+            if (!blast) { m.Body.velocity = Vector3.zero; return; }
+            // 【効果】中央の穴（手前のふちの少し先）に落ちるように、高さに合わせて飛ばす向きを計算する
+            Vector3 pos = m.transform.position;
+            float hx = HoleHalf * 0.7f;
+            Vector3 target = new Vector3(Mathf.Clamp(pos.x + Random.Range(-1f, 1f) * D, -hx, hx), -D * 0.3f, FrontZ - D * Random.Range(0.4f, 1.2f));
+            float g = Mathf.Max(0.1f, -Physics.gravity.y);
+            float vy = D * towerBlast * 0.4f * Random.Range(0.6f, 1.2f);
+            float h = Mathf.Max(0f, pos.y - target.y);
+            float T = (vy + Mathf.Sqrt(vy * vy + 2f * g * h)) / g;   // 着くまでの時間
+            Vector3 flat = target - pos;
+            flat.y = 0f;
+            m.Body.velocity = flat / Mathf.Max(0.05f, T) * 1.05f + Vector3.up * vy;
+            m.Body.angularVelocity = Random.insideUnitSphere * 30f;
+        }
+
+        // ================================================================
+        // ボウリングの球
+        // ================================================================
+
+        void LaunchBall()
+        {
+            FindMonitor();
+            float topY = monitorRenderer != null ? monitorRenderer.bounds.min.y : Layout.wallHeight + D;
+            float startZ = monitorRenderer != null ? monitorRenderer.bounds.min.z - ballR : BackZ;
+            ballStart = new Vector3(0f, topY - ballR * 1.2f, startZ);
+            ballLand = new Vector3(0f, ballR, Mathf.Min(PusherFrontZ - ballR * 1.5f, startZ - D));
+            ballEnd = new Vector3(0f, ballR, FrontZ + ballR * 0.2f);
+            rollLength = Mathf.Max(0.01f, ballLand.z - ballEnd.z);
+            ballTime = 0f;
+            ballPrev = ballStart;
+            ball.gameObject.SetActive(true);
+            ball.position = ballStart;
+            ballBody.position = ballStart;
+            strikeWait = 0f;
+            Play(rollSound, ref madeRoll, () => RecordSynth.Noise("BowlingRoll", 2.2f, 0.03f, 0.05f, 1.6f, 0.9f, 12));
+            Emit(sparks, ballStart, Cyan, 20);
+        }
+
+        void HideBall()
+        {
+            if (ball != null) ball.gameObject.SetActive(false);
+        }
+
+        /// <summary>時間 t の球の場所（落ちてくる → 床を転がる → 手前のふちから穴へ落ちる）</summary>
+        Vector3 BallAt(float t)
+        {
+            if (t < dropSeconds)
+            {
+                float k = t / dropSeconds;
+                Vector3 p = Vector3.Lerp(ballStart, ballLand, k);
+                p.y = Mathf.Lerp(ballStart.y, ballLand.y, k * k) + Mathf.Sin(k * Mathf.PI) * D * 0.4f;
+                return p;
+            }
+            float s = (t - dropSeconds) * D * ballSpeed;
+            if (s <= rollLength) return new Vector3(0f, ballR, ballLand.z - s);
+            // 手前のふちを越えたら、穴へ落ちる
+            float over = (s - rollLength) / (D * ballSpeed);
+            return ballEnd + new Vector3(0f, -0.5f * 9.81f * over * over * 2f, -(s - rollLength));
         }
 
         void FixedUpdate()
         {
-            if (!Active || balls.Count == 0) return;
-            float size = D * ballSize;
-            for (int i = balls.Count - 1; i >= 0; i--)
+            if (Active) UpdateCollapse(Time.fixedDeltaTime);   // タワーが下の段から順にくずれる
+            if (!Active || ball == null || !ball.gameObject.activeSelf || phase == Phase.Done) return;
+            if (phase != Phase.Roll && phase != Phase.Strike) return;
+            ballTime += Time.fixedDeltaTime;
+            Vector3 pos = BallAt(ballTime);
+            Vector3 vel = (pos - ballPrev) / Time.fixedDeltaTime;
+            ballBody.MovePosition(pos);
+            // 転がる回転
+            if (vel.sqrMagnitude > 1e-4f)
             {
-                var b = balls[i];
-                if (b.go == null || b.body == null) continue;
-                Vector3 p = b.body.position;
-                // 勢いを保つ（メダルにぶつかっても止まらない）
-                var v = b.body.velocity;
-                if (v.x * b.dir < ballSpeed * D * 0.75f) b.body.velocity = new Vector3(b.dir * ballSpeed * D * 0.85f, v.y, v.z);
-                // 通り道のメダルを吹き飛ばす
-                foreach (var m in MedalsNear(p, size * 1.05f, near))
+                Vector3 axis = Vector3.Cross(Vector3.up, vel.normalized);
+                ballBody.MoveRotation(Quaternion.AngleAxis(vel.magnitude * Time.fixedDeltaTime / ballR * Mathf.Rad2Deg, axis) * ballBody.rotation);
+            }
+            ballPrev = pos;
+            bool onFloor = ballTime >= dropSeconds && pos.y > -ballR;
+
+            // タワーに届いたら、倒す
+            if (towerStanding && onFloor && pos.z - ballR <= towerPos.z + D * 1.05f)
+            {
+                StartCollapse();
+                Emit(sparks, towerPos + Vector3.up * towerHeight * 0.5f, Gold, 40);
+                Emit(sparks, towerPos + Vector3.up * towerHeight * 0.5f, Neon, 30);
+                Shake(0.06f, 0.4f);
+                Play(null, ref madeHit, () => RecordSynth.Noise("BowlingCrash", 0.6f, 0.4f, 0.002f, 0.3f, 1f, 8));
+            }
+
+            // 念のため：球が手前のふちまで来ても倒れていなければ、ここで倒す
+            if (towerStanding && ballTime > dropSeconds + rollLength / Mathf.Max(0.01f, D * ballSpeed)) StartCollapse();
+
+            // 球にふれたメダルは、必ず吹き飛ぶ
+            if (pos.y > -ballR)
+            {
+                Vector3 fwd = vel; fwd.y = 0f;
+                fwd = fwd.sqrMagnitude > 1e-4f ? fwd.normalized : Vector3.back;
+                float reach = ballR + D * 0.55f;
+                foreach (var m in MedalsNear(pos, reach, near))
                 {
-                    if (m.Body == null || !b.hit.Add(m)) continue;
-                    Vector3 away = m.transform.position - p;
-                    away.y = 0f;
-                    Vector3 dirV = new Vector3(b.dir * 0.7f, 0.75f, -0.45f) + away.normalized * 0.4f;
-                    Push(m, dirV.normalized * D * hitStrength * Random.Range(0.8f, 1.2f));
-                    Emit(sparks, m.transform.position, Color.Lerp(Fire, Color.white, Random.value * 0.5f), 4);
-                }
-                // 反対側の壁で爆発
-                if (p.x * b.dir > HalfW - size * 0.75f)
-                {
-                    Explode(p, 1f);
-                    Destroy(b.go);
-                    balls.RemoveAt(i);
-                    continue;
-                }
-            }
-            // 左右の球どうしがぶつかった
-            if (balls.Count == 2 && balls[0].go != null && balls[1].go != null)
-            {
-                Vector3 a = balls[0].body.position, c = balls[1].body.position;
-                if ((a - c).sqrMagnitude < size * size * 1.2f)
-                {
-                    Vector3 mid = (a + c) * 0.5f;
-                    Explode(mid, 1.8f);
-                    PopCenter("CRASH!!", Fire);
-                    foreach (var b in balls) if (b.go != null) Destroy(b.go);
-                    balls.Clear();
+                    if (m.Body == null || m.Body.isKinematic) continue;
+                    Vector3 d = m.transform.position - pos;
+                    if (d.magnitude > reach) continue;
+                    Vector3 side = new Vector3(d.x, 0f, 0f);
+                    side = side.sqrMagnitude > 1e-4f ? side.normalized : (Random.value < 0.5f ? Vector3.left : Vector3.right);
+                    float speed = Mathf.Max(vel.magnitude, D * ballSpeed);
+                    m.Body.WakeUp();
+                    m.Body.velocity = fwd * speed * hitForward + side * D * hitSide * Random.Range(0.6f, 1.2f) + Vector3.up * D * hitUp * Random.Range(0.6f, 1.2f);
+                    m.Body.angularVelocity = Random.insideUnitSphere * 25f;
+                    if (Time.time - lastHitSound > 0.04f)
+                    {
+                        lastHitSound = Time.time;
+                        Emit(sparks, m.transform.position, Cyan, 3);
+                    }
                 }
             }
+            if (pos.y < -ballR * 3f) ball.gameObject.SetActive(false);
         }
 
-        void Explode(Vector3 at, float power)
-        {
-            Blast(at, D * 2f * power, D * blastStrength * power, 0.9f);
-            Emit(flame, at, Fire, Mathf.RoundToInt(50 * power));
-            Emit(sparks, at, Color.white, Mathf.RoundToInt(40 * power));
-            Emit(pins, at, Pin, Mathf.RoundToInt(20 * power));
-            Shake(0.04f * power, 0.4f);
-            Play(crashSound, ref madeCrash, () => RecordSynth.Noise("BowlingCrash", 0.7f, 0.4f, 0.005f, 0.3f, 1.1f, 11), 0.9f);
-            Speaker(0.7f * power, 8, Fire);
-        }
+        // ================================================================
+        // 見た目（毎フレーム）
+        // ================================================================
 
-        void Judge()
-        {
-            frame++;
-            string mark;
-            if (knocked >= strikeCount)
-            {
-                strikes++;
-                mark = "X";
-                AddPoints(strikeBonus);
-                Play(strikeSound, ref madeStrike, () => RecordSynth.Noise("BowlingStrike", 0.8f, 0.5f, 0.005f, 0.25f, 1f, 9));
-                PopCenter($"STRIKE! +{strikeBonus}", Strike);
-                Emit(pins, new Vector3(0f, D * 0.5f, FrontZ + D), Pin, 60);
-                Shake(0.05f, 0.5f);
-                Speaker(1f, 16, Strike);
-            }
-            else if (knocked >= spareCount)
-            {
-                mark = "/";
-                AddPoints(spareBonus);
-                PopCenter($"SPARE +{spareBonus}", Lane);
-                Emit(pins, new Vector3(0f, D * 0.5f, FrontZ + D), Pin, 25);
-            }
-            else mark = knocked.ToString();
-            results.Add(mark);
-            if (results.Count > 10) results.RemoveAt(0);
-        }
-
-        protected override void OnDrop(Medal medal, DropZoneType type)
-        {
-            if (countTimer <= 0f) return;
-            knocked++;
-        }
-
-        protected override bool KeepBoardVisible() => (pins != null && pins.particleCount > 0) || (flame != null && flame.particleCount > 0);
+        protected override bool KeepBoardVisible() => (confetti != null && confetti.particleCount > 0) || (sparks != null && sparks.particleCount > 0);
 
         protected override void UpdateBoard(float dt)
         {
-            // 球のうしろの炎と、スピード線
-            foreach (var b in balls)
+            float t = Time.time;
+            if (panel != null && panel.gameObject.activeSelf)
             {
-                if (b.go == null) continue;
-                Vector3 p = b.go.transform.position;
-                float size = D * ballSize;
-                Emit(flame, p - new Vector3(b.dir * size * 0.45f, -size * 0.1f, 0f), Color.Lerp(Fire, new Color(1f, 0.85f, 0.3f), Random.value), 3);
-                if (Random.value < 0.8f)
-                    Emit(speedLines, p + new Vector3(-b.dir * size * 0.8f, Random.Range(-0.3f, 0.5f) * size, Random.Range(-0.6f, 0.6f) * size), Color.white, 1);
-            }
-
-            bool show = Active && nextBall < laneDecideSeconds && balls.Count == 0;
-            for (int i = 0; i < 2; i++)
-            {
-                int dir = i == 0 ? 1 : -1;   // 0：左から、1：右から
-                bool use = show && (dir > 0 ? lane <= 0 : lane >= 0);
-                if (arrows[i].activeSelf != use) arrows[i].SetActive(use);
-                if (!use) continue;
-                float z = rowChosen ? rowZ : Mathf.Lerp(FrontZ, PusherFrontZ, 0.45f);
-                float slide = Mathf.Repeat(Time.time * 1.5f, 1f);
-                arrows[i].transform.position = new Vector3(-dir * HalfW * (0.75f - 0.35f * slide), D * 0.01f, z);
-            }
-            if (show) SetGlow(arrowMaterial, Lane, 1f + 2f * Mathf.Repeat(Time.time * 3f, 1f));
-        }
-
-        protected override void BuildScreen()
-        {
-            screenPins.Clear();
-            float W = BodyW;
-            var alley = Panel(Screen, "Alley", W * 0.5f, 190f, W - 48f, 340f, new Color32(0x16, 0x14, 0x22, 0xff));
-            float aw = W - 48f;
-            for (int l = 0; l < 3; l++)
-            {
-                float cx = aw * (0.2f + 0.3f * l);
-                laneBoxes[l] = Img(alley, $"Lane{l}", cx, 170f, aw * 0.26f, 320f, new Color(Lane.r, Lane.g, Lane.b, 0.15f));
-                Lbl(alley, $"LaneName{l}", cx, 320f, 160f, 30f, l == 0 ? "左から" : l == 1 ? "両方（2球）" : "右から", 18, Mute);
-            }
-            int idx = 0;
-            for (int row = 0; row < 4; row++)
-                for (int k = 0; k <= row; k++)
+                SetGlow(frameMat, phase == Phase.Strike ? Color.Lerp(Neon, Gold, Mathf.PingPong(t * 6f, 1f)) : Neon, phase == Phase.Strike ? 4f : 2.5f);
+                if (mainText != null)
                 {
-                    screenPins.Add(Img(alley, $"Pin{idx}", aw * 0.5f + (k - row * 0.5f) * 36f, 50f + row * 32f, 18f, 30f, Pin, MonitorDisplay.ScreenShape.Pill));
-                    idx++;
+                    float pulse = phase == Phase.Strike ? 1f + 0.12f * Mathf.Sin(t * 18f) : phase == Phase.Ready ? 1f + 0.05f * Mathf.Sin(t * 8f) : 1f;
+                    mainText.transform.localScale = Vector3.one * pulse;
+                    if (phase == Phase.Strike) mainText.color = Color.HSVToRGB(Mathf.Repeat(t * 1.5f, 1f), 0.6f, 1f);
                 }
-            countText = Lbl(alley, "Count", aw * 0.5f, 240f, aw * 0.5f, 80f, "", 56, Ink, TextAnchor.MiddleCenter, true);
-            knockText = Lbl(Screen, "Knock", 24f, 430f, 500f, 40f, "", 24, Ink, TextAnchor.MiddleLeft);
-            scoreText = Lbl(Screen, "Score", W - 24f, 430f, 500f, 40f, "", 24, Strike, TextAnchor.MiddleRight, true);
-            statusText = Lbl(Screen, "Status", 24f, 560f, W - 48f, 36f, "", 20, Ink, TextAnchor.MiddleLeft);
-        }
-
-        protected override void UpdateScreen(float dt)
-        {
-            for (int l = 0; l < 3; l++)
-            {
-                bool sel = lane == l - 1;
-                laneBoxes[l].color = sel ? new Color(Lane.r, Lane.g, Lane.b, 0.45f + 0.2f * Mathf.Sin(Time.time * 6f)) : new Color(Lane.r, Lane.g, Lane.b, 0.12f);
+                // モニターは、カメラの方を向く（少しだけ）
+                var cam = Camera.main;
+                if (cam != null)
+                {
+                    Vector3 to = panel.position - cam.transform.position;
+                    to.x = 0f;
+                    if (to.sqrMagnitude > 1e-4f) panel.rotation = Quaternion.LookRotation(to.normalized, Vector3.up);
+                }
             }
-            int down = countTimer > 0f ? Mathf.Min(screenPins.Count, knocked) : 0;
-            for (int i = 0; i < screenPins.Count; i++) screenPins[i].color = i < down ? new Color(1f, 1f, 1f, 0.12f) : Pin;
-            countText.text = countTimer > 0f ? $"{knocked}" : $"{Mathf.CeilToInt(nextBall)}";
-            countText.color = countTimer > 0f ? Strike : Ink;
-            knockText.text = countTimer > 0f ? $"この投球で落ちた {knocked}枚（{strikeCount}で STRIKE）" : $"次の球まで {Mathf.CeilToInt(nextBall)}秒";
-            scoreText.text = results.Count > 0 ? string.Join(" ", results) + $"   X×{strikes}" : "";
-            statusText.text = nextBall < laneDecideSeconds
-                ? "<color=#E8C88A>球の向きを決める時間！</color>  左に投入→左から、右→右から、両方→左右から2球"
-                : $"球が出る前の {laneDecideSeconds:0}秒に投入した側から、球が横に転がってくる";
+            if (ball != null && ball.gameObject.activeSelf && Random.value < 0.5f)
+                Emit(sparks, ball.position + Vector3.down * ballR * 0.8f, Random.value < 0.5f ? Cyan : Neon, 1);
         }
     }
 }

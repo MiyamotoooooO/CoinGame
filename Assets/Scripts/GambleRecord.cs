@@ -1,26 +1,22 @@
 ﻿using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace MedalPusher
 {
     /// <summary>
-    /// N018 ギャンブル「ネオン・スロット」。効果の発動中（曲1曲分）だけ動く。
+    /// N018 ギャンブル「ゴールデン・スロット」。効果の発動中（曲1曲分）だけ動く。
     ///
-    /// ・盤面：そろった時に、盤面の照明（左右のランプ）が点滅する
-    /// ・モニター：3つのリールのスロット。絵柄（7・ベル・さくらんぼ・星・ドクロ）が上から下へ流れて回り、
-    ///   メダルが穴に落ちるたびに、左のリールから順に止まる（止まる時に少し跳ねる）。リーチの時はリールが光り、そろうと絵柄が光って大きくなる
-    /// ・ルール（CSV のとおり）：
-    ///   3つそろうとイベント：
-    ///     7      ：sevenSeconds 秒のあいだ、中央の穴のポイント ×sevenMultiplier
-    ///     ベル    ：盤面にメダルが bellMedals 枚降ってくる（「メダルが20枚降る」）
-    ///     チェリー：ゲージ +cherryGauge
-    ///     星      ：盤面のメダル starMedals 枚が星メダルになる（中央の穴で +50pt。N026 星と同じ印）
-    ///     ドクロ  ：プッシャーが skullSeconds 秒止まる
-    ///   リーチ（2つそろった）の時、3つ目がそろう確率は reachChance
-    /// ・端の穴でもリールは止まるので、どの穴でもよいからテンポよく落とす遊び。ドクロの時は投入を控える判断も
+    /// ・ゲームにいつも置いてあるスロット台（SlotRefill）を、曲が流れている間だけパワーアップする
+    ///   見た目：スロット台が金色になり、キラキラ光る。リールの上の星（止まると光る）は、金色ではなく虹色に光る
+    ///   中身：　そろう確率を上げる（リーチ・あたりの確率）。そろった時に出るメダルの数を2倍にする
+    /// ・効果：スロットがそろうと、出目ごとのいつもの演出（777 のタワー、チェリーの爆弾、ベルのシャワーなど）が2倍の枚数で起きる。
+    ///   さらに、盤面の上からおまけのメダルが降ってくる
+    /// ・曲が終わったら、スロット台は元の色・元の確率・元の枚数にもどる
+    /// ・SlotRefill.cs（スロット台のファイル）は変えない。public の確率と枚数を一時的に変えて、
+    ///   見た目（本体の色・星の色）は、スロット台の部品の素材を一時的に入れかえて変える（曲が終わったら元にもどす）
+    /// ・モニター：使わない（いつものラウンドの画面のまま）
     ///
-    /// 見た目と音はコードで作る仮のもの。「差し替え用」に入れると、そちらを使う。
     /// シーンに置かなくても、RecordEffectSystem があれば再生時に自動で付く。CSV の「効果の型」は Scripted にする。
     /// </summary>
     [DisallowMultipleComponent]
@@ -28,290 +24,297 @@ namespace MedalPusher
     {
         public static GambleRecord Instance { get; private set; }
 
-        [Header("リール")]
-        [Tooltip("リーチの時に、3つ目がそろう確率")]
-        [Range(0f, 1f)] public float reachChance = 0.35f;
-        [Tooltip("そろわなかった時、次に回り出すまでの秒数")]
-        [Range(0f, 5f)] public float restartSeconds = 0.8f;
-        [Tooltip("絵柄の出やすさ（7・ベル・チェリー・星・ドクロ の順）")]
-        public float[] symbolWeights = { 1f, 2f, 3f, 2f, 1.5f };
+        [Header("確率（曲が流れている間）")]
+        [Tooltip("まん中のリールが、左と同じ絵で止まる確率（リーチ）。元の値より低い時は、元の値のまま")]
+        [Range(0f, 1f)] public float boostReachChance = 0.65f;
+        [Tooltip("リーチの時に、右のリールもそろう確率（あたり）。元の値より低い時は、元の値のまま")]
+        [Range(0f, 1f)] public float boostWinChance = 0.8f;
 
-        [Header("イベント")]
-        [Range(1f, 60f)] public float sevenSeconds = 10f;
-        [Range(1f, 10f)] public float sevenMultiplier = 5f;
-        [Range(1, 50)] public int bellMedals = 20;
-        [Range(0f, 100f)] public float cherryGauge = 50f;
-        [Range(1, 50)] public int starMedals = 10;
-        [Range(1f, 30f)] public float skullSeconds = 5f;
+        [Header("効果")]
+        [Tooltip("そろった時に出るメダルの数の倍率")]
+        [Range(1f, 10f)] public float medalMultiplier = 2f;
+        [Tooltip("そろった時に、おまけで上から降ってくるメダルの数")]
+        [Range(0, 50)] public int bonusRain = 8;
 
-        [Header("盤面のランプ")]
-        [Range(0f, 10f)] public float lampIntensity = 3f;
+        [Header("見た目")]
+        [Tooltip("金色の光の強さ")]
+        [Range(0f, 3f)] public float goldGlow = 0.5f;
+        [Tooltip("虹色が回る速さ")]
+        [Range(0f, 3f)] public float rainbowSpeed = 0.6f;
 
         [Header("音")]
         [Range(0f, 1f)] public float volume = 0.8f;
 
-        [Header("差し替え用（空なら仮の見た目・音）")]
-        public AudioClip stopSound;
-        public AudioClip reachSound;
+        [Header("差し替え用（空なら仮の音）")]
+        public AudioClip goldSound;
         public AudioClip winSound;
-        public AudioClip skullSound;
 
         protected override string DefaultKey => "Gamble";
         protected override string ScreenTitle => "GAMBLE";
-        protected override string ScreenSubtitle => "ネオン・スロット";
+        protected override string ScreenSubtitle => "ゴールデン・スロット";
         protected override float RecordSoundVolume => volume;
+        protected override bool UseMonitor => false;   // モニターはいつもの画面のまま
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoAttach() => Attach<GambleRecord>();
         protected override void OnAwake() => Instance = this;
-        protected override void OnDestroyed() { if (Instance == this) Instance = null; }
-
-        static readonly string[] Names = { "7", "ベル", "チェリー", "★", "ドクロ" };
-        static readonly Color[] SymbolColors =
+        protected override void OnDestroyed()
         {
-            new Color32(0xff, 0x3c, 0x3c, 0xff), new Color32(0xff, 0xd2, 0x3f, 0xff), new Color32(0xff, 0x5a, 0x9a, 0xff),
-            new Color32(0x6c, 0xd8, 0xff, 0xff), new Color32(0xb0, 0xb0, 0xc0, 0xff),
-        };
-        static readonly Color Ink = new Color32(0xf4, 0xf4, 0xf6, 0xff);
-        static readonly Color Mute = new Color32(0x9c, 0x9e, 0xae, 0xff);
-        static readonly Color Cabinet = new Color32(0x22, 0x10, 0x2a, 0xff);
+            Restore();
+            if (rainbowTex != null) Destroy(rainbowTex);
+            if (Instance == this) Instance = null;
+        }
 
-        readonly int[] result = new int[3];
-        int stopped;              // 止まったリールの数
-        float restartTimer, sevenTimer, skullTimer, flashTimer, spin;
-        int flashSymbol;
+        static readonly Color Gold = new Color32(0xff, 0xc8, 0x3c, 0xff);
 
-        readonly Light[] lamps = new Light[2];
+        // ---- スロット台 ----
+        SlotRefill slot;
+        Transform machine;
+        Material starOn;
+        Renderer[] starR, lampR, buttonR;
+        FieldInfo frameGlowField;
 
-        const int ReelCells = 4;
-        const float CellH = 112f;
-        readonly Image[][] reelCells = new Image[3][];
-        readonly Image[] reelBoxes = new Image[3];
-        readonly Image[] reelGlows = new Image[3];
-        readonly float[] reelPos = new float[3];
-        readonly float[] stopTime = new float[3];
-        float reelH = 224f;
-        Text eventText, statusText;
-        AudioClip madeStop, madeReach, madeWin, madeSkull;
+        // 元にもどすために覚えておく
+        bool boosted;
+        float origReach, origWin;
+        readonly List<int> origMedals = new List<int>();
+        readonly List<(Renderer r, Material[] mats)> origMats = new List<(Renderer, Material[])>();
+        Texture origStarTex;
+        Color origStarColor;
+
+        Material goldBright, goldPale, goldDark;
+        Texture2D rainbowTex, starMask;
+        float rainbowTimer, lastFrameGlow;
+        ParticleSystem sparkle;
+        AudioClip madeGold, madeWin;
+
+        static readonly BindingFlags Priv = BindingFlags.NonPublic | BindingFlags.Instance;
 
         protected override void BuildBoard()
         {
-            for (int i = 0; i < 2; i++)
-            {
-                int side = i == 0 ? -1 : 1;
-                lamps[i] = PointLight(side < 0 ? "LampLeft" : "LampRight", Board, new Vector3(side * HalfW * 0.8f, Layout.wallHeight * 0.6f, (FrontZ + BackZ) * 0.5f), SymbolColors[1], Layout.boardWidth);
-            }
+            sparkle = Particles("Sparkle", Board, Vector3.up, D * 1.2f, D * 0.07f, 0.9f, -0.1f, 80f);
         }
+
+        static Material Metal(Color c, float smooth, float glow)
+        {
+            var m = ProtoAssets.MakeMaterial(c, 0.95f, smooth);
+            m.EnableKeyword("_EMISSION");
+            m.SetColor("_EmissionColor", c * glow);
+            return m;
+        }
+
+        /// <summary>スロット台をさがして、中の部品（本体・星）を見つける。SlotRefill の中の private の部品は、名前で読む</summary>
+        bool FindSlot()
+        {
+            if (slot == null) slot = FindFirstObjectByType<SlotRefill>();
+            if (slot == null) return false;
+            var t = typeof(SlotRefill);
+            machine = t.GetField("machine", Priv)?.GetValue(slot) as Transform;
+            starOn = t.GetField("starOn", Priv)?.GetValue(slot) as Material;
+            starR = t.GetField("starR", Priv)?.GetValue(slot) as Renderer[];
+            lampR = t.GetField("lampR", Priv)?.GetValue(slot) as Renderer[];
+            buttonR = t.GetField("buttonR", Priv)?.GetValue(slot) as Renderer[];
+            frameGlowField = t.GetField("frameGlow", Priv);
+            if (machine == null) Debug.LogWarning("GambleRecord：スロット台の本体が見つからないので、金色にはしません（確率と枚数は変えます）。");
+            return true;
+        }
+
+        // ================================================================
+        // 流れ
+        // ================================================================
 
         protected override void OnBegin()
         {
-            stopped = 0;
-            restartTimer = 0f;
-            sevenTimer = 0f;
-            skullTimer = 0f;
+            if (!FindSlot()) { Debug.LogWarning("GambleRecord：スロット台（SlotRefill）が見つかりません。"); return; }
+            Boost();
+            if (machine != null)
+            {
+                Emit(sparkle, machine.position, Gold, 40);
+                Play(goldSound, ref madeGold, () => RecordSynth.Notes("GambleGold", new[] { 1047f, 1319f, 1568f, 2093f, 2637f }, 0.05f, 0.6f, 0.3f, RecordSynth.Wave.Bell));
+            }
+            lastFrameGlow = CurrentFrameGlow();
         }
 
-        int RandomSymbol()
+        protected override void OnEnd() => Restore();
+
+        /// <summary>確率を上げて、枚数を2倍にして、見た目を金色・虹色にする</summary>
+        void Boost()
         {
-            float sum = 0f;
-            foreach (float w in symbolWeights) sum += Mathf.Max(0f, w);
-            float r = Random.value * Mathf.Max(0.0001f, sum);
-            for (int i = 0; i < Names.Length && i < symbolWeights.Length; i++)
+            if (boosted) return;
+            boosted = true;
+            origReach = slot.reachChance;
+            origWin = slot.winChance;
+            slot.reachChance = Mathf.Max(origReach, boostReachChance);
+            slot.winChance = Mathf.Max(origWin, boostWinChance);
+            origMedals.Clear();
+            foreach (var o in slot.outcomes)
             {
-                r -= Mathf.Max(0f, symbolWeights[i]);
-                if (r <= 0f) return i;
+                origMedals.Add(o.medals);
+                o.medals = Mathf.Max(o.medals, Mathf.RoundToInt(o.medals * medalMultiplier));
             }
-            return 0;
+
+            // 本体を金色に（赤と青の板は明るい金、黒っぽいふちは暗い金。リール・星・ランプ・ボタン・まっ黒の窓・白い玉・お札はそのまま）
+            origMats.Clear();
+            if (machine != null)
+            {
+                if (goldBright == null)
+                {
+                    goldBright = Metal(new Color(1f, 0.78f, 0.25f), 0.88f, goldGlow);
+                    goldPale = Metal(new Color(1f, 0.88f, 0.55f), 0.9f, goldGlow);
+                    goldDark = Metal(new Color(0.55f, 0.38f, 0.08f), 0.8f, goldGlow * 0.4f);
+                }
+                var skip = new HashSet<Renderer>();
+                if (starR != null) foreach (var r in starR) skip.Add(r);
+                if (lampR != null) foreach (var r in lampR) skip.Add(r);
+                if (buttonR != null) foreach (var r in buttonR) skip.Add(r);
+                foreach (var r in machine.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    if (skip.Contains(r) || r.name.StartsWith("Reel")) continue;
+                    var mats = r.sharedMaterials;
+                    var next = new Material[mats.Length];
+                    bool changed = false;
+                    for (int i = 0; i < mats.Length; i++)
+                    {
+                        next[i] = mats[i];
+                        var m = mats[i];
+                        if (m == null || !m.HasProperty("_Color")) continue;
+                        Color c = m.color;
+                        float max = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+                        bool red = c.r > 0.5f && c.g < 0.3f && c.b < 0.3f;
+                        bool blue = c.b > 0.4f && c.r < 0.3f;
+                        bool dark = max > 0.05f && max < 0.15f;
+                        if (red) next[i] = goldBright;
+                        else if (blue) next[i] = goldPale;
+                        else if (dark) next[i] = goldDark;
+                        else continue;
+                        changed = true;
+                    }
+                    if (!changed) continue;
+                    origMats.Add((r, mats));
+                    r.sharedMaterials = next;
+                }
+            }
+
+            // 星：光った時の色を、金色から虹色に
+            if (starOn != null)
+            {
+                origStarTex = starOn.mainTexture;
+                origStarColor = starOn.color;
+                MakeRainbowStar(0f);
+                starOn.mainTexture = rainbowTex;
+                starOn.color = Color.white;
+            }
+        }
+
+        /// <summary>元の確率・枚数・見た目にもどす</summary>
+        void Restore()
+        {
+            if (!boosted) return;
+            boosted = false;
+            if (slot != null)
+            {
+                slot.reachChance = origReach;
+                slot.winChance = origWin;
+                for (int i = 0; i < slot.outcomes.Count && i < origMedals.Count; i++) slot.outcomes[i].medals = origMedals[i];
+            }
+            foreach (var (r, mats) in origMats) if (r != null) r.sharedMaterials = mats;
+            origMats.Clear();
+            if (starOn != null)
+            {
+                starOn.mainTexture = origStarTex;
+                starOn.color = origStarColor;
+            }
+        }
+
+        /// <summary>虹色の星の絵（元の星の形はそのまま。色だけ、まん中から外へ虹色の輪にする。hue をずらすと色が回る）</summary>
+        void MakeRainbowStar(float hue)
+        {
+            var src = starOn != null ? starOn.mainTexture as Texture2D : null;
+            if (starMask == null && src != null)
+            {
+                try
+                {
+                    // 元の星の形（すけ具合）を、読める形で写しておく
+                    starMask = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+                    starMask.SetPixels(src.GetPixels());
+                    starMask.Apply();
+                }
+                catch { starMask = null; }
+            }
+            int n = starMask != null ? starMask.width : 64;
+            if (rainbowTex == null)
+                rainbowTex = new Texture2D(n, n, TextureFormat.RGBA32, false) { name = "GambleRainbowStar", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color[n * n];
+            var mask = starMask != null ? starMask.GetPixels() : null;
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = (x + 0.5f) / n - 0.5f, dy = (y + 0.5f) / n - 0.5f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float ang = Mathf.Atan2(dy, dx) / (Mathf.PI * 2f);
+                    Color c = Color.HSVToRGB(Mathf.Repeat(hue + d * 1.6f + ang * 0.5f, 1f), 0.75f, 1f);
+                    float a = mask != null ? mask[y * n + x].a : (d < 0.45f ? 1f : 0f);
+                    // まん中は白く光る
+                    c = Color.Lerp(Color.white, c, Mathf.Clamp01(d * 4f));
+                    c.a = a;
+                    px[y * n + x] = c;
+                }
+            rainbowTex.SetPixels(px);
+            rainbowTex.Apply();
+        }
+
+        float CurrentFrameGlow()
+        {
+            if (slot == null || frameGlowField == null) return 0f;
+            return (float)frameGlowField.GetValue(slot);
         }
 
         protected override void Tick(float dt, bool running)
         {
-            spin += dt * 18f;
-            flashTimer = Mathf.MoveTowards(flashTimer, 0f, dt * 0.5f);
-            if (sevenTimer > 0f) sevenTimer -= dt;
-            if (skullTimer > 0f) skullTimer -= dt;
-            PusherHold = skullTimer > 0f;
-            if (restartTimer > 0f)
-            {
-                restartTimer -= dt;
-                if (restartTimer <= 0f) stopped = 0;
-            }
+            if (!boosted || slot == null) return;
+            // そろったかどうか：スロット台の「あたりの光」が点いた瞬間
+            float fg = CurrentFrameGlow();
+            if (fg > 1f && lastFrameGlow <= 0.01f && running) OnSlotWin();
+            lastFrameGlow = fg;
         }
 
-        protected override void OnDrop(Medal medal, DropZoneType type)
+        void OnSlotWin()
         {
-            if (type == DropZoneType.Center && sevenTimer > 0f)
+            if (bonusRain > 0) RainMedals(bonusRain);
+            if (machine != null)
             {
-                int extra = AddMultiplied(sevenMultiplier);
-                Pop($"×{sevenMultiplier:0} +{CenterPoints + extra}", SymbolColors[0], new Vector2(BodyW * Random.Range(0.3f, 0.7f), 420f));
+                for (int i = 0; i < 6; i++)
+                    Emit(sparkle, machine.position + Random.insideUnitSphere * D * 0.6f, Color.HSVToRGB(i / 6f, 0.7f, 1f), 10);
             }
-            if (stopped >= 3) return;
-
-            int sym = RandomSymbol();
-            if (stopped == 2 && result[0] == result[1] && Random.value < reachChance) sym = result[0];
-            result[stopped] = sym;
-            stopTime[stopped] = Time.time;
-            stopped++;
-            Play(stopSound, ref madeStop, () => RecordSynth.Notes("GambleStop", new[] { 660f }, 0.03f, 0.08f, 0.25f, RecordSynth.Wave.Square), 0.6f);
-            if (stopped == 2 && result[0] == result[1])
-                Play(reachSound, ref madeReach, () => RecordSynth.Notes("GambleReach", new[] { 880f, 988f, 880f, 988f }, 0.08f, 0.15f, 0.25f, RecordSynth.Wave.Square));
-            if (stopped == 3) Judge();
+            Play(winSound, ref madeWin, () => RecordSynth.Notes("GambleWin", new[] { 1568f, 2093f, 2637f, 3136f }, 0.06f, 0.5f, 0.3f, RecordSynth.Wave.Bell));
+            PopCenter("ゴールデン大当たり！", Gold);
+            Speaker(1f, 16, Gold);
         }
 
-        void Judge()
-        {
-            restartTimer = restartSeconds;
-            if (result[0] != result[1] || result[1] != result[2]) return;
-            restartTimer = restartSeconds + 1.5f;
-            int s = result[0];
-            flashSymbol = s;
-            flashTimer = 1f;
-            switch (s)
-            {
-                case 0:
-                    sevenTimer = sevenSeconds;
-                    PopCenter($"777！ {sevenSeconds:0}秒間 ×{sevenMultiplier:0}", SymbolColors[0]);
-                    break;
-                case 1:
-                    RainMedals(bellMedals);
-                    PopCenter($"ベル！ メダルが {bellMedals}枚降る", SymbolColors[1]);
-                    break;
-                case 2:
-                    AddGauge(cherryGauge);
-                    PopCenter($"チェリー！ ゲージ +{cherryGauge:0}", SymbolColors[2]);
-                    break;
-                case 3:
-                    int n = 0;
-                    for (int i = 0; i < starMedals; i++)
-                    {
-                        var m = PickMedal(x => !MedalMarks.Has(x));
-                        if (m == null) break;
-                        MedalMarks.Set(m, StarRecord.StarKind, SymbolColors[3], 3f);
-                        n++;
-                    }
-                    PopCenter($"星！ {n}枚が星メダルに", SymbolColors[3]);
-                    break;
-                default:
-                    skullTimer = skullSeconds;
-                    Play(skullSound, ref madeSkull, () => RecordSynth.Sweep("GambleSkull", 300f, 60f, 0.8f, 0.4f, RecordSynth.Wave.Saw));
-                    PopCenter($"ドクロ… プッシャーが {skullSeconds:0}秒止まる", SymbolColors[4]);
-                    return;
-            }
-            Play(winSound, ref madeWin, () => RecordSynth.Notes("GambleWin", new[] { RecordSynth.Note(12), RecordSynth.Note(16), RecordSynth.Note(19), RecordSynth.Note(24), RecordSynth.Note(19), RecordSynth.Note(24) }, 0.07f, 0.5f, 0.3f, RecordSynth.Wave.Square));
-            Speaker(1f, 16, SymbolColors[s]);
-        }
+        // ================================================================
+        // 見た目（毎フレーム）
+        // ================================================================
+
+        protected override bool KeepBoardVisible() => sparkle != null && sparkle.particleCount > 0;
 
         protected override void UpdateBoard(float dt)
         {
-            for (int i = 0; i < 2; i++)
+            if (!boosted) return;
+            float t = Time.time;
+            // 金色がゆっくり光る
+            float g = goldGlow * (0.75f + 0.35f * Mathf.Sin(t * 3f));
+            if (goldBright != null) goldBright.SetColor("_EmissionColor", goldBright.color * g);
+            if (goldPale != null) goldPale.SetColor("_EmissionColor", goldPale.color * g);
+            // 星の虹色を回す（0.05 秒ごとに描き直す）
+            rainbowTimer -= dt;
+            if (rainbowTimer <= 0f && starOn != null)
             {
-                if (lamps[i] == null) continue;
-                bool blink = flashTimer > 0f && Mathf.Repeat(Time.time * 8f + i, 2f) < 1f;
-                lamps[i].color = flashTimer > 0f ? SymbolColors[flashSymbol] : SymbolColors[1];
-                lamps[i].intensity = BoardShown * lampIntensity * (blink ? 1f : flashTimer > 0f ? 0.1f : 0.25f);
+                rainbowTimer = 0.05f;
+                MakeRainbowStar(t * rainbowSpeed);
             }
-        }
-
-        protected override void BuildScreen()
-        {
-            float W = BodyW;
-            var cab = Panel(Screen, "Cabinet", W * 0.5f, 200f, W - 48f, 360f, Cabinet);
-            float cw = W - 48f;
-            Lbl(cab, "Logo", cw * 0.5f, 34f, cw, 50f, "NEON SLOT 198X", 30, SymbolColors[1], TextAnchor.MiddleCenter, true);
-            float rw = Mathf.Min(200f, (cw - 120f) / 3f);
-            for (int i = 0; i < 3; i++)
-            {
-                float cx = cw * 0.5f + (i - 1) * (rw + 24f);
-                reelGlows[i] = Img(cab, $"ReelGlow{i}", cx, 190f, rw + 26f, reelH + 26f, new Color(1f, 0.85f, 0.3f, 0f), MonitorDisplay.ScreenShape.Pill);
-                Img(cab, $"ReelFrame{i}", cx, 190f, rw + 10f, reelH + 10f, SymbolColors[1], MonitorDisplay.ScreenShape.Pill);
-                var window = Panel(cab, $"Reel{i}", cx, 190f, rw, reelH, new Color32(0xf8, 0xf4, 0xe8, 0xff));
-                reelBoxes[i] = window.GetComponent<Image>();
-                reelCells[i] = new Image[ReelCells];
-                float size = Mathf.Min(rw - 16f, CellH - 10f);
-                for (int k = 0; k < ReelCells; k++)
-                {
-                    var img = Img(window, $"Sym{i}_{k}", rw * 0.5f, reelH * 0.5f, size, size, Color.white);
-                    img.sprite = RecordSymbolSprites.Get(k % RecordSymbolSprites.Count);
-                    img.preserveAspect = true;
-                    reelCells[i][k] = img;
-                }
-                // 上と下を暗くして、丸いリールに見せる
-                Img(window, "ShadeTop", rw * 0.5f, 18f, rw, 36f, new Color(0f, 0f, 0f, 0.28f));
-                Img(window, "ShadeBottom", rw * 0.5f, reelH - 18f, rw, 36f, new Color(0f, 0f, 0f, 0.28f));
-                Img(window, "Shine", rw * 0.3f, reelH * 0.5f, 10f, reelH - 30f, new Color(1f, 1f, 1f, 0.18f), MonitorDisplay.ScreenShape.Pill);
-                reelPos[i] = Random.Range(0f, 5f);
-            }
-            Img(cab, "Payline", cw * 0.5f, 190f, 3f * (rw + 24f) + 10f, 3f, new Color(1f, 0.2f, 0.2f, 0.7f));
-            eventText = Lbl(cab, "Event", cw * 0.5f, 330f, cw, 40f, "", 24, Ink);
-            statusText = Lbl(Screen, "Status", 24f, 560f, W - 48f, 36f, "", 20, Ink, TextAnchor.MiddleLeft);
-
-            // 絵柄の説明（絵と短い文字）
-            string[] legend =
-            {
-                $"{sevenSeconds:0}秒 ×{sevenMultiplier:0}", $"メダル{bellMedals}枚", $"ゲージ+{cherryGauge:0}", $"星メダル{starMedals}枚", "プッシャー停止",
-            };
-            float lw = (W - 48f) / 5f;
-            for (int i = 0; i < 5; i++)
-            {
-                float x = 24f + lw * i;
-                var icon = Img(Screen, $"LegendIcon{i}", x + 22f, 440f, 40f, 40f, Color.white);
-                icon.sprite = RecordSymbolSprites.Get(i);
-                icon.preserveAspect = true;
-                Lbl(Screen, $"Legend{i}", x + 46f, 440f, lw - 50f, 40f, legend[i], 16, Mute, TextAnchor.MiddleLeft);
-            }
-        }
-
-        protected override void UpdateScreen(float dt)
-        {
-            float rw = 0f;
-            bool win = flashTimer > 0f && stopped == 3 && result[0] == result[1] && result[1] == result[2];
-            for (int i = 0; i < 3; i++)
-            {
-                if (reelBoxes[i] == null) continue;
-                rw = reelBoxes[i].rectTransform.sizeDelta.x;
-                float frac, offset = 0f;
-                int baseSym;
-                if (i < stopped)
-                {
-                    // 止まった：結果の絵柄をまん中に。止まった直後は少し跳ねる
-                    float b = Time.time - stopTime[i];
-                    offset = Mathf.Exp(-b * 9f) * Mathf.Sin(b * 28f) * 18f;
-                    baseSym = result[i];
-                    frac = 0f;
-                    reelPos[i] = result[i];
-                }
-                else
-                {
-                    reelPos[i] += dt * 14f;
-                    baseSym = Mathf.FloorToInt(reelPos[i]);
-                    frac = reelPos[i] - baseSym;
-                }
-                for (int k = 0; k < ReelCells; k++)
-                {
-                    int slot = k - 2;   // -2, -1, 0, 1
-                    int sym = ((baseSym - slot) % 5 + 5) % 5;
-                    var img = reelCells[i][k];
-                    img.sprite = RecordSymbolSprites.Get(sym);
-                    float y = reelH * 0.5f + (slot + frac) * CellH + offset;
-                    Place(img.rectTransform, rw * 0.5f, y);
-                    bool center = i < stopped && slot == 0;
-                    float pulse = win && center ? 1.15f + 0.15f * Mathf.Sin(Time.time * 16f) : 1f;
-                    img.rectTransform.localScale = i < stopped ? Vector3.one * pulse : new Vector3(1f, 1.12f, 1f);
-                    img.color = i < stopped ? (center ? Color.white : new Color(1f, 1f, 1f, 0.55f)) : new Color(1f, 1f, 1f, 0.8f);
-                }
-                bool reach = stopped == 2 && i == 2 && result[0] == result[1];
-                reelBoxes[i].color = reach ? Color.Lerp(new Color32(0xf8, 0xf4, 0xe8, 0xff), SymbolColors[result[0]], 0.4f + 0.4f * Mathf.Sin(Time.time * 14f))
-                                           : i < stopped ? new Color32(0xf8, 0xf4, 0xe8, 0xff) : new Color32(0xe8, 0xe4, 0xd8, 0xff);
-                Color glow = win ? SymbolColors[flashSymbol] : reach ? SymbolColors[result[0]] : new Color(1f, 0.85f, 0.3f);
-                float ga = win ? 0.6f + 0.4f * Mathf.Sin(Time.time * 12f + i) : reach ? 0.35f + 0.3f * Mathf.Sin(Time.time * 14f) : 0f;
-                reelGlows[i].color = new Color(glow.r, glow.g, glow.b, Mathf.Max(0f, ga));
-            }
-            string ev = sevenTimer > 0f ? $"<color=#FF3C3C>×{sevenMultiplier:0}  残り {Mathf.CeilToInt(sevenTimer)}秒</color>"
-                      : skullTimer > 0f ? $"<color=#B0B0C0>プッシャー停止  {Mathf.CeilToInt(skullTimer)}秒</color>" : "";
-            eventText.text = ev;
-            statusText.text = stopped == 2 && result[0] == result[1]
-                ? "<color=#FFD23F>リーチ！</color>  次に穴に落ちると、最後のリールが止まる"
-                : "メダルが穴（中央・端）に落ちるたびに、リールが1つ止まる";
+            // スロット台のまわりのキラキラ
+            if (machine != null && Random.value < dt * 12f)
+                Emit(sparkle, machine.position + Random.insideUnitSphere * D * 0.7f, Random.value < 0.6f ? Gold : Color.HSVToRGB(Random.value, 0.6f, 1f), 1);
         }
     }
 }
