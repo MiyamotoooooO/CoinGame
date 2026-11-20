@@ -19,6 +19,8 @@ namespace MedalPusher
     ///   ExplodeAt        ：爆発。まわりをはじき、煙を出し、画面を揺らし、メダルを飛び散らせる
     ///   Beam             ：上空から光の線（レーザー・光の線）を一瞬出す
     /// ・SparkAt（火花）・SmokeAt（煙）で、大技の粒を出せる
+    /// ・DepthScale：盤面を前後に伸ばした倍率（BoardDepthTool）。数字で決めたワールドの Z にかけて、伸ばした盤面に合わせる
+    /// ・DrawOverMonitor：物をモニターより手前に映す（モニターに隠れないようにする）。BoardPop・BoardLabel の文字はいつもこれを使う
     /// ・盤面のメダルが MedalSoftCap を超えている時は、Budget で降らせる枚数を半分にする（重くならないように）
     /// ・持ち上げている（物理を止めている）メダルは、リセットの時と ReleaseAllHeld で必ず放す
     /// </summary>
@@ -172,6 +174,50 @@ namespace MedalPusher
             return new Vector3(0f, FloorY(0f, z), z);
         }
 
+        // ================================================================
+        // 盤面の奥行き（BoardDepthTool で前後に伸ばした倍率）
+        // ================================================================
+
+        /// <summary>盤面を前後に伸ばす前の、手前のふちの Z。これと今の手前のふちをくらべて、伸ばした倍率を出す</summary>
+        public const float BaseFloorFrontZ = -0.7854f;
+
+        /// <summary>
+        /// 盤面を前後に伸ばした倍率（伸ばしていなければ 1）。盤面はワールドの Z=0 を中心に伸びるので、
+        /// 伸ばす前の盤面に合わせて数字で決めたワールドの Z は、これをかけると伸ばした盤面の同じ場所になる
+        /// </summary>
+        public static float DepthScaleOf(MedalPusherGame g)
+        {
+            if (g == null) return 1f;
+            float k = g.layout.floorFrontZ / BaseFloorFrontZ;
+            return k > 0.1f ? k : 1f;
+        }
+
+        /// <summary>この盤面の、前後に伸ばした倍率（DepthScaleOf）</summary>
+        protected float DepthScale => DepthScaleOf(game);
+
+        // ================================================================
+        // モニターより手前に映す
+        // ================================================================
+
+        /// <summary>
+        /// モニターと一緒に上に描くレイヤー（くっきり表示の時だけ）。くっきり表示でない時は -1。
+        /// くっきり表示の時、モニターはゲーム画面の上に重ねて描くので、ふつうの物はモニターの後ろに隠れる
+        /// </summary>
+        protected int OverMonitorLayer =>
+            game != null && game.monitor != null && game.monitor.sharpMonitor ? Mathf.Clamp(game.monitor.overlayLayer, 0, 31) : -1;
+
+        /// <summary>
+        /// root と、その子をぜんぶ、モニターより手前に映す（モニターと一緒に上に描くレイヤーに置く）。
+        /// 注意：このレイヤーの物は、盤面のメダル・壁・プッシャーより上に描かれる（後ろにあっても隠れない）。
+        /// また、ドット化されずにくっきり映る。空に浮かぶ物・文字に使い、床や穴から出入りする物には使わない
+        /// </summary>
+        protected void DrawOverMonitor(Transform root)
+        {
+            int layer = OverMonitorLayer;
+            if (root == null || layer < 0) return;
+            foreach (var t in root.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
+        }
+
         /// <summary>上空（メダルを降らせる高さ）</summary>
         protected float SkyY => Layout.launcherHeight + D * 0.5f;
 
@@ -182,6 +228,17 @@ namespace MedalPusher
         protected bool MouseOnFloor(float floorY, out Vector3 point)
         {
             point = Vector3.zero;
+            if (!MouseRay(out var ray)) return false;
+            var plane = new Plane(Vector3.up, new Vector3(0f, floorY, 0f));
+            if (!plane.Raycast(ray, out float dist)) return false;
+            point = ray.GetPoint(dist);
+            return true;
+        }
+
+        /// <summary>マウスのカーソルから盤面へ向かう Ray（画面のゆがみ LensDistortion の分を戻してから作る）。カメラが無ければ false</summary>
+        protected bool MouseRay(out Ray ray)
+        {
+            ray = default;
             var main = Camera.main;
             if (main == null) return false;
             Vector2 mouse = InputCompat.MousePosition();
@@ -198,10 +255,7 @@ namespace MedalPusher
                 d.x /= aspect;
                 uv = d + new Vector2(0.5f, 0.5f);
             }
-            var ray = main.ViewportPointToRay(new Vector3(uv.x, uv.y, 0f));
-            var plane = new Plane(Vector3.up, new Vector3(0f, floorY, 0f));
-            if (!plane.Raycast(ray, out float dist)) return false;
-            point = ray.GetPoint(dist);
+            ray = main.ViewportPointToRay(new Vector3(uv.x, uv.y, 0f));
             return true;
         }
 

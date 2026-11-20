@@ -84,6 +84,7 @@ namespace MedalPusher
         [Header("置き場所（ワールド）")]
         [Tooltip("オン：下の位置・向き・大きさで置く。オフ：画面の割合（Viewport）で置く")]
         public bool useWorldPose = true;
+        [Tooltip("位置（盤面を前後に伸ばす前の値。Z には、伸ばした倍率を自動でかける）")]
         public Vector3 worldPosition = new Vector3(2.49f, 1.327f, -0.15f);
         [Tooltip("向き（度）")]
         public Vector3 worldRotation = new Vector3(3.484f, 83.603f, -0.817f);
@@ -244,7 +245,7 @@ namespace MedalPusher
         {
             if (useWorldPose)
             {
-                machine.position = worldPosition;
+                machine.position = new Vector3(worldPosition.x, worldPosition.y, worldPosition.z * RecordScriptBase.DepthScaleOf(game));   // 盤面を前後に伸ばした分
                 machine.rotation = Quaternion.Euler(worldRotation);
                 machine.localScale = Vector3.one * worldScale;
                 return;

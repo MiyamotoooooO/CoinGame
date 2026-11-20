@@ -196,7 +196,7 @@ Transform:
   m_GameObject: {fileID: 73872010}
   serializedVersion: 2
   m_LocalRotation: {x: 0.050594542, y: -0.65482897, z: 0.04401028, w: 0.7527963}
-  m_LocalPosition: {x: -1.578, y: 0.538, z: -0.269}
+  m_LocalPosition: {x: -1.578, y: 0.538, z: -0.47654995}
   m_LocalScale: {x: 1.33, y: 1.33, z: 1.33}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -359,20 +359,20 @@ MonoBehaviour:
     holeRight: {fileID: 0}
   layout:
     boardWidth: 3.4272003
-    floorFrontZ: -0.7854001
+    floorFrontZ: -1.3913844
     wallHeight: 0.3213
     wallThickness: 0.08568
     pusherHeight: 0.22848001
-    pusherDepth: 1.1424001
-    pusherRetractZ: 0.71400005
+    pusherDepth: 2.0238316
+    pusherRetractZ: 1.6893
     pusherSideGap: 0.014280001
     backWallOffset: 0.55
     backWallGap: 0.014280001
     centerHoleWidth: 2.1420002
     holeTopY: -0.28560004
     holeBottomY: -0.55692
-    holeDepth: 0.30702004
-    cameraPosition: {x: 0, y: 1.5936942, z: -2.651658}
+    holeDepth: 0.5439048
+    cameraPosition: {x: 0, y: 1.5936942, z: -3.2576423}
     cameraRotation: {x: 17.25, y: 0, z: 0}
     cameraFieldOfView: 64
     cameraLensDistortion: 0.3
@@ -380,7 +380,7 @@ MonoBehaviour:
     launcherZFromWall: 0.21420002
   tuning:
     pusherCycleSeconds: 4
-    pusherStroke: 0.42840004
+    pusherStroke: 0.95
     medalDiameter: 0.28560004
     medalThickness: 0.032130003
     colliderSegments: 12
@@ -801,7 +801,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 7.14, y: 7.14, z: 7.14}
+  m_LocalScale: {x: 7.14, y: 7.14, z: 12.648948}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 1371967903}
@@ -1037,7 +1037,7 @@ Transform:
   m_GameObject: {fileID: 333357213}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0, y: 0, z: -0.991}
+  m_LocalPosition: {x: -0, y: 0, z: -1.7556171}
   m_LocalScale: {x: 1, y: 1, z: 0.4344822}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1103,7 +1103,7 @@ Transform:
   m_GameObject: {fileID: 375461632}
   serializedVersion: 2
   m_LocalRotation: {x: -0.52066773, y: -0.46049032, z: -0.4024904, w: 0.59569734}
-  m_LocalPosition: {x: -1.658, y: 1.317, z: 0.473}
+  m_LocalPosition: {x: -1.658, y: 1.317, z: 0.8379485}
   m_LocalScale: {x: 3.85, y: 3.85, z: 3.85}
   m_ConstrainProportionsScale: 1
   m_Children:
@@ -1277,7 +1277,7 @@ Transform:
   m_GameObject: {fileID: 459990490}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0, y: 0, z: -1.3332}
+  m_LocalPosition: {x: -0, y: 0, z: -2.3618453}
   m_LocalScale: {x: 1, y: 1, z: 0.4344822}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1756,7 +1756,7 @@ Transform:
   m_GameObject: {fileID: 1140389764}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -10.248419, y: -8.857899, z: -1.5529891}
+  m_LocalPosition: {x: -10.248419, y: -8.857899, z: -2.7512152}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2153,7 +2153,7 @@ Transform:
   m_GameObject: {fileID: 2112673449}
   serializedVersion: 2
   m_LocalRotation: {x: 0.042163994, y: -0.47660917, z: 0.022893175, w: 0.8778051}
-  m_LocalPosition: {x: -1.95, y: 0.871, z: -0.383}
+  m_LocalPosition: {x: -1.95, y: 0.871, z: -0.67850786}
   m_LocalScale: {x: 1.05, y: 1.06, z: 1.06}
   m_ConstrainProportionsScale: 0
   m_Children: []

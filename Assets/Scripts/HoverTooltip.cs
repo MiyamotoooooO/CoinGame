@@ -23,6 +23,7 @@ namespace MedalPusher
     ///   Pixel Height）で作るので、ドットの輪郭になる。モニターやボスより上に重ねる
     /// ・説明の枠は、カーソルの右下に出す（画面からはみ出す時は左・上に出す）
     /// ・ショップの間、レコード棚などの UI の上にカーソルがある時、マウスを押している間は出さない
+    /// ・Blockers に何か入っている間も出さない（例：射的のレコードで狙っている間）
     /// ・MedalPusherGame は変えない。シーンに置かなくても、MedalPusherGame があれば再生時に自動で付く
     /// </summary>
     [DisallowMultipleComponent]
@@ -42,6 +43,9 @@ namespace MedalPusher
         [Range(250f, 800f)] public float tooltipWidth = 440f;
         [Tooltip("カーソルを合わせてから、説明を出すまでの秒数")]
         [Range(0f, 1f)] public float showDelay = 0.08f;
+
+        /// <summary>ここに入っている物があれば、説明と輪郭を出さない（演出がマウスを使う間に入れる）</summary>
+        public static readonly HashSet<object> Blockers = new HashSet<object>();
 
         // ---- 色 ----
         static readonly Color SubColor = new Color(0.72f, 0.75f, 0.85f);
@@ -132,6 +136,7 @@ namespace MedalPusher
         bool Allowed()
         {
             if (!showTooltip && !showOutline) return false;
+            if (Blockers.Count > 0) return false;                                               // 演出がマウスを使っている
             var s = game.State;
             if (s == GameState.Shop || s == GameState.Finished) return false;                 // ショップはモニターの説明がある
             if (InputCompat.MouseHeld() || InputCompat.MouseRightHeld()) return false;         // 発射している間はじゃましない
