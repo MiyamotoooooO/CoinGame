@@ -18,12 +18,12 @@ namespace MedalPusher
     ///   3 つそろえばあたり。そろわなければ「そろわず」。どちらも少し待って、3 本とも回り直す（メダルはいらない）
     /// ・3 つのリールがそろった出目で、盤面にメダルが出る（所持メダルは減らない。落とせばいつもどおりポイントとメダル）
     ///     777　　：盤面の下からメダルのタワーがせり上がり、崩れて広がる（30 枚）
-    ///     チェリー：上からチェリーの爆弾が 2 つ落ちてきて、盤面で破裂してメダルが飛び散る（12 枚 × 2）
-    ///     ベル　　：盤面の上に大きなベルが出て鳴り、メダルのシャワーが盤面全体に降る（15 枚）
-    ///     スイカ　：奥から大きなスイカが転がってきて割れ、プッシャーの前にメダルがこぼれる（18 枚）
-    ///     BAR　　 ：金の棒が横切りながら、プッシャーの前に横一列のメダルの壁を並べる（12 枚）
-    ///     レコード：大きなレコード盤が回りながら降りてきて、回転にのってメダルを渦巻き状に飛ばす（20 枚）
-    ///     ダイヤ　：光るダイヤが落ちてきて、盤面でレアメダルに変わる（レアメダル 3 枚）
+    ///     チェリー：上からチェリー爆弾が 2 つ落ちてきて、導火線が燃えつきると爆発してメダルが飛び出す（12 枚 × 2。SlotRefillFx.cs）
+    ///     貯金箱　：ブタの貯金箱がさかさまになってブンブンふられ、ふるたびに口からメダルが落ちる（15 枚。SlotRefillFx.cs）
+    ///     雨雲　　：雲が集まっていなずまが光り、雲が横切りながらメダルの雨を降らせる。最後に虹（18 枚。SlotRefillFx.cs）
+    ///     宝箱　　：宝箱がドスンと落ちてガタガタ、ふたがパカッと開いて、メダルが噴水のように飛び出す（20 枚。SlotRefillFx.cs）
+    ///     レコード：スロットからレコード盤が 5 枚飛んで、グルーヴゲージに吸いこまれ、1 枚ごとにゲージが増える（+25。メダルは出ない。SlotRefillFx.cs）
+    ///     ダイヤ　：光るダイヤが落ちてきて床の上で止まって光り、キラーンとはじけてレアメダルが飛び出す（レアメダル 3 枚。SlotRefillFx.cs）
     ///   確率と枚数は仮。Outcomes の Weight は「左のリールにその絵が出やすい度合い」
     ///   Reach Chance（まん中が左と同じになる確率）と Win Chance（リーチの時に右もそろう確率）で、あたりの出やすさを決める
     /// ・あたりの時は、星とランプが点滅し、アーチの窓に「+30」などの枚数が出る
@@ -33,9 +33,10 @@ namespace MedalPusher
     /// ・MedalPusherGame は変えない。シーンに置かなくても、MedalPusherGame があれば再生時に自動で付く
     /// </summary>
     [DisallowMultipleComponent]
-    public class SlotRefill : MonoBehaviour
+    public partial class SlotRefill : MonoBehaviour
     {
-        public enum Symbol { Seven, Cherry, Bell, Melon, Bar, Record, Diamond, Miss }
+        /// <summary>出目（ならびの番号は変えない。PiggyBank は前のベル、Cloud は前のスイカ、Chest は前の BAR の場所）</summary>
+        public enum Symbol { Seven, Cherry, PiggyBank, Cloud, Chest, Record, Diamond, Miss }
 
         [System.Serializable]
         public class Outcome
@@ -43,7 +44,7 @@ namespace MedalPusher
             public Symbol symbol;
             [Tooltip("出やすさ（重み。全部の出目の重みを足した中の割合で出る）")]
             [Min(0f)] public float weight = 1f;
-            [Tooltip("出るメダルの枚数（チェリーは 1 発ぶん）")]
+            [Tooltip("出るメダルの枚数（チェリーは 1 発ぶん。レコードはグルーヴゲージの増える量）")]
             [Min(0)] public int medals = 10;
         }
 
@@ -55,10 +56,10 @@ namespace MedalPusher
         {
             new Outcome { symbol = Symbol.Seven,   weight = 2f,  medals = 30 },
             new Outcome { symbol = Symbol.Cherry,  weight = 6f,  medals = 12 },
-            new Outcome { symbol = Symbol.Bell,    weight = 8f,  medals = 15 },
-            new Outcome { symbol = Symbol.Melon,   weight = 5f,  medals = 18 },
-            new Outcome { symbol = Symbol.Bar,     weight = 8f,  medals = 12 },
-            new Outcome { symbol = Symbol.Record,  weight = 4f,  medals = 20 },
+            new Outcome { symbol = Symbol.PiggyBank, weight = 8f, medals = 15 },
+            new Outcome { symbol = Symbol.Cloud,   weight = 6f,  medals = 18 },
+            new Outcome { symbol = Symbol.Chest,   weight = 4f,  medals = 20 },
+            new Outcome { symbol = Symbol.Record,  weight = 5f,  medals = 25 },   // グルーヴゲージ +25
             new Outcome { symbol = Symbol.Diamond, weight = 3f,  medals = 3 },
         };
 
@@ -210,6 +211,7 @@ namespace MedalPusher
             if (machine == null) return;
             float dt = Time.deltaTime;
             PlaceMachine();
+            DebugKeys();   // 左 Shift ＋ 1〜7 で出目の演出を出す（SlotRefillFx.cs）
 
             if (!busy)
             {
@@ -302,7 +304,7 @@ namespace MedalPusher
                 var outcome = FindOutcome(target);
                 frameGlow = 1.6f;
                 int shown = target == Symbol.Cherry ? outcome.medals * 2 : outcome.medals;
-                ShowText(target == Symbol.Diamond ? $"+{shown} ★" : $"+{shown}", new Color(1f, 0.92f, 0.4f), 2.6f);
+                ShowText(target == Symbol.Diamond ? $"+{shown} ★" : target == Symbol.Record ? $"ゲージ+{shown}" : $"+{shown}", new Color(1f, 0.92f, 0.4f), 2.6f);
                 Play(target == Symbol.Seven ? sfxBig : sfxWin, 0.8f);
                 StartCoroutine(RunOutcome(outcome));
                 yield return new WaitForSeconds(resetDelay + 1.2f);
@@ -433,12 +435,20 @@ namespace MedalPusher
                     yield return new WaitForSeconds(0.35f);
                     yield return CherryBomb(o.medals, 1);
                     break;
-                case Symbol.Bell: yield return BellShower(o.medals); break;
-                case Symbol.Melon: yield return Watermelon(o.medals); break;
-                case Symbol.Bar: yield return BarWall(o.medals); break;
-                case Symbol.Record: yield return RecordSpin(o.medals); break;
+                // ※ 貯金箱・雨雲・宝箱は、作りかえるまで前の演出を仮に使う
+                case Symbol.PiggyBank: yield return BellShower(o.medals); break;   // ブタの貯金箱（SlotRefillFx.cs。名前は前のまま）
+                case Symbol.Cloud: yield return Watermelon(o.medals); break;   // コインの雨雲（SlotRefillFx.cs。名前は前のまま）
+                case Symbol.Chest: yield return BarWall(o.medals); break;   // 宝箱（SlotRefillFx.cs。名前は前のまま）
+                case Symbol.Record: yield return RecordSpin(o.medals); break;   // グルーヴゲージを足す（メダルは出ない。SlotRefillFx.cs）
                 case Symbol.Diamond: yield return DiamondDrop(o.medals); break;
             }
+        }
+
+        /// <summary>グルーヴゲージを足す（レコードの出目）</summary>
+        void AddGroove(float amount)
+        {
+            var fx = FindFirstObjectByType<RecordEffectSystem>();
+            if (fx != null) fx.AddGauge(amount);
         }
 
         // ---- 盤面の寸法 ----
@@ -530,274 +540,17 @@ namespace MedalPusher
             }
         }
 
-        /// <summary>チェリー：上からチェリーの爆弾が落ちてきて、盤面で破裂してメダルが飛び散る</summary>
-        IEnumerator CherryBomb(int count, int side)
-        {
-            float x = Mathf.Clamp(side * Random.Range(Half * 0.2f, Half * 0.65f), -Half, Half);
-            float z = Mathf.Lerp(FrontZ, LowBackZ, Random.Range(0.35f, 0.75f));
-            float fy = FloorY(x, z);
-            var bomb = new GameObject("CherryBomb");
-            props.Add(bomb);
-            var red = ProtoAssets.MakeMaterial(new Color(0.85f, 0.08f, 0.15f), 0.1f, 0.8f);
-            var green = ProtoAssets.MakeMaterial(new Color(0.2f, 0.6f, 0.2f), 0f, 0.4f);
-            Prim(PrimitiveType.Sphere, bomb.transform, new Vector3(-0.32f, 0f, 0f), Vector3.one * 0.7f, red);
-            Prim(PrimitiveType.Sphere, bomb.transform, new Vector3(0.32f, -0.05f, 0f), Vector3.one * 0.66f, red);
-            var s1 = Prim(PrimitiveType.Cylinder, bomb.transform, new Vector3(-0.15f, 0.55f, 0f), new Vector3(0.06f, 0.3f, 0.06f), green);
-            s1.localRotation = Quaternion.Euler(0f, 0f, -25f);
-            var s2 = Prim(PrimitiveType.Cylinder, bomb.transform, new Vector3(0.18f, 0.52f, 0f), new Vector3(0.06f, 0.28f, 0.06f), green);
-            s2.localRotation = Quaternion.Euler(0f, 0f, 25f);
-            Prim(PrimitiveType.Sphere, bomb.transform, new Vector3(0.02f, 0.85f, 0f), new Vector3(0.25f, 0.08f, 0.15f), green);   // 葉
-            bomb.transform.localScale = Vector3.one * D * 1.4f;
-            float startY = fy + 2.2f, fall = 0.65f;
-            for (float t = 0f; t < fall; t += Time.deltaTime)
-            {
-                float k = t / fall;
-                bomb.transform.position = new Vector3(x, Mathf.Lerp(startY, fy + D * 0.4f, k * k), z);
-                bomb.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * 20f) * 10f);
-                yield return null;
-            }
-            // 着地：ふくらんで破裂
-            Play(sfxThud, 0.5f);
-            for (float t = 0f; t < 0.18f; t += Time.deltaTime)
-            {
-                bomb.transform.localScale = Vector3.one * D * 1.4f * (1f + t * 2.2f);
-                yield return null;
-            }
-            Vector3 c = new Vector3(x, fy + D * 0.4f, z);
-            Destroy(bomb);
-            props.Remove(bomb);
-            Burst(c, new Color(1f, 0.25f, 0.35f), 40, 2.2f, null);
-            Burst(c, new Color(1f, 0.85f, 0.4f), 20, 1.6f, null);
-            Play(sfxPop, 0.8f);
-            for (int i = 0; i < count; i++)
-            {
-                float a = Random.Range(0f, Mathf.PI * 2f);
-                var v = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * Random.Range(0.6f, 1.4f) + Vector3.up * Random.Range(1.4f, 2.4f);
-                SpawnMedal(c + Vector3.up * D * 0.3f, v);
-            }
-        }
+        // チェリー（CherryBomb）は SlotRefillFx.cs にある
 
-        /// <summary>ベル：盤面の上に大きなベルが出て鳴り、メダルのシャワーが盤面全体に降る</summary>
-        IEnumerator BellShower(int count)
-        {
-            float z = Mathf.Lerp(FrontZ, LowBackZ, 0.5f);
-            float fy = FloorY(0f, z);
-            var bell = new GameObject("Bell");
-            props.Add(bell);
-            var gold = ProtoAssets.MakeMaterial(new Color(1f, 0.78f, 0.2f), 0.9f, 0.75f);
-            Prim(PrimitiveType.Sphere, bell.transform, new Vector3(0f, 0.25f, 0f), new Vector3(0.7f, 0.7f, 0.7f), gold);
-            Prim(PrimitiveType.Cylinder, bell.transform, new Vector3(0f, -0.05f, 0f), new Vector3(0.82f, 0.3f, 0.82f), gold);
-            Prim(PrimitiveType.Cylinder, bell.transform, new Vector3(0f, -0.3f, 0f), new Vector3(1.05f, 0.05f, 1.05f), gold);
-            Prim(PrimitiveType.Sphere, bell.transform, new Vector3(0f, -0.4f, 0f), Vector3.one * 0.22f, gold);
-            Prim(PrimitiveType.Cylinder, bell.transform, new Vector3(0f, 0.68f, 0f), new Vector3(0.12f, 0.08f, 0.12f), gold);
-            Vector3 c = new Vector3(0f, fy + 1.0f, z);
-            float size = D * 2.2f;
-            bool rang = false, rang2 = false;
-            for (float t = 0f; t < 2.4f; t += Time.deltaTime)
-            {
-                float pop = Ease.OutBack(Mathf.Clamp01(t / 0.35f));
-                float gone = Mathf.Clamp01((t - 2.0f) / 0.4f);
-                bell.transform.position = c;
-                bell.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * 9f) * 22f * (1f - gone));
-                bell.transform.localScale = Vector3.one * size * pop * (1f - gone);
-                if (!rang && t >= 0.4f)
-                {
-                    rang = true;
-                    Play(sfxBell, 0.6f);
-                    StartCoroutine(BellRain(count, fy));
-                }
-                if (!rang2 && t >= 1.0f) { rang2 = true; Play(sfxBell, 0.5f, 1.12f); }
-                yield return null;
-            }
-            Destroy(bell);
-            props.Remove(bell);
-        }
+        // ベル（BellShower）は SlotRefillFx.cs にある
 
-        IEnumerator BellRain(int count, float fy)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                float x = Random.Range(-Half, Half);
-                float z = Random.Range(FrontZ, game.BackWallFrontZ - D);
-                SpawnMedal(new Vector3(x, fy + 1.3f, z), Vector3.down * 0.5f);
-                yield return new WaitForSeconds(0.08f);
-            }
-        }
+        // スイカ（Watermelon）は SlotRefillFx.cs にある
 
-        /// <summary>スイカ：奥から大きなスイカが転がってきて割れ、プッシャーの前にメダルがこぼれる</summary>
-        IEnumerator Watermelon(int count)
-        {
-            float x = Random.Range(-Half * 0.5f, Half * 0.5f);
-            float zFrom = game.BackWallFrontZ - D;
-            float zTo = PushFrontZ - D * 0.9f;
-            float yFrom = FloorY(x, zFrom), yTo = FloorY(x, zTo);
-            float r = D * 0.9f;
-            var melon = new GameObject("Watermelon");
-            props.Add(melon);
-            var green = ProtoAssets.MakeMaterial(new Color(0.15f, 0.55f, 0.2f), 0f, 0.6f);
-            var dark = ProtoAssets.MakeMaterial(new Color(0.05f, 0.3f, 0.1f), 0f, 0.6f);
-            var ball = Prim(PrimitiveType.Sphere, melon.transform, Vector3.zero, Vector3.one, green);
-            for (int i = 0; i < 4; i++)
-            {
-                var stripe = Prim(PrimitiveType.Sphere, ball, Vector3.zero, new Vector3(1.02f, 1.02f, 0.18f), dark);
-                stripe.localRotation = Quaternion.Euler(0f, i * 45f, 0f);
-            }
-            melon.transform.localScale = Vector3.one * r * 2f;
-            float dur = 1.1f;
-            for (float t = 0f; t < dur; t += Time.deltaTime)
-            {
-                float k = t / dur;
-                float z = Mathf.Lerp(zFrom, zTo, k);
-                float y = Mathf.Lerp(yFrom, yTo, k * k) + r;
-                melon.transform.position = new Vector3(x, y, z);
-                ball.localRotation = Quaternion.Euler(-(zFrom - z) / r * Mathf.Rad2Deg, 0f, 0f);   // 転がる
-                yield return null;
-            }
-            Play(sfxThud, 0.6f);
-            Vector3 c = new Vector3(x, yTo + r * 0.6f, zTo);
-            // 割れる：左右に開いて消える
-            var red = ProtoAssets.MakeMaterial(new Color(0.95f, 0.2f, 0.25f), 0f, 0.5f);
-            var halfL = Prim(PrimitiveType.Sphere, null, c, new Vector3(r * 1.0f, r * 2f, r * 2f), red);
-            var halfR = Prim(PrimitiveType.Sphere, null, c, new Vector3(r * 1.0f, r * 2f, r * 2f), red);
-            props.Add(halfL.gameObject);
-            props.Add(halfR.gameObject);
-            Destroy(melon);
-            props.Remove(melon);
-            Burst(c, new Color(1f, 0.3f, 0.35f), 30, 1.6f, null);
-            Play(sfxPop, 0.7f, 0.8f);
-            for (int i = 0; i < count; i++)
-            {
-                var v = new Vector3(Random.Range(-0.8f, 0.8f), Random.Range(0.8f, 1.8f), Random.Range(-1.0f, -0.2f));
-                SpawnMedal(c, v);
-            }
-            for (float t = 0f; t < 0.5f; t += Time.deltaTime)
-            {
-                float k = t / 0.5f;
-                halfL.position = c + Vector3.left * r * 1.5f * k;
-                halfR.position = c + Vector3.right * r * 1.5f * k;
-                halfL.localScale = halfR.localScale = new Vector3(r, r * 2f, r * 2f) * (1f - k);
-                yield return null;
-            }
-            Destroy(halfL.gameObject);
-            Destroy(halfR.gameObject);
-            props.Remove(halfL.gameObject);
-            props.Remove(halfR.gameObject);
-        }
+        // BAR（BarWall）は SlotRefillFx.cs にある
 
-        /// <summary>BAR：金の棒が横切りながら、プッシャーの前に横一列のメダルの壁を並べる</summary>
-        IEnumerator BarWall(int count)
-        {
-            float z = PushFrontZ - D * 0.75f;
-            float fy = FloorY(0f, z);
-            var bar = Prim(PrimitiveType.Cube, null, Vector3.zero, new Vector3(D * 2.2f, D * 0.6f, D * 0.6f),
-                ProtoAssets.MakeMaterial(new Color(1f, 0.8f, 0.25f), 0.9f, 0.8f));
-            props.Add(bar.gameObject);
-            for (int i = 0; i < count; i++)
-            {
-                float k = count <= 1 ? 0.5f : (float)i / (count - 1);
-                float x = Mathf.Lerp(-Half, Half, k);
-                bar.position = new Vector3(x, fy + D * 1.6f, z);
-                SpawnMedal(new Vector3(x, FloorY(x, z) + D * 0.35f, z), Vector3.down * 0.3f, false, true);
-                if (i % 3 == 0) Play(sfxStop, 0.35f, 1.3f);
-                yield return new WaitForSeconds(0.07f);
-            }
-            for (float t = 0f; t < 0.3f; t += Time.deltaTime)
-            {
-                bar.localScale = new Vector3(D * 2.2f, D * 0.6f, D * 0.6f) * (1f - t / 0.3f);
-                yield return null;
-            }
-            Destroy(bar.gameObject);
-            props.Remove(bar.gameObject);
-        }
+        // レコード（RecordSpin）は SlotRefillFx.cs にある
 
-        /// <summary>レコード：大きなレコード盤が回りながら降りてきて、回転にのってメダルを渦巻き状に飛ばす</summary>
-        IEnumerator RecordSpin(int count)
-        {
-            float z = Mathf.Lerp(FrontZ, LowBackZ, 0.55f);
-            float fy = FloorY(0f, z);
-            float radius = D * 1.5f;
-            var disc = new GameObject("BigRecord");
-            props.Add(disc);
-            var black = ProtoAssets.MakeMaterial(new Color(0.06f, 0.06f, 0.08f), 0.3f, 0.9f);
-            var label = ProtoAssets.MakeMaterial(new Color(0.9f, 0.25f, 0.3f), 0f, 0.4f);
-            Prim(PrimitiveType.Cylinder, disc.transform, Vector3.zero, new Vector3(2f, 0.02f, 2f), black);
-            Prim(PrimitiveType.Cylinder, disc.transform, new Vector3(0f, 0.025f, 0f), new Vector3(0.7f, 0.02f, 0.7f), label);
-            Prim(PrimitiveType.Cylinder, disc.transform, new Vector3(0f, 0.04f, 0f), new Vector3(0.08f, 0.03f, 0.08f), ProtoAssets.MakeMaterial(Color.white, 0f, 0.5f));
-            disc.transform.localScale = Vector3.one * radius;
-            Vector3 top = new Vector3(0f, fy + 1.4f, z), hover = new Vector3(0f, fy + D * 2.2f, z);
-            Play(sfxScratch, 0.45f);
-            float angle = 0f;
-            for (float t = 0f; t < 0.6f; t += Time.deltaTime)
-            {
-                disc.transform.position = Vector3.Lerp(top, hover, Ease.OutCubic(t / 0.6f));
-                angle += 360f * Time.deltaTime;
-                disc.transform.rotation = Quaternion.Euler(8f, angle, 0f);
-                yield return null;
-            }
-            float emit = 1.6f, acc = 0f;
-            int spawned = 0;
-            for (float t = 0f; t < emit; t += Time.deltaTime)
-            {
-                angle += 540f * Time.deltaTime;
-                disc.transform.rotation = Quaternion.Euler(8f, angle, 0f);
-                acc += count / emit * Time.deltaTime;
-                while (acc >= 1f && spawned < count)
-                {
-                    acc -= 1f;
-                    spawned++;
-                    float a = -angle * Mathf.Deg2Rad;
-                    var radial = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
-                    var tangent = new Vector3(-radial.z, 0f, radial.x);
-                    var p = hover + radial * radius * 1.05f;
-                    p.x = Mathf.Clamp(p.x, -Half, Half);
-                    SpawnMedal(p, tangent * 1.2f + radial * 0.7f + Vector3.down * 0.2f);
-                }
-                yield return null;
-            }
-            while (spawned < count) { spawned++; SpawnMedal(hover, Random.insideUnitSphere); }
-            for (float t = 0f; t < 0.5f; t += Time.deltaTime)
-            {
-                float k = t / 0.5f;
-                disc.transform.position = Vector3.Lerp(hover, top, k * k);
-                disc.transform.localScale = Vector3.one * radius * (1f - k);
-                yield return null;
-            }
-            Destroy(disc);
-            props.Remove(disc);
-        }
-
-        /// <summary>ダイヤ：光るダイヤが落ちてきて、盤面でレアメダルに変わる</summary>
-        IEnumerator DiamondDrop(int count)
-        {
-            float x = Random.Range(-Half * 0.5f, Half * 0.5f);
-            float z = Mathf.Lerp(FrontZ, LowBackZ, 0.5f);
-            float fy = FloorY(x, z);
-            var mat = ProtoAssets.MakeMaterial(new Color(0.5f, 0.95f, 1f), 0.2f, 0.95f);
-            mat.EnableKeyword("_EMISSION");
-            mat.SetColor("_EmissionColor", new Color(0.3f, 0.8f, 1f) * 1.5f);
-            var gem = Prim(PrimitiveType.Cube, null, Vector3.zero, Vector3.one * D * 0.9f, mat);
-            props.Add(gem.gameObject);
-            float fall = 0.8f;
-            for (float t = 0f; t < fall; t += Time.deltaTime)
-            {
-                float k = t / fall;
-                gem.position = new Vector3(x, Mathf.Lerp(fy + 2f, fy + D * 0.6f, k * k), z);
-                gem.rotation = Quaternion.Euler(45f, t * 360f, 45f);
-                if (Random.value < 0.5f) Burst(gem.position, new Color(0.6f, 0.95f, 1f), 1, 0.3f, Vector3.up);
-                yield return null;
-            }
-            Vector3 c = new Vector3(x, fy + D * 0.5f, z);
-            Destroy(gem.gameObject);
-            props.Remove(gem.gameObject);
-            Burst(c, new Color(0.6f, 0.95f, 1f), 40, 1.8f, null);
-            Burst(c, Color.white, 20, 1.2f, Vector3.up);
-            Play(sfxBell, 0.6f, 1.6f);
-            for (int i = 0; i < count; i++)
-            {
-                var v = new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(0.8f, 1.4f), Random.Range(-0.5f, 0.5f));
-                SpawnMedal(c, v, true);
-            }
-        }
+        // ダイヤ（DiamondDrop）は SlotRefillFx.cs にある
 
         // ================================================================
         // 本体を作る
@@ -1062,7 +815,7 @@ namespace MedalPusher
         /// <summary>リールの並び（リールごとに少し変える）</summary>
         static Symbol[] ReelStrip(int i)
         {
-            var s = new[] { Symbol.Seven, Symbol.Cherry, Symbol.Bell, Symbol.Melon, Symbol.Bar, Symbol.Record, Symbol.Diamond, Symbol.Cherry, Symbol.Bell };
+            var s = new[] { Symbol.Seven, Symbol.Cherry, Symbol.PiggyBank, Symbol.Cloud, Symbol.Chest, Symbol.Record, Symbol.Diamond, Symbol.Cherry, Symbol.PiggyBank };
             var list = new List<Symbol>(s);
             for (int k = 0; k < i * 2; k++) { var x = list[0]; list.RemoveAt(0); list.Add(x); }
             return list.ToArray();
@@ -1115,7 +868,7 @@ namespace MedalPusher
         }
 
         // ================================================================
-        // 絵（リールの絵柄。7 と BAR は文字）
+        // 絵（リールの絵柄。7 は文字）
         // ================================================================
 
         void MakeSymbolTextures()
@@ -1128,10 +881,22 @@ namespace MedalPusher
                 bool diag = Line(x, y, 0.55f, 0.6f, -0.12f, -0.78f, 0.17f);
                 return top || diag ? new Color(0.9f, 0.08f, 0.12f) : Color.clear;
             }, n);
-            symbolTex[(int)Symbol.Bar] = Paint((x, y) =>
+            symbolTex[(int)Symbol.Chest] = Paint((x, y) =>
             {
-                if (Mathf.Abs(x) > 0.86f || Mathf.Abs(y) > 0.34f) return Color.clear;
-                return BarLetter(x, y) ? Color.white : new Color(0.12f, 0.12f, 0.15f);
+                // 宝箱：茶色の箱と、丸いふた。金の帯とかぎ。ふたのすき間から金色の光
+                var wood = new Color(0.58f, 0.32f, 0.12f);
+                var woodDark = new Color(0.38f, 0.19f, 0.07f);
+                var gold = new Color(1f, 0.8f, 0.2f);
+                bool box = Mathf.Abs(x) < 0.72f && y > -0.62f && y < 0.02f;
+                bool lid = Mathf.Abs(x) < 0.72f && y >= 0.08f && (x * x) / (0.72f * 0.72f) + ((y - 0.08f) * (y - 0.08f)) / (0.42f * 0.42f) < 1f;
+                if (!box && !lid && !(Mathf.Abs(x) < 0.6f && y >= 0.02f && y < 0.08f)) return Color.clear;
+                if (y >= 0.02f && y < 0.08f) return new Color(1f, 0.95f, 0.55f);                        // すき間の光
+                if (Mathf.Abs(x) < 0.11f && y > -0.2f && y < 0.2f)                                        // かぎ
+                    return Circle(x, y, 0f, 0.01f, 0.035f) || (Mathf.Abs(x) < 0.015f && y < 0f && y > -0.09f) ? woodDark : gold;
+                if (Mathf.Abs(Mathf.Abs(x) - 0.45f) < 0.06f) return gold;                                 // たての金の帯
+                if (Mathf.Abs(x) > 0.66f || y < -0.56f) return gold;                                      // ふち
+                if (box && Mathf.Repeat(y * 5f, 1f) < 0.08f) return woodDark;                             // 板の線
+                return lid ? Color.Lerp(wood, new Color(0.7f, 0.42f, 0.18f), Mathf.Clamp01((y - 0.1f) * 2f)) : wood;
             }, n);
             symbolTex[(int)Symbol.Cherry] = Paint((x, y) =>
             {
@@ -1140,21 +905,40 @@ namespace MedalPusher
                 if (Circle(x, y, 0.38f, 0.6f, 0.2f)) return new Color(0.3f, 0.75f, 0.3f);
                 return Color.clear;
             }, n);
-            symbolTex[(int)Symbol.Bell] = Paint((x, y) =>
+            symbolTex[(int)Symbol.PiggyBank] = Paint((x, y) =>
             {
-                if (Circle(x, y, 0f, 0.15f, 0.45f) && y > -0.1f) return new Color(1f, 0.78f, 0.1f);
-                if (y > -0.55f && y <= -0.1f && Mathf.Abs(x) < 0.45f + (-0.1f - y) * 0.6f) return new Color(1f, 0.78f, 0.1f);
-                if (Circle(x, y, 0f, -0.68f, 0.13f)) return new Color(0.8f, 0.55f, 0.1f);
+                // ブタの貯金箱（横から）：ピンクの体・鼻・耳・足・しっぽ・目。背中にお金を入れる口
+                var pink = new Color(1f, 0.62f, 0.72f);
+                var dark = new Color(0.88f, 0.4f, 0.52f);
+                if (Mathf.Abs(x + 0.08f) < 0.17f && y > 0.36f && y < 0.43f) return new Color(0.25f, 0.1f, 0.15f);   // お金を入れる口
+                if (Circle(x, y, 0.62f, 0.02f, 0.19f))                                                   // 鼻
+                    return Circle(x, y, 0.6f, 0.07f, 0.04f) || Circle(x, y, 0.6f, -0.04f, 0.04f) ? new Color(0.5f, 0.15f, 0.25f) : dark;
+                if (Circle(x, y, 0.36f, 0.14f, 0.055f)) return new Color(0.1f, 0.05f, 0.08f);             // 目
+                bool body = (x + 0.05f) * (x + 0.05f) / (0.62f * 0.62f) + (y + 0.02f) * (y + 0.02f) / (0.46f * 0.46f) < 1f;
+                if (body) return Circle(x, y, -0.25f, 0.18f, 0.12f) ? Color.Lerp(pink, Color.white, 0.45f) : pink;   // つや
+                if (Line(x, y, 0.18f, 0.36f, 0.34f, 0.62f, 0.08f) || Line(x, y, 0.34f, 0.62f, 0.4f, 0.36f, 0.08f)) return dark;   // 耳
+                if ((Mathf.Abs(x + 0.35f) < 0.1f || Mathf.Abs(x - 0.25f) < 0.1f) && y < -0.3f && y > -0.66f) return dark;   // 足
+                float tr = Mathf.Sqrt((x + 0.74f) * (x + 0.74f) + (y - 0.08f) * (y - 0.08f));
+                if (tr > 0.07f && tr < 0.12f && y > 0.02f) return dark;                                   // くるっとしたしっぽ
                 return Color.clear;
             }, n);
-            symbolTex[(int)Symbol.Melon] = Paint((x, y) =>
+            symbolTex[(int)Symbol.Cloud] = Paint((x, y) =>
             {
-                float r = Mathf.Sqrt(x * x + (y + 0.25f) * (y + 0.25f));
-                if (y < -0.25f || r > 0.85f) return Color.clear;
-                if (r > 0.72f) return new Color(0.15f, 0.55f, 0.2f);
-                if (r > 0.64f) return new Color(0.9f, 0.95f, 0.8f);
-                if (Circle(x, y, -0.3f, 0.05f, 0.06f) || Circle(x, y, 0.05f, 0.25f, 0.06f) || Circle(x, y, 0.35f, 0.02f, 0.06f)) return Color.black;
-                return new Color(0.95f, 0.25f, 0.3f);
+                // 雨雲：灰色のもくもくした雲と、下に降る金のメダル
+                var cloud = new Color(0.42f, 0.44f, 0.52f);
+                var cloudHi = new Color(0.62f, 0.64f, 0.72f);
+                bool c1 = Circle(x, y, -0.38f, 0.2f, 0.3f), c2 = Circle(x, y, 0.04f, 0.36f, 0.38f), c3 = Circle(x, y, 0.42f, 0.18f, 0.3f);
+                bool baseR = Mathf.Abs(x) < 0.66f && y > -0.08f && y < 0.2f;
+                if (c1 || c2 || c3 || baseR)
+                    return Circle(x, y, -0.05f, 0.48f, 0.2f) || Circle(x, y, -0.42f, 0.3f, 0.14f) ? cloudHi : cloud;
+                var coin = new Color(1f, 0.8f, 0.2f);
+                var coinDark = new Color(0.85f, 0.55f, 0.1f);
+                foreach (var cpos in new[] { new Vector2(-0.42f, -0.4f), new Vector2(0.02f, -0.62f), new Vector2(0.44f, -0.36f) })
+                {
+                    if (Circle(x, y, cpos.x, cpos.y, 0.15f)) return Circle(x, y, cpos.x, cpos.y, 0.09f) ? coin : coinDark;
+                }
+                if (Line(x, y, -0.2f, -0.15f, -0.25f, -0.28f, 0.025f) || Line(x, y, 0.22f, -0.15f, 0.2f, -0.3f, 0.025f)) return new Color(0.55f, 0.8f, 1f);   // 雨のすじ
+                return Color.clear;
             }, n);
             symbolTex[(int)Symbol.Record] = Paint((x, y) =>
             {

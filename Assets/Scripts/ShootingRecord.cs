@@ -57,6 +57,13 @@ namespace MedalPusher
         [Tooltip("的が後ろへ倒れて消えるまでの秒数")]
         [Range(0.2f, 2f)] public float fallSeconds = 0.7f;
 
+        [Header("当たりやすさ")]
+        [Tooltip("メダルのふちが的にかかれば当たりにする広さ（メダルの直径に対する倍率。0.5 でメダルの半径ぶん）。" +
+                 "輪の判定も、この分だけまん中寄りに数える（メダルのふちが黄色にかかれば5枚）")]
+        [Range(0f, 1.5f)] public float hitMargin = 0.5f;
+        [Tooltip("的に照準を合わせて撃った時、メダルが着くまでに的が動く分を先回りして飛ばす（狙った所に当たる）")]
+        public bool leadTarget = true;
+
         [Header("金の的")]
         [Tooltip("次の的が金の的になる確率")]
         [Range(0f, 1f)] public float goldChance = 0.15f;
@@ -166,6 +173,14 @@ namespace MedalPusher
         }
 
         Quaternion TargetRotation() => Quaternion.Euler(targetRotation);
+
+        /// <summary>seconds 秒後の的のまん中（左右の動きだけ先を読む）</summary>
+        Vector3 PredictCenter(float seconds)
+        {
+            float speed = isGold ? goldSpeed : 1f;
+            float phase = swingPhase + seconds * Mathf.PI * 2f / Mathf.Max(0.5f, swingSeconds) * speed;
+            return new Vector3(Mathf.Sin(phase) * HalfW * targetSwing, targetY, TargetZ);
+        }
 
         /// <summary>的のまん中から支柱の下はしまで（的の半径に対する割合。倒れる時の軸）</summary>
         const float PostBottom = 1.55f;
@@ -333,7 +348,7 @@ namespace MedalPusher
             var plane = new Plane(target.forward, TargetCenter(Time.time));
             if (!plane.Raycast(ray, out float dist)) return;
             aimPoint = ClampAim(ray.GetPoint(dist));
-            aimOnTarget = TargetHittable && (target.position - aimPoint).magnitude <= TargetR;
+            aimOnTarget = TargetHittable && (target.position - aimPoint).magnitude <= TargetR + D * hitMargin;
         }
 
         /// <summary>照準を盤面の中に収める（左右は盤面のかべの内側、高さは的のまわり）</summary>
@@ -354,6 +369,14 @@ namespace MedalPusher
             Vector3 from = Muzzle;
             Vector3 to = aimPoint;
             float time = Mathf.Max(0.08f, Vector3.Distance(from, to) / Mathf.Max(0.5f, shotSpeed));
+            if (leadTarget && aimOnTarget && state == TargetState.Live)
+            {
+                // 先回り：狙った所（的のまん中からのずれ）が、メダルが着く時に的がいる場所の同じ所になるように飛ばす
+                Vector3 offset = aimPoint - target.position;
+                to = PredictCenter(time) + offset;
+                time = Mathf.Max(0.08f, Vector3.Distance(from, to) / Mathf.Max(0.5f, shotSpeed));
+                to = PredictCenter(time) + offset;
+            }
             Vector3 v = (to - from) / time - 0.5f * Physics.gravity * time;
 
             medal.transform.SetPositionAndRotation(from, Quaternion.LookRotation(v) * Quaternion.Euler(90f, 0f, 0f));
@@ -395,11 +418,14 @@ namespace MedalPusher
                     Vector3 v = m.Body.velocity;
                     float along = Vector3.Dot(v, target.forward);
                     if (along > 0.0001f) p -= v * (now / along);
-                    if (TargetHittable && (p - target.position).magnitude <= TargetR)
+                    // メダルのふちが的にかかれば当たり。輪も、メダルのふちがかかった所で数える
+                    float margin = D * hitMargin;
+                    float dist = (p - target.position).magnitude;
+                    if (TargetHittable && dist <= TargetR + margin)
                     {
                         // 当たり：的ではね返って、手前の盤面に落ちる
                         m.Body.velocity = new Vector3(v.x * 0.2f, -0.5f, -Mathf.Abs(along) * 0.25f);
-                        HitTarget(p, (p - target.position).magnitude / Mathf.Max(0.0001f, TargetR));
+                        HitTarget(p, Mathf.Max(0f, dist - margin) / Mathf.Max(0.0001f, TargetR));
                     }
                     continue;
                 }
