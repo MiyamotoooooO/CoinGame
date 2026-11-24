@@ -157,6 +157,7 @@ namespace MedalPusher
         float stackedMult;          // ジャズ・レクイエム・トランスで積み上がった倍率
         float pusherStopRemaining;  // メタルの曲が終わったあと、プッシャーを止めておく残り秒数
         bool followSong;            // 効果の残り秒数を、曲の残り秒数に合わせているか
+        float lastSongRest = -1f;   // 前のフレームの曲の残り秒数（曲が最後まで行って頭に戻ったかを見る）
         readonly HashSet<string> playedThisRound = new HashSet<string>();   // このラウンドで発動したレコード（オーケストラ用）
 
         // ================================================================
@@ -298,6 +299,7 @@ namespace MedalPusher
             Current = record;
             CurrentDuration = GetActivateDuration(record, out followSong);
             Remaining = CurrentDuration;
+            lastSongRest = -1f;
             PlayCount++;
             dropsThisPlay = 0;
             stackedMult = 0f;
@@ -316,19 +318,21 @@ namespace MedalPusher
         /// <summary>流しているレコードを止める（曲も効果も終わる）</summary>
         public void Stop()
         {
-            if (Current != null) Finish(false);
+            if (Current != null) Finish(false, "レコードを止めた");
             Loaded = null;
         }
 
-        /// <summary>発動中の効果だけを終える（曲は流れたまま）</summary>
-        public void StopEffect()
+        /// <summary>発動中の効果だけを終える（曲は流れたまま）。reason は Console に出す終わった理由</summary>
+        public void StopEffect(string reason = "StopEffect が呼ばれた")
         {
-            if (Current != null) Finish(false);
+            if (Current != null) Finish(false, reason);
         }
 
-        /// <summary>発動中の効果を終える。naturally は曲が最後まで流れたとき true。</summary>
-        void Finish(bool naturally)
+        /// <summary>発動中の効果を終える。naturally は曲が最後まで流れたとき true。reason は Console に出す終わった理由</summary>
+        void Finish(bool naturally, string reason = "")
         {
+            // どうして終わったかを Console に出す（残り時間があるのに終わる時の原因さがし用。ログをクリックすると、呼んだ所も分かる）
+            Debug.Log($"{(Current != null ? Current.name : "?")} の効果が終わりました（理由：{reason}、効果の残り {Remaining:0.0}秒、曲の残り {lastSongRest:0.0}秒）");
             RecordData finished = Current;
             Current = null;
             Remaining = 0f;
@@ -457,7 +461,7 @@ namespace MedalPusher
             if (game.RoundNumber != lastRoundNumber || state == GameState.Intro || state == GameState.Warmup)
             {
                 lastRoundNumber = game.RoundNumber;
-                StopEffect();
+                StopEffect("ラウンドが変わった");
                 playedThisRound.Clear();
                 pusherStopRemaining = 0f;
             }
@@ -483,10 +487,29 @@ namespace MedalPusher
             if (Current != null)
             {
                 float rest = followSong ? SongRemaining(Current) : -1f;
-                if (rest < 0f) Remaining -= Time.deltaTime;          // 曲に合わせない・曲が止まった・切りかえ中
-                else if (rest > Remaining + 1f) Remaining = 0f;       // 曲が最後まで行って、頭に戻った
+                string reason = "時間切れ";
+                if (rest < 0f)
+                {
+                    Remaining -= Time.deltaTime;                      // 曲に合わせない・曲が止まった・切りかえ中
+                }
+                else if (rest > Remaining + 1f)
+                {
+                    // 曲の残りが急に増えた。本当に「曲が最後まで行って頭に戻った」のは、前のフレームで曲の終わり近くだった時だけ。
+                    // それ以外（曲が一時止まっていた間に効果の残りだけ減った・mp3 の再生位置がずれた など）は、曲の残りに合わせ直す
+                    if (lastSongRest >= 0f && lastSongRest < 1.5f)
+                    {
+                        Remaining = 0f;
+                        reason = "曲が最後まで流れた";
+                    }
+                    else
+                    {
+                        Debug.Log($"{Current.name}：曲の残り秒数が急に増えたので合わせ直します（効果の残り {Remaining:0.0}秒 → {rest:0.0}秒、前の曲の残り {lastSongRest:0.0}秒）");
+                        Remaining = rest;
+                    }
+                }
                 else Remaining = rest;                                // 曲の残り秒数に合わせる
-                if (Remaining <= 0f) Finish(true);
+                if (rest >= 0f) lastSongRest = rest;
+                if (Remaining <= 0f) Finish(true, reason);
             }
             if (pusherStopRemaining > 0f) pusherStopRemaining -= Time.deltaTime;
 
