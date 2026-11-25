@@ -21,6 +21,10 @@ namespace MedalPusher
         Material[] normalMaterials;        // 普通のメダルの見た目
         Material[] rareMaterials;          // レアメダルの見た目
         Vector3 modelScale = Vector3.one;
+        Material normalOutline;            // 普通のメダルの輪郭線
+        Material rareOutline;              // レアメダルの輪郭線
+        Vector3 outlineScale = Vector3.one; // 輪郭線のメダルを、見た目のメダルより少し大きくする倍率
+        readonly Dictionary<Medal, Renderer> outlines = new Dictionary<Medal, Renderer>();
         Mesh colliderMesh;
         Material material;
         PhysicMaterial physicMaterial;
@@ -58,6 +62,7 @@ namespace MedalPusher
             var go = new GameObject("Medal");
             go.SetActive(false);
             MeshRenderer visualRenderer;
+            Renderer outlineRenderer = null;
             go.transform.SetParent(root, false);
 
             if (modelMesh != null)
@@ -68,6 +73,7 @@ namespace MedalPusher
                 visual.transform.localScale = modelScale;
                 visual.AddComponent<MeshFilter>().sharedMesh = modelMesh;
                 visualRenderer = SetupRenderer(visual.AddComponent<MeshRenderer>(), normalMaterials);
+                AddOutline(visual.transform, out outlineRenderer);
             }
             else
             {
@@ -84,10 +90,32 @@ namespace MedalPusher
             var medal = go.AddComponent<Medal>();
             medal.Setup(rb, col); // 非アクティブなので Awake が走らない。明示的に渡す
             medal.VisualRenderer = visualRenderer;
+            if (outlineRenderer != null) outlines[medal] = outlineRenderer;
             ApplyBody(medal);
 
             all.Add(medal);
             return medal;
+        }
+
+        /// <summary>
+        /// 輪郭線用のメダルを子に作る（同じ形を少し大きくして、裏側だけをこい色でかく）。
+        /// 手前の面は消えるので、メダルのまわりにだけ線がはみ出して見える。
+        /// </summary>
+        void AddOutline(Transform visual, out Renderer outlineRenderer)
+        {
+            outlineRenderer = null;
+            if (normalOutline == null || modelMesh == null) return;
+            var go = new GameObject("Outline");
+            go.transform.SetParent(visual, false);
+            go.transform.localScale = outlineScale;
+            go.AddComponent<MeshFilter>().sharedMesh = modelMesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = normalOutline;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+            mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            outlineRenderer = mr;
         }
 
         /// <summary>見た目のモデルからメッシュとマテリアルを取り出し、大きさの倍率を求める。</summary>
@@ -104,13 +132,24 @@ namespace MedalPusher
             modelMesh = mf.sharedMesh;
             modelSourceMaterials = mr.sharedMaterials;
             modelMaterials = visuals.overrideMedalColors
-                ? TintMaterials(modelSourceMaterials, visuals.medalFaceColor, visuals.medalRimColor, visuals.medalSmoothness)
+                ? TintMaterials(modelSourceMaterials, visuals.medalFaceColor, visuals.medalRimColor, visuals.medalSmoothness, visuals.medalOutlineColor, "Normal")
                 : modelSourceMaterials;
             var size = modelMesh.bounds.size;
             modelScale = new Vector3(
                 tuning.medalDiameter / Mathf.Max(1e-5f, size.x),
                 tuning.medalThickness / Mathf.Max(1e-5f, size.y),
                 tuning.medalDiameter / Mathf.Max(1e-5f, size.z));
+
+            // 輪郭線：横は半径の medalOutlineWidth 分、厚さの方向も同じ長さだけはみ出させる
+            if (visuals.medalCartoonStyle && visuals.medalOutlineWidth > 0f)
+            {
+                normalOutline = MedalLook.MakeOutlineMaterial(visuals.medalOutlineColor, "メダルの輪郭線");
+                rareOutline = MedalLook.MakeOutlineMaterial(visuals.rareOutlineColor, "レアメダルの輪郭線");
+                float pad = tuning.medalDiameter * 0.5f * visuals.medalOutlineWidth;
+                float side = 1f + 2f * pad / Mathf.Max(1e-5f, tuning.medalDiameter);
+                float up = 1f + 2f * pad / Mathf.Max(1e-5f, tuning.medalThickness);
+                outlineScale = new Vector3(side, up, side);
+            }
         }
 
         /// <summary>普通のメダルとレアメダルの見た目を用意する。</summary>
@@ -119,7 +158,7 @@ namespace MedalPusher
             if (modelMesh != null)
             {
                 normalMaterials = modelMaterials;
-                rareMaterials = TintMaterials(modelSourceMaterials, visuals.rareFaceColor, visuals.rareRimColor, visuals.rareSmoothness);
+                rareMaterials = TintMaterials(modelSourceMaterials, visuals.rareFaceColor, visuals.rareRimColor, visuals.rareSmoothness, visuals.rareOutlineColor, "Rare");
             }
             else
             {
@@ -136,6 +175,8 @@ namespace MedalPusher
             medal.IsRare = rare;
             if (medal.VisualRenderer != null)
                 medal.VisualRenderer.sharedMaterials = rare ? rareMaterials : normalMaterials;
+            if (outlines.TryGetValue(medal, out var outline) && outline != null && rareOutline != null)
+                outline.sharedMaterial = rare ? rareOutline : normalOutline;
         }
 
         public int CountRare()
@@ -149,16 +190,28 @@ namespace MedalPusher
         /// <summary>
         /// モデルのマテリアルを複製し、色とつやだけを変える（元のモデルのマテリアルは変えない）。
         /// 名前に「Rim」が入るマテリアルはふちの色、それ以外は表面の色にする。
+        /// ゲームっぽい見た目の時は、色の代わりに模様の絵（MedalLook）をはり、つやを抑える。
         /// </summary>
-        Material[] TintMaterials(Material[] source, Color faceColor, Color rimColor, float smoothness)
+        Material[] TintMaterials(Material[] source, Color faceColor, Color rimColor, float smoothness, Color lineColor, string label)
         {
             var result = new Material[source.Length];
+            bool cartoon = visuals != null && visuals.medalCartoonStyle;
+            Texture2D pattern = cartoon ? MedalLook.MakeFaceTexture(faceColor, rimColor, lineColor, "MedalFace_" + label) : null;
+            if (cartoon) smoothness = Mathf.Min(smoothness, visuals.cartoonMaxSmoothness);
             for (int i = 0; i < source.Length; i++)
             {
                 var src = source[i];
                 if (src == null) continue;
                 var m = new Material(src) { name = src.name + "（色変更）" };
                 var c = src.name.Contains("Rim") ? rimColor : faceColor;
+                if (pattern != null)
+                {
+                    // 模様の絵に色が入っているので、色は白にする（表とふちで同じ絵を使う。絵は真上から見た向きではってある）
+                    c = Color.white;
+                    m.mainTexture = pattern;
+                    m.mainTextureScale = Vector2.one;
+                    m.mainTextureOffset = Vector2.zero;
+                }
                 m.color = c;
                 if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
                 if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smoothness);

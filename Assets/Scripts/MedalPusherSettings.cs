@@ -118,6 +118,20 @@ namespace MedalPusher
         [Tooltip("レアメダルのつや（普通のメダルより光らせて目立たせる）")]
         [Range(0f, 1f)] public float rareSmoothness = 0.7f;
 
+        [Header("ゲームっぽい見た目（輪郭線と模様）")]
+        [Tooltip("オンにすると、メダルの表面に模様（少しこい外の線・明るいふち・うすい段の線）をかき、" +
+                 "横の面も少しこい色にする。オフにすると色だけ変える前の見た目")]
+        public bool medalCartoonStyle = true;
+        [Tooltip("普通のメダルの輪郭の色（こげ茶）。表面の外の線と横の面は、表面の色とこの色の中間になる")]
+        public Color medalOutlineColor = new Color(0.30f, 0.15f, 0.04f);
+        [Tooltip("レアメダルの輪郭線の色（こい紺）")]
+        public Color rareOutlineColor = new Color(0.16f, 0.18f, 0.42f);
+        [Tooltip("メダルの外にはみ出す輪郭線の太さ（メダルの半径に対する割合）。0 で輪郭線なし（おすすめ）。" +
+                 "強く目立たせたい時だけ 0.01〜0.03 くらいにする")]
+        [Range(0f, 0.15f)] public float medalOutlineWidth = 0f;
+        [Tooltip("ゲームっぽい見た目の時の、つやの上限。低いほどアニメのようなのっぺりした色になる")]
+        [Range(0f, 1f)] public float cartoonMaxSmoothness = 0.3f;
+
         [Header("影")]
         [Tooltip("メダルが影を落とす（オンにすると重なった所が暗くなり、少し重くなる）")]
         public bool medalCastShadows = false;
