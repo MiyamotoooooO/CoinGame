@@ -550,8 +550,8 @@ MonoBehaviour:
   visuals:
     medalModel: {fileID: 919132149155446097, guid: 182d4a6e3d3cbd8419cd08f55740bd03, type: 3}
     overrideMedalColors: 1
-    medalFaceColor: {r: 0.9411765, g: 0.627451, b: 0.1882353, a: 1}
-    medalRimColor: {r: 0.9098039, g: 0.59607846, b: 0.17254902, a: 1}
+    medalFaceColor: {r: 0.78, g: 0.45, b: 0.22, a: 1}
+    medalRimColor: {r: 0.8, g: 0.48, b: 0.24, a: 1}
     medalSmoothness: 0.55
     rareFaceColor: {r: 0.86, g: 0.88, b: 1, a: 1}
     rareRimColor: {r: 0.62, g: 0.6, b: 0.9, a: 1}
