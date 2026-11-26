@@ -195,9 +195,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 73872010}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.050594542, y: -0.65482897, z: 0.04401028, w: 0.7527963}
-  m_LocalPosition: {x: -1.578, y: 0.538, z: -0.47654995}
-  m_LocalScale: {x: 1.33, y: 1.33, z: 1.33}
+  m_LocalRotation: {x: 0.050594386, y: -0.654832, z: 0.044010494, w: 0.75279367}
+  m_LocalPosition: {x: -1.534, y: 0.431, z: -0.545}
+  m_LocalScale: {x: 1.66, y: 1.66, z: 1.66}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -556,6 +556,11 @@ MonoBehaviour:
     rareFaceColor: {r: 0.86, g: 0.88, b: 1, a: 1}
     rareRimColor: {r: 0.62, g: 0.6, b: 0.9, a: 1}
     rareSmoothness: 0.7
+    medalCartoonStyle: 1
+    medalOutlineColor: {r: 0.3, g: 0.15, b: 0.04, a: 1}
+    rareOutlineColor: {r: 0.16, g: 0.18, b: 0.42, a: 1}
+    medalOutlineWidth: 0
+    cartoonMaxSmoothness: 0.3
     medalCastShadows: 1
     medalReceiveShadows: 1
 --- !u!4 &222109768
@@ -1102,9 +1107,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 375461632}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.52066773, y: -0.46049032, z: -0.4024904, w: 0.59569734}
-  m_LocalPosition: {x: -1.658, y: 1.317, z: 0.8379485}
-  m_LocalScale: {x: 3.85, y: 3.85, z: 3.85}
+  m_LocalRotation: {x: -0.52066773, y: -0.4604903, z: -0.40249035, w: 0.59569734}
+  m_LocalPosition: {x: -1.593, y: 1.438, z: 0.598}
+  m_LocalScale: {x: 4.95, y: 4.95, z: 4.95}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 321650710}
@@ -2152,9 +2157,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2112673449}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.042163994, y: -0.47660917, z: 0.022893175, w: 0.8778051}
-  m_LocalPosition: {x: -1.95, y: 0.871, z: -0.67850786}
-  m_LocalScale: {x: 1.05, y: 1.06, z: 1.06}
+  m_LocalRotation: {x: 0.042164, y: -0.47660926, z: 0.022893185, w: 0.87780505}
+  m_LocalPosition: {x: -1.95, y: 0.639, z: -0.721}
+  m_LocalScale: {x: 1.42, y: 1.43352, z: 1.43352}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}

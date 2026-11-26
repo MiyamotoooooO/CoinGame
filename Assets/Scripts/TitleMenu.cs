@@ -35,7 +35,7 @@ namespace MedalPusher
         public string newGameScene = "";
         [Tooltip("プロフィールを押した時にすること。何もつながっていなければ「準備中です」と出る")]
         public UnityEvent onProfile = new UnityEvent();
-        [Tooltip("設定を押した時にすること。何もつながっていなければ「準備中です」と出る")]
+        [Tooltip("設定を押した時にすること。何もつながっていなければ、音の大きさの設定画面（SettingsMenu）を開く")]
         public UnityEvent onSettings = new UnityEvent();
 
         [Header("■ 動き")]
@@ -131,7 +131,7 @@ namespace MedalPusher
             clock += dt;
 
             bool ready = clock > introDelay + 0.2f;
-            if (!confirming && ready)
+            if (!confirming && ready && !SettingsMenu.IsOpen)   // 設定画面を開いている間は、メニューを動かさない
             {
                 if (PressedUp()) Move(-1);
                 if (PressedDown()) Move(1);
@@ -289,7 +289,7 @@ namespace MedalPusher
                     break;
                 case MenuAction.Settings:
                     if (onSettings.GetPersistentEventCount() > 0) onSettings.Invoke();
-                    else ShowToast("設定は準備中です");
+                    else SettingsMenu.Open();   // 音の大きさの設定画面（SettingsMenu.cs）
                     break;
                 default:
                     // 初めから・続きから・終了は、画面を暗くしてから行う

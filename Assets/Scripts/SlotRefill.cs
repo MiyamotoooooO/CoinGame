@@ -86,10 +86,14 @@ namespace MedalPusher
         [Tooltip("オン：下の位置・向き・大きさで置く。オフ：画面の割合（Viewport）で置く")]
         public bool useWorldPose = true;
         [Tooltip("位置（盤面を前後に伸ばす前の値。Z には、伸ばした倍率を自動でかける）")]
-        public Vector3 worldPosition = new Vector3(2.49f, 1.327f, -0.15f);
+        // Z の -0.2371 は、MainScene（伸ばした倍率 1.7716）で -0.42 になる値
+        public Vector3 worldPosition = new Vector3(2.17f, 1.51f, -0.2371f);
         [Tooltip("向き（度）")]
-        public Vector3 worldRotation = new Vector3(3.484f, 83.603f, -0.817f);
-        public float worldScale = 1.42f;
+        public Vector3 worldRotation = new Vector3(3.484f, 91.274f, -0.982f);
+        [Tooltip("大きさ")]
+        public float worldScale = 2.01f;
+        [Tooltip("奥行きだけの大きさの倍率（1 で、ほかと同じ。0.69 で奥行きがうすくなる）")]
+        public float worldDepthScale = 0.6903f;
 
         [Header("置き場所（画面の割合。Use World Pose がオフの時だけ。左下が (0,0)、右上が (1,1)）")]
         public Vector2 viewport = new Vector2(0.68f, 0.73f);
@@ -249,7 +253,7 @@ namespace MedalPusher
             {
                 machine.position = new Vector3(worldPosition.x, worldPosition.y, worldPosition.z * RecordScriptBase.DepthScaleOf(game));   // 盤面を前後に伸ばした分
                 machine.rotation = Quaternion.Euler(worldRotation);
-                machine.localScale = Vector3.one * worldScale;
+                machine.localScale = new Vector3(worldScale, worldScale, worldScale * worldDepthScale);
                 return;
             }
             var cam = Camera.main;

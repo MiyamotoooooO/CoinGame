@@ -7,13 +7,20 @@ namespace MedalPusher
 {
     /// <summary>
     /// ゲーム全体の効果音。音はすべてコードで作る（音のファイルはいらない）。
+    /// 80 年代のゲーム機のような「ピコピコ」した音（ビット感のある音）にしている。
+    ///   ・四角い波（矩形波）：明るい「ピッ」「ピロン」。太さ（デューティ比）12.5% / 25% / 50% で音色が変わる
+    ///   ・三角の波（三角波）：やわらかい低い音。段々にして、昔の音源のざらっとした感じを出す
+    ///   ・雑音（ノイズ）：「ジャッ」「カシャッ」。昔の音源と同じ作り方（LFSR）で、金属っぽい音も出せる
+    ///   ・音の大きさも 16 段で変える（なめらかに変えない）ので、昔のゲームっぽくなる
     /// 鳴らす時：
-    /// ・メダルを入れた時（チャリン）
-    /// ・メダルが落ちて、ほかのメダルや床に当たった時（ジャラッ。鉄のメダルがぶつかる音。たくさん鳴りすぎないように数を制限）
-    /// ・メダルが中央の穴に落ちた時（ピロン）／端の穴に落ちた時（ポトッ）
+    /// ・メダルを入れた時（コインの「ピロリン」）
+    /// ・メダルが落ちて、ほかのメダルや床に当たった時（「チッ」。たくさん鳴りすぎないように数を制限）
+    /// ・メダルが中央の穴に落ちた時（上がる「ピロリロン」）／端の穴に落ちた時（下がる「ボッ」）
     /// ・ラウンドの始まり・投入を使い切った時・ノルマ達成・ノルマ未達・ショップ
     /// ・レコードを付けかえた時、画面のボタンを押した時
     /// ほかのスクリプトからは GameSfx.Play(GameSfx.Sound.Click) のように鳴らせる。
+    ///
+    /// 音の大きさは、設定画面の「効果音」（GameAudioSettings）にも合わせる。
     ///
     /// 使い方：何もしなくても、MedalPusherGame があるシーンでは再生した時に自動で付く。
     /// 音の大きさを変えたい時は、シーンの好きな GameObject にこのコンポーネントを付けて Inspector で変える
@@ -25,7 +32,7 @@ namespace MedalPusher
         public enum Sound
         {
             Insert,       // メダルを入れた
-            Clink,        // メダル同士・床に当たった（ジャラッ）
+            Clink,        // メダル同士・床に当たった
             DropCenter,   // 中央の穴に落ちた
             DropSide,     // 端の穴に落ちた
             RoundStart,   // ラウンドの始まり
@@ -37,23 +44,23 @@ namespace MedalPusher
             Click,        // ボタンを押した
         }
 
-        [Header("音の大きさ")]
+        [Header("音の大きさ（設定画面の「効果音」の大きさも、さらにかかる）")]
         [Tooltip("全体の大きさ。0 で効果音をすべて消す")]
         [Range(0f, 1f)] public float masterVolume = 0.7f;
         [Tooltip("メダルを入れた音")]
-        [Range(0f, 1f)] public float insertVolume = 0.6f;
-        [Tooltip("メダルが当たる音（ジャラッ）")]
-        [Range(0f, 1f)] public float clinkVolume = 0.35f;
+        [Range(0f, 1f)] public float insertVolume = 0.5f;
+        [Tooltip("メダルが当たる音")]
+        [Range(0f, 1f)] public float clinkVolume = 0.25f;
         [Tooltip("穴に落ちた音")]
-        [Range(0f, 1f)] public float dropVolume = 0.6f;
+        [Range(0f, 1f)] public float dropVolume = 0.55f;
         [Tooltip("ラウンドの始まり・達成・未達・ショップの音")]
         [Range(0f, 1f)] public float jingleVolume = 0.6f;
         [Tooltip("ボタン・レコードを付けかえた音")]
-        [Range(0f, 1f)] public float uiVolume = 0.5f;
+        [Range(0f, 1f)] public float uiVolume = 0.45f;
 
         [Header("メダルが当たる音")]
         [Tooltip("1 秒に鳴らすいちばん多い回数（多すぎるとうるさいので）")]
-        [Range(1, 40)] public int clinksPerSecond = 18;
+        [Range(1, 40)] public int clinksPerSecond = 14;
         [Tooltip("この速さ（メダルの直径の何倍／秒）より速く落ちてきて止まった時に鳴らす")]
         [Range(0.5f, 20f)] public float clinkSpeed = 3f;
 
@@ -80,9 +87,12 @@ namespace MedalPusher
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoAttach()
         {
-            SceneManager.sceneLoaded += (scene, mode) => AttachIfNeeded();
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
             AttachIfNeeded();
         }
+
+        static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => AttachIfNeeded();
 
         static void AttachIfNeeded()
         {
@@ -102,10 +112,21 @@ namespace MedalPusher
         void Awake()
         {
             instance = this;
-            source = gameObject.AddComponent<AudioSource>();
-            source.playOnAwake = false;
-            source.spatialBlend = 0f;   // 2D（どこにいても同じ大きさ）
+            source = MakeSource();
             MakeClips();
+        }
+
+        /// <summary>
+        /// 効果音用の AudioSource を作る。設定画面の「BGM」の大きさ（AudioListener の音量）はかからないようにして、
+        /// かわりに「効果音」の大きさを、鳴らすたびに自分でかける。
+        /// </summary>
+        AudioSource MakeSource()
+        {
+            var s = gameObject.AddComponent<AudioSource>();
+            s.playOnAwake = false;
+            s.spatialBlend = 0f;   // 2D（どこにいても同じ大きさ）
+            s.ignoreListenerVolume = true;
+            return s;
         }
 
         void OnDestroy()
@@ -133,12 +154,12 @@ namespace MedalPusher
 
         // ───────── ゲームの出来事 ─────────
 
-        void OnInserted(Medal m) => PlayInternal(Sound.Insert, 1f, Random.Range(0.95f, 1.05f));
+        void OnInserted(Medal m) => PlayInternal(Sound.Insert, 1f, 1f);
 
         void OnDropped(Medal m, DropZoneType type)
         {
-            if (type == DropZoneType.Center) PlayInternal(Sound.DropCenter, 1f, Random.Range(0.98f, 1.04f));
-            else if (type == DropZoneType.Side) PlayInternal(Sound.DropSide, 1f, Random.Range(0.9f, 1.1f));
+            if (type == DropZoneType.Center) PlayInternal(Sound.DropCenter, 1f, 1f);
+            else if (type == DropZoneType.Side) PlayInternal(Sound.DropSide, 1f, 1f);
         }
 
         void OnStateChanged(GameState state)
@@ -182,7 +203,7 @@ namespace MedalPusher
             }
         }
 
-        /// <summary>落ちてきたメダルが急に止まったら「ジャラッ」と鳴らす（当たった音のかわり）。</summary>
+        /// <summary>落ちてきたメダルが急に止まったら「チッ」と鳴らす（当たった音のかわり）。</summary>
         void FixedUpdate()
         {
             if (game == null || game.Pool == null) return;
@@ -203,7 +224,9 @@ namespace MedalPusher
                     {
                         clinkBudget -= 1f;
                         float strength = Mathf.Clamp01((before - threshold) / (threshold * 2f) + 0.35f);
-                        PlayInternal(Sound.Clink, strength, Random.Range(0.85f, 1.25f));
+                        // 昔の音源は音の高さが半音ずつしか変わらないので、ずらす時も半音単位にする
+                        float pitch = Mathf.Pow(2f, Random.Range(-2, 4) / 12f);
+                        PlayInternal(Sound.Clink, strength, pitch);
                     }
                 }
                 lastFallSpeed[m] = fall;
@@ -229,8 +252,11 @@ namespace MedalPusher
             }
             lastPlayed[sound] = Time.unscaledTime;
 
+            // 設定画面の「全体」×「効果音」の大きさもかける
+            float vol = masterVolume * CategoryVolume(sound) * volume * GameAudioSettings.SfxGain;
+            if (vol <= 0f) return;
+
             // PlayOneShot は音の高さを AudioSource ごとにしか変えられないので、高さを変える時は使い捨ての音源を使う
-            float vol = masterVolume * CategoryVolume(sound) * volume;
             if (Mathf.Abs(pitch - 1f) < 0.001f)
             {
                 source.PlayOneShot(clip, vol);
@@ -254,9 +280,7 @@ namespace MedalPusher
         {
             if (voices.Count < VoiceCount)
             {
-                var s = gameObject.AddComponent<AudioSource>();
-                s.playOnAwake = false;
-                s.spatialBlend = 0f;
+                var s = MakeSource();
                 voices.Add(s);
                 return s;
             }
@@ -285,192 +309,239 @@ namespace MedalPusher
 
         void MakeClips()
         {
-            // メダルを入れた：鉄のメダルが 3 回はねる「チャリン」と、転がる「ジャー」
+            // メダルを入れた：コインの「ピロリン」（短い高い音のあと、もっと高い音をのばす）
             {
-                var rng = new System.Random(7);
-                var d = new float[(int)(Rate * 0.45f)];
-                MetalHit(d, 1900f, 0f, 1f, rng);
-                MetalHit(d, 2300f, 0.09f, 0.6f, rng);
-                MetalHit(d, 2100f, 0.15f, 0.35f, rng);
-                for (int i = 0; i < d.Length; i++)
-                {
-                    float t = i / (float)Rate;
-                    d[i] += Noise() * (0.5f + 0.5f * Sin(t, 38f)) * Mathf.Exp(-Mathf.Abs(t - 0.2f) * 12f) * 0.12f;
-                }
+                var d = Buffer(0.42f);
+                Noise(d, 0f, 0.025f, 9000f, true, 0.25f, 0f);
+                Tone(d, 0f, 0.06f, M(83), M(83), Wave.Pulse50, 0.55f, 0f);
+                Tone(d, 0.06f, 0.36f, M(88), M(88), Wave.Pulse50, 0.55f, 7f);
                 clips[Sound.Insert] = Make("Sfx_Insert", d);
             }
 
-            // メダルが当たった：鉄のメダルが 2〜4 枚ぶつかる「ジャラッ」（4 種類）
+            // メダルが当たった：金属っぽい短い雑音と、高い「チッ」（4 種類）
             clinkClips = new AudioClip[4];
             for (int v = 0; v < clinkClips.Length; v++)
             {
                 var rng = new System.Random(100 + v);
-                var d = new float[(int)(Rate * 0.32f)];
-                int hits = 2 + v % 3;
-                for (int h = 0; h < hits; h++)
-                {
-                    float f0 = RandRange(rng, 1500f, 2400f);
-                    float start = h == 0 ? 0f : RandRange(rng, 0.02f, 0.11f);
-                    float gain = h == 0 ? 1f : RandRange(rng, 0.4f, 0.8f);
-                    MetalHit(d, f0, start, gain, rng);
-                }
+                var d = Buffer(0.09f);
+                Noise(d, 0f, RandRange(rng, 0.035f, 0.07f), RandRange(rng, 7000f, 14000f), true, 0.55f, 55f);
+                float f = M(94 + rng.Next(0, 8));
+                Tone(d, 0f, 0.03f, f, f * 0.94f, Wave.Pulse12, 0.35f, 70f);
                 clinkClips[v] = Make("Sfx_Clink" + v, d);
             }
             clips[Sound.Clink] = clinkClips[0];
 
-            // 中央の穴：明るい「ピロン」
-            clips[Sound.DropCenter] = Tone("Sfx_DropCenter", 0.42f, t =>
+            // 中央の穴：上がっていく「ピロリロン」と、小さなこだま
             {
-                float f = Note(t, 0.06f, 1047f, 1568f);
-                float env = t < 0.06f ? 1f : Mathf.Exp(-(t - 0.06f) * 9f);
-                return (Sin(t, f) * 0.55f + Sin(t, f * 2f) * 0.15f) * env * 0.8f;
-            });
-
-            // 端の穴：にぶい「ポトッ」
-            clips[Sound.DropSide] = Tone("Sfx_DropSide", 0.2f, t =>
-                (Sin(t, 150f - 220f * t) * 0.8f + Noise() * 0.15f) * Mathf.Exp(-t * 22f));
-
-            // ラウンドの始まり：上がっていく 4 音
-            clips[Sound.RoundStart] = Tone("Sfx_RoundStart", 0.6f, t =>
-            {
-                float f = Note(t, 0.08f, 523f, 659f, 784f, 1047f);
-                float env = t < 0.32f ? 1f : Mathf.Exp(-(t - 0.32f) * 10f);
-                return (Tri(t, f) * 0.5f + Sin(t, f * 2f) * 0.12f) * env * 0.6f;
-            });
-
-            // 投入を使い切った：やさしい 2 回の「ポン ポン」
-            clips[Sound.OutOfMedals] = Tone("Sfx_OutOfMedals", 0.42f, t =>
-            {
-                float local = t < 0.2f ? t : t - 0.2f;
-                return Sin(t, t < 0.2f ? 784f : 659f) * Mathf.Exp(-local * 14f) * 0.5f;
-            });
-
-            // ノルマ達成：ファンファーレ（上がる 4 音のあと、和音をのばす）
-            clips[Sound.Clear] = Tone("Sfx_Clear", 1.3f, t =>
-            {
-                if (t < 0.4f)
+                var d = Buffer(0.62f);
+                int[] up = { 84, 88, 91, 96 };
+                for (int k = 0; k < 2; k++)   // k = 1 がこだま（少し遅れて、小さく）
                 {
-                    float f = Note(t, 0.1f, 523f, 659f, 784f, 1047f);
-                    return (Sq(t, f) * 0.18f + Sin(t, f) * 0.3f) * 0.8f;
+                    float start = k * 0.13f;
+                    float gain = k == 0 ? 0.55f : 0.2f;
+                    for (int i = 0; i < up.Length; i++)
+                    {
+                        bool last = i == up.Length - 1;
+                        Tone(d, start + i * 0.035f, last ? 0.36f : 0.035f, M(up[i]), M(up[i]), Wave.Pulse25, gain, last ? 9f : 0f);
+                    }
                 }
-                float k = t - 0.4f;
-                float env = Mathf.Exp(-k * 2.5f);
-                return (Tri(t, 1047f) * 0.3f + Tri(t, 1319f) * 0.25f + Tri(t, 1568f) * 0.22f + Sq(t, 523f) * 0.06f) * env * 0.75f;
-            });
+                clips[Sound.DropCenter] = Make("Sfx_DropCenter", d);
+            }
 
-            // ノルマ未達：下がっていく 4 音
-            clips[Sound.Fail] = Tone("Sfx_Fail", 1.1f, t =>
+            // 端の穴：下がっていく、にぶい「ボッ」
             {
-                float f = Note(t, 0.2f, 392f, 349f, 311f, 262f);
-                float env = t < 0.6f ? 1f : Mathf.Exp(-(t - 0.6f) * 5f);
-                float wob = 1f + 0.01f * Mathf.Sin(t * 30f);
-                return Tri(t, f * wob) * 0.5f * env;
-            });
+                var d = Buffer(0.2f);
+                Tone(d, 0f, 0.16f, 220f, 55f, Wave.Triangle, 0.9f, 14f);
+                Noise(d, 0f, 0.06f, 1800f, false, 0.3f, 40f);
+                clips[Sound.DropSide] = Make("Sfx_DropSide", d);
+            }
 
-            // ショップ：お店のドアの「ピンポーン」
-            clips[Sound.Shop] = Tone("Sfx_Shop", 1.2f, t =>
+            // ラウンドの始まり：上がっていく 4 音のあと、高い音をのばす。下に三角の波でベース
             {
-                if (t < 0.35f) return (Sin(t, 1319f) * 0.5f + Sin(t, 2638f) * 0.1f) * Mathf.Exp(-t * 6f);
-                float k = t - 0.35f;
-                return (Sin(t, 1047f) * 0.5f + Sin(t, 2094f) * 0.1f) * Mathf.Exp(-k * 3.5f);
-            });
+                var d = Buffer(0.75f);
+                int[] up = { 79, 84, 88, 91 };
+                for (int i = 0; i < up.Length; i++) Tone(d, i * 0.08f, 0.08f, M(up[i]), M(up[i]), Wave.Pulse12, 0.5f, 0f);
+                Tone(d, 0.32f, 0.43f, M(96), M(96), Wave.Pulse12, 0.5f, 6f);
+                Tone(d, 0f, 0.32f, M(48), M(48), Wave.Triangle, 0.7f, 0f);
+                Tone(d, 0.32f, 0.43f, M(60), M(60), Wave.Triangle, 0.7f, 5f);
+                clips[Sound.RoundStart] = Make("Sfx_RoundStart", d);
+            }
 
-            // レコードを付けかえた：「カチャッ」
-            clips[Sound.Equip] = Tone("Sfx_Equip", 0.16f, t =>
-                Noise() * Mathf.Exp(-t * 70f) * 0.45f
-                + Sin(t, 1250f) * Mathf.Exp(-t * 35f) * 0.35f
-                + (t > 0.05f ? Noise() * Mathf.Exp(-(t - 0.05f) * 90f) * 0.3f : 0f));
+            // 投入を使い切った：「ポン ポン」（下がる 2 音）
+            {
+                var d = Buffer(0.45f);
+                Tone(d, 0f, 0.15f, M(79), M(79), Wave.Pulse50, 0.5f, 14f);
+                Tone(d, 0.2f, 0.25f, M(76), M(76), Wave.Pulse50, 0.5f, 11f);
+                clips[Sound.OutOfMedals] = Make("Sfx_OutOfMedals", d);
+            }
 
-            // ボタン：短い「ポッ」
-            clips[Sound.Click] = Tone("Sfx_Click", 0.07f, t =>
-                (Sin(t, 950f) * 0.6f + Sin(t, 1900f) * 0.15f) * Mathf.Exp(-t * 60f));
+            // ノルマ達成：ファンファーレ（上がる 4 音のあと、和音を「ピロピロ」と速く切りかえてのばす）
+            {
+                var d = Buffer(1.4f);
+                int[] up = { 72, 76, 79, 84 };
+                for (int i = 0; i < up.Length; i++) Tone(d, i * 0.09f, 0.09f, M(up[i]), M(up[i]), Wave.Pulse25, 0.5f, 0f);
+                Arpeggio(d, 0.36f, 1.0f, new[] { 84, 88, 91 }, 1f / 40f, Wave.Pulse25, 0.5f, 2.6f);
+                Tone(d, 0f, 0.36f, M(48), M(48), Wave.Triangle, 0.7f, 0f);
+                Tone(d, 0.36f, 1.0f, M(48), M(48), Wave.Triangle, 0.7f, 2.4f);
+                Noise(d, 0.36f, 0.35f, 6000f, false, 0.25f, 9f);   // シャーン
+                clips[Sound.Clear] = Make("Sfx_Clear", d);
+            }
+
+            // ノルマ未達：下がっていく 4 音。最後の音はゆれながら消える
+            {
+                var d = Buffer(1.15f);
+                int[] down = { 67, 66, 65, 64 };
+                for (int i = 0; i < down.Length; i++)
+                {
+                    bool last = i == down.Length - 1;
+                    Tone(d, i * 0.2f, last ? 0.55f : 0.2f, M(down[i]), M(down[i]), Wave.Pulse50, 0.45f, last ? 4f : 0f, last ? 0.025f : 0f);
+                    Tone(d, i * 0.2f, last ? 0.55f : 0.2f, M(down[i] - 12), M(down[i] - 12), Wave.Triangle, 0.5f, last ? 4f : 0f);
+                }
+                clips[Sound.Fail] = Make("Sfx_Fail", d);
+            }
+
+            // ショップ：お店のドアの「ピンポーン」と、小さなこだま
+            {
+                var d = Buffer(1.3f);
+                for (int k = 0; k < 2; k++)
+                {
+                    float start = k * 0.16f;
+                    float gain = k == 0 ? 0.5f : 0.18f;
+                    Tone(d, start, 0.32f, M(88), M(88), Wave.Pulse25, gain, 5f);
+                    Tone(d, start + 0.35f, 0.75f, M(84), M(84), Wave.Pulse25, gain, 3.5f);
+                }
+                clips[Sound.Shop] = Make("Sfx_Shop", d);
+            }
+
+            // レコードを付けかえた：「カシャッ」と上がる「ピッ」
+            {
+                var d = Buffer(0.14f);
+                Noise(d, 0f, 0.035f, 11000f, true, 0.4f, 60f);
+                Tone(d, 0f, 0.06f, 600f, 1400f, Wave.Pulse50, 0.45f, 25f);
+                Tone(d, 0.07f, 0.05f, M(88), M(88), Wave.Pulse50, 0.35f, 40f);
+                clips[Sound.Equip] = Make("Sfx_Equip", d);
+            }
+
+            // ボタン：短い「ピッ」
+            {
+                var d = Buffer(0.05f);
+                Tone(d, 0f, 0.04f, 1200f, 1500f, Wave.Pulse50, 0.5f, 45f);
+                clips[Sound.Click] = Make("Sfx_Click", d);
+            }
         }
 
-        static readonly System.Random noiseRng = new System.Random(11);
-        static float Noise() => (float)(noiseRng.NextDouble() * 2.0 - 1.0);
-        static float Sin(float t, float f) => Mathf.Sin(2f * Mathf.PI * f * t);
-        static float Sq(float t, float f) => Mathf.Sin(2f * Mathf.PI * f * t) >= 0f ? 1f : -1f;
-        static float Tri(float t, float f) => 1f - 4f * Mathf.Abs(Mathf.Repeat(f * t + 0.25f, 1f) - 0.5f);
-        static float Note(float t, float step, params float[] notes) => notes[Mathf.Clamp((int)(t / step), 0, notes.Length - 1)];
+        // ───────── 昔のゲーム機のような音を作る道具 ─────────
 
-        // 鉄の円板（メダル）をたたいた時の響き方：音の高さの比・大きさ・消える速さ
-        // 比が整数でない（倍音がずれている）ので、ガラスやベルではなく金属らしいにごった音になる
-        static readonly float[] MetalRatio = { 1.00f, 1.71f, 2.33f, 2.95f, 3.62f };
-        static readonly float[] MetalAmp = { 0.50f, 0.35f, 0.28f, 0.20f, 0.12f };
-        static readonly float[] MetalDecay = { 22f, 30f, 38f, 48f, 60f };
+        enum Wave { Pulse12, Pulse25, Pulse50, Triangle }
+
+        /// <summary>MIDI のノート番号（60 がド）から、音の高さ（Hz）</summary>
+        static float M(int note) => 440f * Mathf.Pow(2f, (note - 69) / 12f);
 
         static float RandRange(System.Random rng, float a, float b) => a + (float)rng.NextDouble() * (b - a);
 
-        /// <summary>
-        /// 鉄のメダルを 1 回たたいた音を、data の start 秒の所から足す。
-        /// 少しだけずらした 2 つの音を重ねて「うなり」を作り、たたいた瞬間の「チッ」という雑音も足す。
-        /// </summary>
-        static void MetalHit(float[] data, float f0, float start, float gain, System.Random rng)
+        static float[] Buffer(float seconds) => new float[Mathf.Max(1, (int)(Rate * seconds))];
+
+        /// <summary>音の大きさを 16 段にする（昔の音源と同じで、なめらかに変わらない）</summary>
+        static float Steps16(float v) => Mathf.Round(Mathf.Clamp01(v) * 15f) / 15f;
+
+        /// <summary>波の形（phase は 0〜1）</summary>
+        static float WaveAt(Wave w, float phase)
         {
-            int begin = Mathf.Clamp((int)(start * Rate), 0, data.Length);
-            int parts = MetalRatio.Length;
-            var detune = new float[parts];
-            var phaseA = new float[parts];
-            var phaseB = new float[parts];
-            for (int k = 0; k < parts; k++)
+            switch (w)
             {
-                detune[k] = RandRange(rng, 3f, 9f);
-                phaseA[k] = RandRange(rng, 0f, 6.28f);
-                phaseB[k] = RandRange(rng, 0f, 6.28f);
-            }
-            float prevNoise = 0f;
-            for (int i = begin; i < data.Length; i++)
-            {
-                float t = (i - begin) / (float)Rate;
-                float v = 0f;
-                for (int k = 0; k < parts; k++)
-                {
-                    float f = f0 * MetalRatio[k];
-                    v += MetalAmp[k] * 0.5f * (Mathf.Sin(2f * Mathf.PI * f * t + phaseA[k]) + Mathf.Sin(2f * Mathf.PI * (f + detune[k]) * t + phaseB[k]))
-                         * Mathf.Exp(-t * MetalDecay[k]);
-                }
-                // 高い音だけの雑音（たたいた瞬間の「チッ」）
-                float n = RandRange(rng, -1f, 1f);
-                v += (n - prevNoise * 0.9f) * Mathf.Exp(-t * 250f) * 0.35f;
-                prevNoise = n;
-                data[i] += v * gain;
+                case Wave.Pulse12: return phase < 0.125f ? 1f : -1f;
+                case Wave.Pulse25: return phase < 0.25f ? 1f : -1f;
+                case Wave.Pulse50: return phase < 0.5f ? 1f : -1f;
+                default:
+                    // 三角の波を 16 段の階段にする（昔の音源の三角波のざらっとした感じ）
+                    float tri = 1f - 4f * Mathf.Abs(phase - 0.5f);
+                    return Mathf.Round(tri * 7.5f) / 7.5f;
             }
         }
 
-        /// <summary>作った音のデータを、いちばん大きい所が 0.8 になるようにそろえて AudioClip にする。</summary>
+        /// <summary>
+        /// 1 つの音を data の start 秒から足す。高さは f0 から f1 へなめらかに変わる（同じなら変わらない）。
+        /// decay：消える速さ（0 なら同じ大きさのまま）。vibrato：音の高さのゆれの深さ（0.02 で 2%）。
+        /// </summary>
+        static void Tone(float[] data, float start, float seconds, float f0, float f1, Wave wave, float gain, float decay, float vibrato = 0f)
+        {
+            int begin = Mathf.Clamp((int)(start * Rate), 0, data.Length);
+            int end = Mathf.Clamp((int)((start + seconds) * Rate), 0, data.Length);
+            float phase = 0f;
+            for (int i = begin; i < end; i++)
+            {
+                float t = (i - begin) / (float)Rate;
+                float k = seconds > 0f ? t / seconds : 0f;
+                float f = f0 * Mathf.Pow(f1 / f0, k);                         // 高さが変わる音（スイープ）
+                if (vibrato > 0f) f *= 1f + vibrato * Mathf.Sin(2f * Mathf.PI * 6f * t);
+                phase = Mathf.Repeat(phase + f / Rate, 1f);
+                float env = Steps16(decay > 0f ? Mathf.Exp(-t * decay) : 1f);
+                data[i] += WaveAt(wave, phase) * env * gain;
+            }
+        }
+
+        /// <summary>和音の音を、stepSeconds ごとに速く切りかえて鳴らす（昔のゲームの和音の出し方）</summary>
+        static void Arpeggio(float[] data, float start, float seconds, int[] notes, float stepSeconds, Wave wave, float gain, float decay)
+        {
+            int begin = Mathf.Clamp((int)(start * Rate), 0, data.Length);
+            int end = Mathf.Clamp((int)((start + seconds) * Rate), 0, data.Length);
+            float phase = 0f;
+            for (int i = begin; i < end; i++)
+            {
+                float t = (i - begin) / (float)Rate;
+                int n = notes[(int)(t / stepSeconds) % notes.Length];
+                phase = Mathf.Repeat(phase + M(n) / Rate, 1f);
+                float env = Steps16(Mathf.Exp(-t * decay));
+                data[i] += WaveAt(wave, phase) * env * gain;
+            }
+        }
+
+        /// <summary>
+        /// 昔の音源と同じ作り方の雑音（15 ビットの LFSR）。clockHz が高いほど「シャー」と高い音になる。
+        /// metallic を true にすると、短いくり返しの雑音になって「キン」とした金属っぽい音になる。
+        /// </summary>
+        static void Noise(float[] data, float start, float seconds, float clockHz, bool metallic, float gain, float decay)
+        {
+            int begin = Mathf.Clamp((int)(start * Rate), 0, data.Length);
+            int end = Mathf.Clamp((int)((start + seconds) * Rate), 0, data.Length);
+            int reg = 1;
+            float phase = 0f;
+            float value = 1f;
+            for (int i = begin; i < end; i++)
+            {
+                float t = (i - begin) / (float)Rate;
+                phase += clockHz / Rate;
+                while (phase >= 1f)
+                {
+                    phase -= 1f;
+                    int bit = (reg ^ (reg >> (metallic ? 6 : 1))) & 1;
+                    reg = (reg >> 1) | (bit << 14);
+                    value = (reg & 1) != 0 ? 1f : -1f;
+                }
+                float env = Steps16(decay > 0f ? Mathf.Exp(-t * decay) : 1f);
+                data[i] += value * env * gain;
+            }
+        }
+
+        /// <summary>
+        /// 作った音のデータを、いちばん大きい所が 0.8 になるようにそろえ、
+        /// 音の細かさを 6 ビット（64 段）に落として AudioClip にする。最初と最後は少しだけなめらかにして「プツッ」を防ぐ。
+        /// </summary>
         static AudioClip Make(string name, float[] data)
         {
             float peak = 1e-6f;
             for (int i = 0; i < data.Length; i++) peak = Mathf.Max(peak, Mathf.Abs(data[i]));
             float scale = 0.8f / peak;
-            int fade = Mathf.Min(data.Length / 4, Rate / 500);
+            int fade = Mathf.Min(data.Length / 4, Rate / 1000);   // 1 ミリ秒
             for (int i = 0; i < data.Length; i++)
             {
-                float v = data[i] * scale;
+                float v = Mathf.Round(data[i] * scale * 31f) / 31f;   // 6 ビット
                 if (i < fade) v *= i / (float)fade;
                 if (i > data.Length - 1 - fade) v *= (data.Length - 1 - i) / (float)fade;
                 data[i] = v;
             }
             var clip = AudioClip.Create(name, data.Length, 1, Rate, false);
             clip.SetData(data, 0);
-            return clip;
-        }
-
-        /// <summary>関数 f（時間 → -1〜1）から音を作る。最初と最後は少しだけなめらかにして「プツッ」を防ぐ。</summary>
-        static AudioClip Tone(string name, float seconds, System.Func<float, float> f)
-        {
-            int n = Mathf.Max(1, (int)(Rate * seconds));
-            var d = new float[n];
-            int fade = Mathf.Min(n / 4, Rate / 500);   // 2 ミリ秒
-            for (int i = 0; i < n; i++)
-            {
-                float v = Mathf.Clamp(f(i / (float)Rate), -1f, 1f);
-                if (i < fade) v *= i / (float)fade;
-                if (i > n - 1 - fade) v *= (n - 1 - i) / (float)fade;
-                d[i] = v;
-            }
-            var clip = AudioClip.Create(name, n, 1, Rate, false);
-            clip.SetData(d, 0);
             return clip;
         }
     }
