@@ -524,6 +524,11 @@ MonoBehaviour:
     rareFaceColor: {r: 0.86, g: 0.88, b: 1, a: 1}
     rareRimColor: {r: 0.62, g: 0.6, b: 0.9, a: 1}
     rareSmoothness: 0.7
+    medalCartoonStyle: 1
+    medalOutlineColor: {r: 0.3, g: 0.15, b: 0.04, a: 1}
+    rareOutlineColor: {r: 0.16, g: 0.18, b: 0.42, a: 1}
+    medalOutlineWidth: 0
+    cartoonMaxSmoothness: 0.3
     medalCastShadows: 1
     medalReceiveShadows: 1
 --- !u!4 &222109768
