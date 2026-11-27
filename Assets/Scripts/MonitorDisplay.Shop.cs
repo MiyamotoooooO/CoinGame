@@ -594,8 +594,8 @@ namespace MedalPusher
             var outside = new Vector2(-1000f, -1000f);
             Vector2 p = outside;
             // 次のエリアに進む確認を出している間は、ショップを操作できない
-            bool blocked = game.ClearBar.IsConfirmOpen || game.ClearBar.ConfirmClosedFrame == Time.frameCount;
-            bool hasPoint = shopReady && !blocked && TryGetCanvasPoint(out p);
+            bool blocked = game.ClearBar.IsConfirmShowing || game.ClearBar.ConfirmClosedFrame == Time.frameCount;
+            bool hasPoint = shopReady && !blocked && !TutorialGate.PointerOverPanel && TryGetCanvasPoint(out p);
             if (!hasPoint) p = outside;
 
             // ボタン：カーソルを合わせると少し大きく
@@ -613,7 +613,9 @@ namespace MedalPusher
             {
                 bool usable = i >= RecordShop.OfferCount || game.Shop.Offers[i] != null;
                 bool inside = usable && cards[i].area.Contains(p);
-                cards[i].highlight.enabled = inside;
+                // チュートリアルで買ってもらうカードは、縁を点滅させる
+                bool focus = i == TutorialGate.ShopFocusCard && Mathf.Repeat(Time.unscaledTime * 2.5f, 1f) < 0.6f;
+                cards[i].highlight.enabled = inside || focus;
                 cards[i].root.localScale = inside ? new Vector3(1.04f, 1.04f, 1f) : Vector3.one;
                 if (inside) hoveredCard = i;
             }
@@ -621,6 +623,14 @@ namespace MedalPusher
 
             if (hasPoint && InputCompat.MouseDown())
             {
+                // チュートリアルの間は、光っているカードしか押せない
+                if (TutorialGate.ShopFocusCard >= 0 && hoveredCard != TutorialGate.ShopFocusCard)
+                {
+                    bool onSomething = hoveredCard >= 0;
+                    foreach (var hot in hots) if (hot.rect.Contains(p)) onSomething = true;
+                    if (onSomething) ShowMessage(TutorialGate.ShopLockMessage);
+                    return;
+                }
                 if (hoveredCard >= 0)
                 {
                     cards[hoveredCard].onClick?.Invoke();

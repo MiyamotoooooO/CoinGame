@@ -95,6 +95,8 @@ namespace MedalPusher
 
         // つまみ（閉じている時に見える細いバー）
         RectTransform tabRect, keyCap, hintRoot;
+        /// <summary>右はしのつまみ（チュートリアルの矢印で指す）</summary>
+        public RectTransform TabRect => tabRect;
         CanvasGroup hintGroup;
         Text hintText;
         float startTime;

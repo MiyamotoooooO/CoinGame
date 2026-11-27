@@ -199,7 +199,7 @@ namespace MedalPusher
             }
             return (rack != null && rack.IsOpen)
                 || (collection != null && collection.IsOpen)
-                || (clearBar != null && clearBar.IsConfirmOpen);
+                || (clearBar != null && clearBar.IsConfirmShowing);
         }
 
         static void EnsureEventSystem()

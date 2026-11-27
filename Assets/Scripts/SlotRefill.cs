@@ -64,9 +64,9 @@ namespace MedalPusher
         };
 
         [Tooltip("まん中のリールが、左と同じ絵で止まる確率（リーチ）")]
-        [Range(0f, 1f)] public float reachChance = 0.3f;
+        [Range(0f, 1f)] public float reachChance = 0.5f;
         [Tooltip("リーチの時に、右のリールもそろう確率（あたり）")]
-        [Range(0f, 1f)] public float winChance = 0.4f;
+        [Range(0f, 1f)] public float winChance = 0.6f;
 
         [Header("回り方")]
         [Tooltip("ためておけるメダルの枚数（ランプは 6 個まで）")]
@@ -122,6 +122,8 @@ namespace MedalPusher
 
         // ---- 本体 ----
         Transform machine, lever;
+        /// <summary>スロットの本体（チュートリアルの矢印で指す）</summary>
+        public Transform Machine => machine;
         Reel[] reels;
         Renderer[] lampR, starR, buttonR;
         Transform[] buttons;
@@ -293,7 +295,7 @@ namespace MedalPusher
                 // リーチ：右のリールを速く回す
                 ShowText("リーチ", new Color(1f, 0.55f, 0.3f), 99f);
                 reels[2].speed = spinSpeed * 1.8f;
-                Play(sfxSpin, 0.4f, 1.3f);
+                Play(sfxReach, 0.7f);
             }
             else if (i == 2 && !(got[0] == got[1] && got[1] == got[2]))
             {
@@ -502,7 +504,7 @@ namespace MedalPusher
             var pillar = Prim(PrimitiveType.Cylinder, null, Vector3.zero, Vector3.one, gold);
             props.Add(pillar.gameObject);
             Burst(new Vector3(x, fy + D * 0.1f, z), new Color(1f, 0.85f, 0.3f), 30, 1.2f, Vector3.up);
-            Play(sfxScratch, 0.4f, 0.7f);
+            Play(sfxRumble, 0.8f, 1.1f);   // ゴゴゴ…とせり上がる
             float rise = 1.3f;
             for (float t = 0f; t < rise; t += Time.deltaTime)
             {
@@ -528,6 +530,7 @@ namespace MedalPusher
             Burst(new Vector3(x, fy + height, z), new Color(1f, 0.95f, 0.5f), 40, 1.6f, Vector3.up);
             Play(sfxPop, 0.6f, 0.8f);
             yield return new WaitForSeconds(0.35f);
+            Play(sfxCoinPour, 0.9f, 0.9f);   // ジャラジャラと崩れる
             // 崩れる：上の方ほど大きく横へ
             Vector2 lean = Random.insideUnitCircle.normalized;
             for (int i = 0; i < stack.Count; i++)
@@ -1028,22 +1031,19 @@ namespace MedalPusher
             audioSource.playOnAwake = false;
             audioSource.spatialBlend = 0f;
 
-            sfxSpin = Tone("SlotSpin", 0.25f, t => Sq(t, 520f + 400f * t * 4f) * (1f - t * 4f) * 0.25f);
-            sfxStop = Tone("SlotStop", 0.08f, t => Noise() * Mathf.Exp(-t * 60f) * 0.6f + Sq(t, 180f) * Mathf.Exp(-t * 40f) * 0.3f);
-            sfxWin = Tone("SlotWin", 0.6f, t => Sq(t, Note(t, 0.1f, 523f, 659f, 784f, 1047f, 1047f, 1047f)) * 0.22f * (1f - t / 0.6f));
-            sfxBig = Tone("SlotBig", 1.4f, t => (Sq(t, Note(t, 0.1f, 523f, 659f, 784f, 1047f, 784f, 1047f, 1319f, 1319f, 1568f, 1568f, 1568f, 1568f, 1568f, 1568f)) * 0.2f
-                                                 + Sin(t, 261f) * 0.15f) * Mathf.Clamp01((1.4f - t) * 3f));
-            sfxPop = Tone("SlotPop", 0.35f, t => (Noise() * 0.7f + Sin(t, 90f * (1f - t))) * Mathf.Exp(-t * 12f) * 0.7f);
-            sfxBell = Tone("SlotBell", 1.0f, t => (Sin(t, 1320f) * 0.4f + Sin(t, 1980f) * 0.25f + Sin(t, 2640f) * 0.12f) * Mathf.Exp(-t * 4f) * 0.6f);
-            sfxThud = Tone("SlotThud", 0.25f, t => Sin(t, 80f) * Mathf.Exp(-t * 18f) * 0.8f);
-            sfxScratch = Tone("SlotScratch", 0.5f, t => Noise() * (0.5f + 0.5f * Mathf.Sin(t * 60f)) * Mathf.Exp(-t * 3f) * 0.35f);
+            MakeRichSounds();   // 音は SlotRefillSfx.cs で作る
         }
 
         void Play(AudioClip clip, float vol, float pitch = 1f)
         {
             if (audioSource == null || clip == null) return;
-            audioSource.pitch = pitch;
-            audioSource.PlayOneShot(clip, vol * volume);
+            if (Mathf.Abs(pitch - 1f) < 0.001f)
+            {
+                audioSource.PlayOneShot(clip, vol * volume);
+                return;
+            }
+            // 音の高さを変える時は、使い回す音源で鳴らす（同じ音源で高さを変えると、鳴っているほかの音まで変わるため）
+            PlayVoice(clip, vol * volume, pitch);
         }
 
         static System.Random noiseRng = new System.Random(7);

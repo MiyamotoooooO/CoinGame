@@ -401,6 +401,7 @@ namespace MedalPusher
             Destroy(rig.root.gameObject);
             props.Remove(rig.root.gameObject);
             StartCoroutine(Explosion(c, D * blastSize, fy));
+            Play(sfxCoinPour, 0.7f, Random.Range(0.95f, 1.1f));   // メダルがジャラッと飛び散る
             PushMedals(c, D * blastSize * 1.1f, blastPush);
             for (int i = 0; i < count; i++)
             {
@@ -692,6 +693,7 @@ namespace MedalPusher
                 bool empty = i == n;   // 最後の 1 回は空ぶり
                 float side = Mathf.Sin(i / (float)n * Mathf.PI * 2f) * swing;
                 var basePos = new Vector3(Mathf.Clamp(x0 + side, -Half, Half), hover.y, z);
+                Play(sfxRattle, empty ? 0.35f : 0.6f, Random.Range(0.92f, 1.08f));   // 中のメダルがカラカラ
                 for (float t = 0f; t < st; t += Time.deltaTime)
                 {
                     float k = t / st;
@@ -1129,8 +1131,9 @@ namespace MedalPusher
             rig.root.rotation = face;
 
             // パカッ！：ふたが開いて、光のすじが上へ広がる
+            Play(sfxCreak, 0.6f);
             Play(sfxPop, 0.8f, 1.3f);
-            Play(sfxBell, 0.6f, 1.4f);
+            Play(sfxBell, 0.7f, 1.1f);
             for (float t = 0f; t < 0.22f; t += Time.deltaTime)
             {
                 rig.lid.localRotation = Quaternion.Euler(115f * Ease.OutBack(t / 0.22f), 0f, 0f);
@@ -1144,6 +1147,7 @@ namespace MedalPusher
             Burst(mouth, ChestGold, 16, 1.4f, Vector3.up);
 
             // メダルが噴水のように飛び出す
+            Play(sfxCoinPour, 0.8f, 1f);
             int n = Mathf.Max(1, count);
             float step = chestFountainSeconds / n;
             for (int i = 0; i < n; i++)
@@ -1276,7 +1280,7 @@ namespace MedalPusher
             for (int i = 0; i < n; i++)
             {
                 StartCoroutine(GaugeDisc(step, i, i == n - 1));
-                Play(sfxSpin, 0.35f, 1.2f + i * 0.08f);
+                Play(sfxWhoosh, 0.55f, 1f + i * 0.06f);   // レコードがヒュンと飛ぶ
                 yield return new WaitForSeconds(0.12f);
             }
             yield return new WaitForSeconds(gaugeFlightSeconds + 0.3f);
@@ -1459,7 +1463,7 @@ namespace MedalPusher
             var at = gem.position;
             props.Remove(gem.gameObject);
             Destroy(gem.gameObject);
-            Play(sfxBell, 0.9f, 2f);
+            Play(sfxSparkle, 0.9f);   // キラーン
             Play(sfxPop, 0.5f, 1.8f);
             StartCoroutine(Flash(at, cam, gs * 1.6f));
             StartCoroutine(Wave(new Vector3(x, fy + D * 0.04f, z), Quaternion.identity, D * 0.3f, D * 2.4f, 0.45f, GemCyan));

@@ -26,6 +26,11 @@ namespace MedalPusher
         /// <summary>所持しているレコード</summary>
         public RecordInventory Inventory { get; private set; }
 
+        /// <summary>チュートリアル用：このキーのレコードを、まだ持っていなければ必ず並べる（空なら何もしない）</summary>
+        [System.NonSerialized] public string pinnedRecordKey = "";
+        /// <summary>チュートリアル用：このキーのレコードの値段を 0pt にする（空なら何もしない）</summary>
+        [System.NonSerialized] public string freeRecordKey = "";
+
         /// <summary>今のリロールの値段</summary>
         public int RerollCost { get; private set; }
         /// <summary>投入上限アップを買った回数（このラン）</summary>
@@ -34,7 +39,20 @@ namespace MedalPusher
         ShopSettings S => game.shop;
         public int LimitUpgradeCost => S.limitBasePoints + LimitLevel * S.limitStepPoints;
         /// <summary>レコードの値段（pt）</summary>
-        public int RecordPrice(RecordData r) => r == null ? 0 : r.buyPrice * Mathf.Max(1, S.recordPriceScale);
+        public int RecordPrice(RecordData r)
+        {
+            if (r == null) return 0;
+            if (!string.IsNullOrEmpty(freeRecordKey) && r.key == freeRecordKey) return 0;   // チュートリアルの 1 回目
+            return r.buyPrice * Mathf.Max(1, S.recordPriceScale);
+        }
+
+        /// <summary>並んでいるレコードの中で、key のレコードの枠の番号。無ければ -1。</summary>
+        public int IndexOfOffer(string key)
+        {
+            for (int i = 0; i < OfferCount; i++)
+                if (Offers[i] != null && Offers[i].key == key) return i;
+            return -1;
+        }
         public int ExchangeCost => S.specialExchangeCost;
         public int ExchangeAmount => S.specialExchangeAmount;
         public int NextInsertLimit => Mathf.Min(game.InsertLimit + S.limitStep, S.limitMax);
@@ -77,12 +95,22 @@ namespace MedalPusher
         void Roll()
         {
             var candidates = new List<RecordData>();
+            RecordData pinned = null;
             foreach (var r in allRecords)
-                if (!RecordData.IsNullOrEmpty(r) && !Inventory.Has(r.key)) candidates.Add(r);
+            {
+                if (RecordData.IsNullOrEmpty(r) || Inventory.Has(r.key)) continue;
+                if (!string.IsNullOrEmpty(pinnedRecordKey) && r.key == pinnedRecordKey) pinned = r;   // 必ず並べるレコードは別に取っておく
+                else candidates.Add(r);
+            }
 
             for (int i = 0; i < OfferCount; i++)
             {
                 Sold[i] = false;
+                if (i == 0 && pinned != null)
+                {
+                    Offers[i] = pinned;   // チュートリアルのレコードは、いちばん左に置く
+                    continue;
+                }
                 if (candidates.Count == 0)
                 {
                     Offers[i] = null;
