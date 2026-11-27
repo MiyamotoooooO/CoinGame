@@ -54,7 +54,7 @@ namespace MedalPusher
 
             bool debugAllowed = Application.isEditor || Debug.isDebugBuild;
             if (!debugAllowed) return;
-            if (DexKeys.Pressed(DexKeys.Key.F3)) UnlockAll();
+            if (Application.isEditor && DexKeys.Pressed(DexKeys.Key.F3)) UnlockAll();   // F3（全部入手）はエディタだけ。ビルドでは Development Build でも効かない
             if (SceneManager.GetActiveScene().name == DexSceneName) return;   // 図鑑の中では RecordDexScreen が P を受け持つ
             if (DexKeys.Pressed(DexKeys.Key.P)) OpenDex();
         }

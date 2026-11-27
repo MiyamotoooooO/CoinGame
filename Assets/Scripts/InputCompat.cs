@@ -106,14 +106,14 @@ namespace MedalPusher
             {
                 case GameKey.Reset: return k.rKey.wasPressedThisFrame;
                 case GameKey.NextRound: return k.enterKey.wasPressedThisFrame || k.nKey.wasPressedThisFrame;
-                case GameKey.AddMedals: return k.f1Key.wasPressedThisFrame;
+                case GameKey.AddMedals: return Application.isEditor && k.f1Key.wasPressedThisFrame;   // F1（メダル+50）はエディタだけ。ビルドでは効かない
                 case GameKey.TogglePanel: return k.tabKey.wasPressedThisFrame;
                 case GameKey.ToggleCamera: return k.cKey.wasPressedThisFrame;
                 case GameKey.PausePusher: return k.pKey.wasPressedThisFrame;
                 case GameKey.Cancel: return k.escapeKey.wasPressedThisFrame;
                 case GameKey.ActivateRecord: return k.qKey.wasPressedThisFrame;
                 case GameKey.ToggleRecordList: return k.eKey.wasPressedThisFrame;
-                case GameKey.ToggleDebug: return k.f2Key.wasPressedThisFrame;
+                case GameKey.ToggleDebug: return Application.isEditor && k.f2Key.wasPressedThisFrame;   // F2（デバッグ表示）はエディタだけ。ビルドでは効かない
             }
             return false;
 #else
@@ -121,14 +121,14 @@ namespace MedalPusher
             {
                 case GameKey.Reset: return Input.GetKeyDown(KeyCode.R);
                 case GameKey.NextRound: return Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.N);
-                case GameKey.AddMedals: return Input.GetKeyDown(KeyCode.F1);
+                case GameKey.AddMedals: return Application.isEditor && Input.GetKeyDown(KeyCode.F1);   // F1（メダル+50）はエディタだけ。ビルドでは効かない
                 case GameKey.TogglePanel: return Input.GetKeyDown(KeyCode.Tab);
                 case GameKey.ToggleCamera: return Input.GetKeyDown(KeyCode.C);
                 case GameKey.PausePusher: return Input.GetKeyDown(KeyCode.P);
                 case GameKey.Cancel: return Input.GetKeyDown(KeyCode.Escape);
                 case GameKey.ActivateRecord: return Input.GetKeyDown(KeyCode.Q);
                 case GameKey.ToggleRecordList: return Input.GetKeyDown(KeyCode.E);
-                case GameKey.ToggleDebug: return Input.GetKeyDown(KeyCode.F2);
+                case GameKey.ToggleDebug: return Application.isEditor && Input.GetKeyDown(KeyCode.F2);   // F2（デバッグ表示）はエディタだけ。ビルドでは効かない
             }
             return false;
 #endif
