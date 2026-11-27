@@ -25,8 +25,19 @@ namespace MedalPusher
         System.Action confirmAction;
         float confirmAlpha;
 
-        /// <summary>確認を出しているか（出している間は Enter キーやショップの操作を受け付けない）</summary>
-        public bool IsConfirmOpen { get; private set; }
+        /// <summary>
+        /// 確認を出しているか（出している間は Enter キーやショップの操作を受け付けない）。
+        /// チュートリアルで先へ進むのを止めている間（TutorialGate.BlockProceed）も true にして、
+        /// 「閉じる」・Enter キー・ショップを閉じる を止める（MedalPusherGame がこれを見ている）
+        /// </summary>
+        public bool IsConfirmOpen => confirmShowing || TutorialGate.BlockProceed;
+        /// <summary>確認の画面を本当に出しているか（チュートリアルの止めは入らない）</summary>
+        public bool IsConfirmShowing => confirmShowing;
+        bool confirmShowing;
+
+        /// <summary>「ショップへ入る」ボタン（チュートリアルの矢印で指す）</summary>
+        public RectTransform ShopButtonRect { get; private set; }
+        Button closeButton;
         /// <summary>確認を閉じたフレーム（閉じたクリックで、後ろのショップのボタンまで押さないように）</summary>
         public int ConfirmClosedFrame { get; private set; } = -1;
 
@@ -83,8 +94,8 @@ namespace MedalPusher
             bg.color = new Color(0.05f, 0.04f, 0.04f, 0.72f);
 
             titleText = NewText(bar, font, new Vector2(0f, 40f), new Vector2(900f, 60f), "", 40, new Color(1f, 0.78f, 0.25f));
-            NewButton(bar, font, new Vector2(-170f, 115f), "ショップへ入る", ShopColor, () => game.OpenShop());
-            NewButton(bar, font, new Vector2(170f, 115f), "閉じる", CloseColor, () => game.RequestProceed());
+            ShopButtonRect = (RectTransform)NewButton(bar, font, new Vector2(-170f, 115f), "ショップへ入る", ShopColor, () => game.OpenShop()).transform;
+            closeButton = NewButton(bar, font, new Vector2(170f, 115f), "閉じる", CloseColor, () => game.RequestProceed());
 
             BuildConfirm(canvasGo.transform, font);
         }
@@ -136,13 +147,13 @@ namespace MedalPusher
                 $"次のエリアに進むと、今のポイント {points} pt はなくなります。\n本当に進みますか？\n" +
                 $"<size=24><color=#9FE0D0>（特殊ポイント {game.SpecialPoints} は次のエリアにも持っていけます）</color></size>";
             confirmText.supportRichText = true;
-            IsConfirmOpen = true;
+            confirmShowing = true;
         }
 
         public void HideConfirm()
         {
-            if (IsConfirmOpen) ConfirmClosedFrame = Time.frameCount;
-            IsConfirmOpen = false;
+            if (confirmShowing) ConfirmClosedFrame = Time.frameCount;
+            confirmShowing = false;
             confirmAction = null;
         }
 
@@ -165,13 +176,21 @@ namespace MedalPusher
                 titleText.text = game.IsLastRoundOfArea ? "すごい！ エリアをクリア！" : "すごい！ ラウンドをクリア！";
 
             // 確認：クリア後の帯かショップの時だけ（それ以外になったら閉じる）
-            if (IsConfirmOpen && game.State != GameState.Cleared && game.State != GameState.Shop) HideConfirm();
-            if (IsConfirmOpen && InputCompat.Down(GameKey.Cancel)) HideConfirm();
-            confirmAlpha = Mathf.MoveTowards(confirmAlpha, IsConfirmOpen ? 1f : 0f, Time.unscaledDeltaTime * 8f);
+            if (confirmShowing && game.State != GameState.Cleared && game.State != GameState.Shop) HideConfirm();
+            if (confirmShowing && InputCompat.Down(GameKey.Cancel)) HideConfirm();
+            confirmAlpha = Mathf.MoveTowards(confirmAlpha, confirmShowing ? 1f : 0f, Time.unscaledDeltaTime * 8f);
             confirmGroup.alpha = confirmAlpha;
-            confirmGroup.interactable = IsConfirmOpen;
-            confirmGroup.blocksRaycasts = IsConfirmOpen;
-            if (IsConfirmOpen) group.interactable = false; // 後ろの帯のボタンは押せない
+            confirmGroup.interactable = confirmShowing;
+            confirmGroup.blocksRaycasts = confirmShowing;
+            if (confirmShowing) group.interactable = false; // 後ろの帯のボタンは押せない
+
+            // チュートリアルの間は「閉じる」を押せなくし、「ショップへ入る」をはずませる
+            if (closeButton != null) closeButton.interactable = !TutorialGate.BlockProceed;
+            if (ShopButtonRect != null)
+            {
+                float s = show && TutorialGate.BlockProceed ? 1f + 0.06f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 5f)) : 1f;
+                ShopButtonRect.localScale = new Vector3(s, s, 1f);
+            }
         }
 
         static Text NewText(RectTransform parent, Font font, Vector2 pos, Vector2 size, string text, int fontSize, Color color)
@@ -195,7 +214,7 @@ namespace MedalPusher
             return t;
         }
 
-        static void NewButton(RectTransform parent, Font font, Vector2 pos, string label, Color color, UnityEngine.Events.UnityAction onClick)
+        static Button NewButton(RectTransform parent, Font font, Vector2 pos, string label, Color color, UnityEngine.Events.UnityAction onClick)
         {
             var rt = new GameObject(label, typeof(RectTransform)).GetComponent<RectTransform>();
             rt.SetParent(parent, false);
@@ -214,6 +233,7 @@ namespace MedalPusher
             var trt = t.rectTransform;
             trt.anchorMin = trt.anchorMax = new Vector2(0.5f, 0.5f);
             trt.anchoredPosition = Vector2.zero;
+            return button;
         }
     }
 }
